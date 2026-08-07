@@ -29,6 +29,9 @@ export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
     // Narrowed rather than trusted: the field is typed, and a typed field is
     // still whatever arrived over the wire.
     environment: input.environment === 'sandbox' ? 'sandbox' : 'production',
+    // Absent → validate against every connected account for the environment.
+    // Scoped by companyId in the use case, so an unknown id just finds nothing.
+    accountId: input.accountId,
   });
 
   if (!outcome.ok) return { status: 'failed', failure: outcome.error };

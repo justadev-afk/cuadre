@@ -14,13 +14,14 @@
 import { useState } from 'react';
 
 import { Icon } from '../_components/icon.tsx';
+import { ModalBackdrop } from '../_components/modal.tsx';
 
 export function SessionEndedModal() {
   const [open, setOpen] = useState(true);
   if (!open) return null;
 
   return (
-    <div className="dialog-backdrop">
+    <ModalBackdrop onClose={() => setOpen(false)}>
       <div
         role="dialog"
         aria-modal="true"
@@ -59,6 +60,6 @@ export function SessionEndedModal() {
           Entendido
         </button>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

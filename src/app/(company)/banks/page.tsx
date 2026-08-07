@@ -7,6 +7,7 @@
  * — the page has no per-bank knowledge either.
  */
 import { BankAccountCard } from '../../_components/bank-account-card.tsx';
+import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { BanksPanel } from './banks-panel.tsx';
@@ -23,40 +24,39 @@ export default async function BanksPage() {
   const banesco = container().banking.listSupportedBanks()[0];
 
   return (
-    <main style={{ padding: '26px 24px', maxWidth: 560, marginInline: 'auto', width: '100%' }}>
-      <h4 style={{ margin: '0 0 2px' }}>Bancos</h4>
-      <span className="text-muted" style={{ fontSize: 13 }}>
-        Cuentas donde recibes pago móvil. Una de producción y una de pruebas pueden convivir.
-      </span>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '16px 0 18px' }}>
-        {accounts.length === 0 ? (
-          <p className="text-muted" style={{ fontSize: 13 }}>
+    <ContentLayout
+      title="Bancos"
+      subtitle="Cuentas donde recibes pago móvil. Una de producción y una de pruebas pueden convivir."
+      actions={
+        banesco ? (
+          <BanksPanel
+            displayName={banesco.displayName}
+            environments={banesco.environments}
+            credentialGroups={banesco.credentialGroups}
+            hasAccount={accounts.length > 0}
+          />
+        ) : undefined
+      }
+    >
+      {accounts.length === 0 ? (
+        <section className="box">
+          <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
             Todavía no tienes ningún banco conectado.
           </p>
-        ) : (
-          accounts.map((account) => (
-            <BankAccountCard
-              key={account.id}
-              bank={account.bank}
-              environment={account.environment}
-              status={account.status}
-              accountLast4={account.accountLast4}
-              accountType={account.accountType}
-              verifiedAt={account.verifiedAt}
-            />
-          ))
-        )}
-      </div>
-
-      {banesco && (
-        <BanksPanel
-          displayName={banesco.displayName}
-          environments={banesco.environments}
-          credentialGroups={banesco.credentialGroups}
-          hasAccount={accounts.length > 0}
-        />
+        </section>
+      ) : (
+        accounts.map((account) => (
+          <BankAccountCard
+            key={account.id}
+            bank={account.bank}
+            environment={account.environment}
+            status={account.status}
+            accountLast4={account.accountLast4}
+            accountType={account.accountType}
+            verifiedAt={account.verifiedAt}
+          />
+        ))
       )}
-    </main>
+    </ContentLayout>
   );
 }

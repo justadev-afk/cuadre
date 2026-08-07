@@ -10,6 +10,7 @@ import { useState } from 'react';
 
 import type { BankCredentialGroup } from '../../../application/ports/bank-gateway.ts';
 import { Icon } from '../../_components/icon.tsx';
+import { ModalBackdrop } from '../../_components/modal.tsx';
 import { ConnectWizard } from './connect-wizard.tsx';
 
 type BanksPanelProps = {
@@ -41,7 +42,7 @@ export function BanksPanel({
       </button>
 
       {open && (
-        <div className="dialog-backdrop">
+        <ModalBackdrop onClose={() => setOpen(false)}>
           <div
             role="dialog"
             aria-modal="true"
@@ -56,7 +57,7 @@ export function BanksPanel({
               onClose={() => setOpen(false)}
             />
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </>
   );

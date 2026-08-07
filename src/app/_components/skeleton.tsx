@@ -12,11 +12,6 @@
 export const SKELETON_ROW_HEIGHT = 38;
 export const SKELETON_CARD_HEIGHT = 52;
 
-/** Staggered so the block reads as loading rather than as a broken gradient. */
-function delayFor(index: number): string {
-  return `${(index * 0.09).toFixed(2)}s`;
-}
-
 export function SkeletonLine({ width = '100%', height = 11 }: { width?: string; height?: number }) {
   return <div className="sk" style={{ width, height }} />;
 }
@@ -34,7 +29,6 @@ export function SkeletonCards({ count = 3, height = SKELETON_CARD_HEIGHT }) {
             borderRadius: 'var(--radius-md)',
             background: 'var(--color-surface)',
             boxShadow: 'var(--shadow-sm)',
-            animationDelay: delayFor(i),
           }}
         />
       ))}
@@ -60,7 +54,7 @@ export function SkeletonTable({
   } as const;
 
   const rule =
-    'linear-gradient(to right, transparent, color-mix(in srgb, var(--color-text) 8%, transparent) 48px, color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 48px), transparent) no-repeat bottom / 100% 1px';
+    'linear-gradient(to right, transparent, color-mix(in srgb, var(--color-text) 8%, transparent) 20px, color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px), transparent) no-repeat bottom / 100% 1px';
 
   return (
     <div>
@@ -87,7 +81,6 @@ export function SkeletonTable({
               style={{
                 height: 11,
                 width: `${[100, 70, 60, 80, 66][i % 5]}%`,
-                animationDelay: delayFor(row),
               }}
             />
           ))}

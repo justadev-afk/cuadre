@@ -35,6 +35,13 @@ export type ChargeInput = {
    * customer's real payment, so nothing false can be confirmed with it.
    */
   readonly environment: BankEnvironment;
+  /**
+   * Optional: scope the search to one of the company's accounts. Absent — the
+   * default — asks every connected account for the environment in turn. Safe
+   * through the client for the same reason as `environment`: the use case scopes
+   * by `companyId`, so a tampered id reaches at worst this company's own account.
+   */
+  readonly accountId?: string;
 };
 
 /** The confirmed payment, as the receipt on screen 17 states it. */

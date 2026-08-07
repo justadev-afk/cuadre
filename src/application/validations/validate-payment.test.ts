@@ -238,9 +238,9 @@ async function harness(
 
   const validatePayment = makeValidatePayment({
     accounts: {
-      async findActiveForCompany(companyId, environment) {
-        if (account === null || companyId !== account.companyId) return null;
-        return account.environment === environment ? account : null;
+      async listActiveForCompany(companyId, environment) {
+        if (account === null || companyId !== account.companyId) return [];
+        return account.environment === environment ? [account] : [];
       },
     },
     validations,
@@ -574,5 +574,140 @@ describe('validate payment', () => {
     await validatePayment(INPUT);
 
     expect(validations.rows[0]?.sourceBankId).toBe('0172');
+  });
+});
+
+/**
+ * A company can have more than one receiving account for an environment. The
+ * counter asks each in turn — a payment lands in exactly one — and an explicit
+ * `accountId` scopes to just that one. These build the use case directly so the
+ * accounts reader can return two accounts with different numbers.
+ */
+describe('validate payment across accounts', () => {
+  const AccA = '01340000000000000001';
+  const AccB = '01340000000000000002';
+
+  async function twoAccounts(): Promise<readonly BankAccount[]> {
+    return [
+      await bankAccount({ id: 'account-a', accountNumber: await seal(CREDS_KEY, AccA) }),
+      await bankAccount({ id: 'account-b', accountNumber: await seal(CREDS_KEY, AccB) }),
+    ];
+  }
+
+  /** A gateway that reports the movement only on the account holding `paidTo`. */
+  function gatewayReporting(paidTo: string) {
+    const asked: string[] = [];
+    const gateway: BankGateway = {
+      id: 'banesco',
+      displayName: 'Banesco',
+      environments: ['production', 'sandbox'],
+      credentialGroups: [
+        { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
+      ],
+      async authenticate() {
+        return ok(SESSION);
+      },
+      async listAccounts() {
+        return ok([]);
+      },
+      async findPayment(_session, query) {
+        asked.push(query.accountId);
+        return query.accountId === paidTo ? ok(found()) : ok(null);
+      },
+      async listMovements() {
+        return ok([]);
+      },
+    };
+    return { banks: { get: () => gateway }, asked };
+  }
+
+  function build(
+    list: readonly BankAccount[],
+    banks: { get: () => BankGateway },
+    validations: ReturnType<typeof fakeValidations>,
+    metrics: ReturnType<typeof fakeMetrics>['metrics'],
+  ) {
+    return makeValidatePayment({
+      accounts: {
+        async listActiveForCompany() {
+          return list;
+        },
+      },
+      validations,
+      banks,
+      metrics,
+      clock: fixedClock(NOW),
+      ids: fakeIdGen({ uuids: ['validation-1'], digits: ['654321'] }),
+      credsKey: CREDS_KEY,
+    });
+  }
+
+  it('walks to the account that reports the movement and confirms there', async () => {
+    const { banks, asked } = gatewayReporting(AccB);
+    const validations = fakeValidations();
+    const { metrics, points } = fakeMetrics();
+    const validate = build(await twoAccounts(), banks, validations, metrics);
+
+    const result = await validate(INPUT);
+
+    expect(result).toMatchObject({ ok: true, value: { kind: 'confirmed' } });
+    // Asked A first (null), then B (the movement): two round trips, in order.
+    expect(asked).toEqual([AccA, AccB]);
+    expect(validations.rows[0]?.bankAccountId).toBe('account-b');
+    // One metric for the attempt, attributed to the account that answered.
+    expect(points).toHaveLength(1);
+    expect(points[0]?.outcome).toBe('confirmed');
+  });
+
+  it('stops at the first account that has the payment', async () => {
+    const { banks, asked } = gatewayReporting(AccA);
+    const validations = fakeValidations();
+    const { metrics } = fakeMetrics();
+    const validate = build(await twoAccounts(), banks, validations, metrics);
+
+    await validate(INPUT);
+
+    // A has it, so B is never asked — no wasted round trip at the counter.
+    expect(asked).toEqual([AccA]);
+    expect(validations.rows[0]?.bankAccountId).toBe('account-a');
+  });
+
+  it('scopes to the chosen account when accountId is given', async () => {
+    const { banks, asked } = gatewayReporting(AccB);
+    const validations = fakeValidations();
+    const { metrics } = fakeMetrics();
+    const validate = build(await twoAccounts(), banks, validations, metrics);
+
+    const result = await validate({ ...INPUT, accountId: 'account-b' });
+
+    expect(result).toMatchObject({ ok: true, value: { kind: 'confirmed' } });
+    // Only B was asked — A was out of scope.
+    expect(asked).toEqual([AccB]);
+  });
+
+  it('is not_found when no account reports it, and asks them all', async () => {
+    const { banks, asked } = gatewayReporting('nobody');
+    const validations = fakeValidations();
+    const { metrics, points } = fakeMetrics();
+    const validate = build(await twoAccounts(), banks, validations, metrics);
+
+    const result = await validate(INPUT);
+
+    expect(result).toMatchObject({ ok: true, value: { kind: 'not_found' } });
+    expect(asked).toEqual([AccA, AccB]);
+    expect(points).toHaveLength(1);
+    expect(points[0]?.outcome).toBe('not_found');
+  });
+
+  it('treats a stale chosen accountId as no account', async () => {
+    const { banks, asked } = gatewayReporting(AccA);
+    const validations = fakeValidations();
+    const { metrics } = fakeMetrics();
+    const validate = build(await twoAccounts(), banks, validations, metrics);
+
+    const result = await validate({ ...INPUT, accountId: 'account-removed' });
+
+    expect(result).toEqual({ ok: false, error: 'no_bank_account' });
+    expect(asked).toEqual([]);
   });
 });

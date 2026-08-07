@@ -66,9 +66,16 @@ export function NewCompanyDialog() {
         Nueva empresa
       </button>
 
+      {/* A click that lands on the dialog element itself is a click on the
+          backdrop (the inner content is a child, so its clicks target that
+          child). Closing there matches Escape and Cancelar. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the native <dialog> already closes on Escape; this onClick only adds backdrop-click to close. */}
       <dialog
         ref={dialogRef}
         onClose={() => setOpen(false)}
+        onClick={(event) => {
+          if (event.target === dialogRef.current) setOpen(false);
+        }}
         style={{ border: 'none', background: 'transparent', padding: 0, maxWidth: '100%' }}
       >
         <div
@@ -106,10 +113,11 @@ export function NewCompanyDialog() {
                   className="input tnum"
                   id="nc-rif"
                   name="rif"
-                  placeholder="J-40123456-7"
+                  placeholder="J-00000000-0"
                   inputMode="text"
                   autoCapitalize="characters"
                   spellCheck={false}
+                  maxLength={13}
                   value={rif}
                   onChange={(e) => setRif(maskRif(e.target.value))}
                   required

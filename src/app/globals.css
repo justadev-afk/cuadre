@@ -411,19 +411,29 @@ select.input { appearance: none; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--color-text) 60%, transparent);
-  padding: var(--space-2);
+  padding: 11px 14px;
   border-bottom: 1px solid transparent;
 }
 .table td {
-  padding: var(--space-2);
+  padding: 13px 14px;
   border-bottom: 1px solid transparent;
+}
+/* A comfortable gutter on the outer edges, so cells never touch the box border
+   and the row underline fades in from the same inset. */
+.table th:first-child,
+.table td:first-child {
+  padding-left: 20px;
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: 20px;
 }
 .table thead tr {
   background: linear-gradient(
       to right,
       transparent,
-      var(--color-divider) 48px,
-      var(--color-divider) calc(100% - 48px),
+      var(--color-divider) 20px,
+      var(--color-divider) calc(100% - 20px),
       transparent
     )
     no-repeat bottom / 100% 1px;
@@ -432,8 +442,8 @@ select.input { appearance: none; }
   background: linear-gradient(
       to right,
       transparent,
-      color-mix(in srgb, var(--color-text) 8%, transparent) 48px,
-      color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 48px),
+      color-mix(in srgb, var(--color-text) 8%, transparent) 20px,
+      color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px),
       transparent
     )
     no-repeat bottom / 100% 1px;
@@ -515,7 +525,7 @@ select.input { appearance: none; }
 .sk {
   border-radius: var(--radius-sm);
   background: var(--color-neutral-800);
-  animation: sk 1.4s ease-in-out infinite;
+  animation: sk 0.85s ease-in-out infinite;
 }
 
 .spinner {
@@ -1106,6 +1116,9 @@ select.input { appearance: none; }
 .till {
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: 1040px;
+  margin-inline: auto;
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
 }
@@ -1132,11 +1145,21 @@ select.input { appearance: none; }
   display: flex;
   flex-direction: column;
 }
+/* A row is a button — tapping it re-opens that charge read-only. It keeps the
+   hairline underline of the old static row and reads like plain text until
+   hovered, when it lifts a touch. */
 .till-recent-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 0;
+  width: 100%;
+  padding: 9px 6px;
+  margin-inline: -6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   background: linear-gradient(
       to right,
       transparent,
@@ -1145,6 +1168,9 @@ select.input { appearance: none; }
       transparent
     )
     no-repeat bottom / 100% 1px;
+}
+.till-recent-row:hover {
+  background-color: color-mix(in srgb, var(--color-text) 6%, transparent);
 }
 
 .cx-kicker {
@@ -1307,17 +1333,124 @@ select.input { appearance: none; }
   }
 }
 
-/* ══ one page width for every screen ═══════════════════════════════════════
-   Navigating between screens must never resize the content column, so every
-   screen's body sits in this one container — same max-width, same gutter — and
-   sections inside are separated with bordered cards, never by changing width. */
+/* ══ the content frame every screen shares ═════════════════════════════════
+   Navigating between screens must never resize the column, so every screen's
+   body sits in this one frame — same max-width, same gutter, title always
+   left-aligned in the same place. The body is one or more bordered `.box`
+   sections; sections are separated by boxes, never by changing the width. An
+   optional right `aside` (the counter's "mi turno") turns it into two columns
+   with the header staying over the main column. */
+.content {
+  width: 100%;
+  max-width: 1040px;
+  /* Left-aligned, not centred: the content hugs the sidebar with one gutter,
+     the same on every screen, rather than floating in the middle of the width. */
+  margin-inline: 0;
+  padding: 26px 28px 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'head'
+    'body';
+  align-content: start;
+  gap: 18px 24px;
+}
+.content-with-aside {
+  /* Wide enough that "Cobrado" holds bolívares into the millions on one line. */
+  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-areas:
+    'head  asidehead'
+    'body  aside';
+  align-items: start;
+}
+.content-head {
+  grid-area: head;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+/* The aside's own title, sat in its own header row so it lines up level with
+   the main title — "Mi turno" beside "Validar pago móvil", not floating lower. */
+.content-aside-head {
+  grid-area: asidehead;
+}
+.content-aside-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 21px;
+  font-weight: var(--font-heading-weight);
+  letter-spacing: -0.01em;
+}
+.content-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 21px;
+  font-weight: var(--font-heading-weight);
+  letter-spacing: -0.01em;
+}
+.content-sub {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.content-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.content-body {
+  grid-area: body;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.content-aside {
+  grid-area: aside;
+  align-self: stretch;
+}
+
+/* The standard section: a bordered card at our standard radius. Every screen
+   groups related content into these. */
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+.box-lg {
+  padding: 26px 28px;
+}
+.box-quiet {
+  background: var(--color-neutral-900);
+}
+
+@media (max-width: 900px) {
+  .content {
+    padding: 18px 16px 28px;
+  }
+  .content-with-aside {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'head'
+      'body'
+      'aside';
+  }
+}
+
+/* `.page` and `.panel` are the pre-frame names, kept as aliases while screens
+   migrate to `.content`/`.box`. New screens use the frame above. */
 .page {
   width: 100%;
   max-width: 1040px;
   margin-inline: auto;
   padding: 26px 28px 40px;
 }
-/* A titled section inside a page: a bordered card that groups related content. */
 .panel {
   display: flex;
   flex-direction: column;
@@ -1326,6 +1459,120 @@ select.input { appearance: none; }
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
+}
+
+/* ══ searchable dropdown (combobox) ════════════════════════════════════════
+   A trigger that reads like an `.input`, a popover with a filter box and a
+   scrollable list. The counter's bank emisor uses it — every Venezuelan bank
+   in one place without a mile of native <select>. */
+.combo {
+  position: relative;
+}
+.combo-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.combo-trigger:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.combo-placeholder {
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+.combo-caret {
+  flex: none;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.combo-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 288px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.combo-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  box-shadow: inset 0 -1px 0 var(--color-divider);
+}
+.combo-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  caret-color: var(--color-accent);
+}
+.combo-search-input:focus-visible {
+  outline: none;
+}
+.combo-list {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow-y: auto;
+}
+.combo-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.combo-opt[data-active] {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+.combo-opt[aria-selected='true'] {
+  color: var(--color-accent);
+}
+.combo-opt-hint {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+}
+.combo-opt[aria-selected='true'] .combo-opt-hint {
+  color: inherit;
+}
+.combo-opt-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combo-opt-check {
+  flex: none;
+}
+.combo-empty {
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
 }
 
 /* ══ toasts — a fixed overlay, so a failed action never resizes a dialog ════ */

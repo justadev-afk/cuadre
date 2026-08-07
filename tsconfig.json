@@ -30,6 +30,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "worker/**/*.ts",
+    "middleware.ts",
     "vite.config.ts",
     "next-env.d.ts",
     ".next/types/**/*.ts"

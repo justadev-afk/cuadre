@@ -18,8 +18,9 @@ import { useActionState, useEffect, useState } from 'react';
 
 import type { BankCredentialGroup } from '../../../application/ports/bank-gateway.ts';
 import { formatBolivares } from '../../../domain/money.ts';
-import { FormNote } from '../../_components/form-note.tsx';
 import { Icon } from '../../_components/icon.tsx';
+import { maskAccountNumber } from '../../_lib/masks.ts';
+import { toast } from '../../_lib/toast.ts';
 import { connectBankAction, verifyBankAction } from './actions.ts';
 import { CONNECT_INITIAL, type SelectableAccountView, VERIFY_INITIAL } from './form-state.ts';
 
@@ -48,6 +49,20 @@ export function ConnectWizard({
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const setField = (key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value }));
+
+  // A rejected credential set shows as a toast, never as an error line in the
+  // form — the modal must not resize under the fields as the message appears.
+  useEffect(() => {
+    if (verify.step === 'error') toast(verify.message);
+  }, [verify]);
+
+  // The verify button waits on the required (operate) group being filled — a
+  // realtime check, so an empty submit is never even offered.
+  const canVerify = credentialGroups
+    .filter((group) => group.required)
+    .every((group) =>
+      group.fields.every((f) => (values[fieldKey(group.key, f.name)] ?? '').trim() !== ''),
+    );
 
   // Once the credentials verify, the wizard moves to choosing the account.
   if (verify.step === 'accounts') {
@@ -101,6 +116,7 @@ export function ConnectWizard({
                 value={env}
                 checked={environment === env}
                 onChange={() => setEnvironment(env)}
+                disabled={verifying}
               />
               <Icon name={env === 'sandbox' ? 'flask' : 'broadcast'} />
               {env === 'production' ? 'Producción' : 'Sandbox'}
@@ -144,14 +160,11 @@ export function ConnectWizard({
                   value={values[key] ?? ''}
                   onChange={(e) => setField(key, e.target.value)}
                   required={group.required}
+                  disabled={verifying}
                 />
               </div>
             );
           })}
-
-          {verify.step === 'error' && verify.groupKey === group.key && (
-            <FormNote tone="error">{verify.message}</FormNote>
-          )}
         </div>
       ))}
 
@@ -159,7 +172,7 @@ export function ConnectWizard({
         <button type="button" className="btn btn-secondary" onClick={onClose}>
           Cancelar
         </button>
-        <button type="submit" className="btn btn-primary" disabled={verifying}>
+        <button type="submit" className="btn btn-primary" disabled={verifying || !canVerify}>
           <Icon name="plugs-connected" />
           {verifying ? 'Verificando…' : 'Verificar credenciales'}
         </button>
@@ -197,6 +210,17 @@ function AccountStep({
     if (connect.step === 'done') onClose();
   }, [connect.step, onClose]);
 
+  // A connect failure is a toast, not an error line — same no-resize rule.
+  useEffect(() => {
+    if (connect.step === 'error') toast(connect.message);
+  }, [connect]);
+
+  // A Venezuelan account number is exactly 20 digits: Guardar waits for all 20,
+  // and a partial number turns the field red as it is typed.
+  const typedDigits = typed.replace(/\D/g, '');
+  const accountComplete = typedDigits.length === 20;
+  const accountInvalid = typedDigits.length > 0 && !accountComplete;
+
   const saveLabel = connecting
     ? 'Guardando…'
     : environment === 'sandbox'
@@ -224,14 +248,16 @@ function AccountStep({
         <div className="field">
           <label htmlFor="manual-account">Número de cuenta (20 dígitos)</label>
           <input
-            className="input tnum"
+            className={`input tnum${accountInvalid ? ' input-invalid' : ''}`}
             id="manual-account"
             inputMode="numeric"
             autoComplete="off"
             spellCheck={false}
+            maxLength={24}
             placeholder="0134 0000 0000 0000 0000"
             value={typed}
-            onChange={(e) => setTyped(e.target.value.replace(/[^\d\s]/g, ''))}
+            onChange={(e) => setTyped(maskAccountNumber(e.target.value))}
+            disabled={connecting}
             style={{ fontFamily: 'ui-monospace, monospace' }}
           />
           {hasAccounts && (
@@ -240,6 +266,7 @@ function AccountStep({
               className="btn btn-ghost"
               style={{ marginTop: 8, alignSelf: 'flex-start', fontSize: 12 }}
               onClick={() => setTyping(false)}
+              disabled={connecting}
             >
               <Icon name="arrow-left" />
               Volver a la lista
@@ -255,6 +282,7 @@ function AccountStep({
                 type="button"
                 key={account.accountId}
                 onClick={() => setChosen(account.accountId)}
+                disabled={connecting}
                 className="card elev-sm"
                 style={{
                   flexDirection: 'row',
@@ -296,6 +324,7 @@ function AccountStep({
             className="btn btn-ghost"
             style={{ alignSelf: 'flex-start', fontSize: 12 }}
             onClick={() => setTyping(true)}
+            disabled={connecting}
           >
             La cuenta no está en la lista — escribir el número
           </button>
@@ -315,16 +344,14 @@ function AccountStep({
         <span>Solo leemos los movimientos del día de esta cuenta. Cuadre no mueve dinero.</span>
       </div>
 
-      {connect.step === 'error' && <FormNote tone="error">{connect.message}</FormNote>}
-
       <div className="dialog-actions">
-        <button type="button" className="btn btn-secondary" onClick={onClose}>
+        <button type="button" className="btn btn-secondary" onClick={onClose} disabled={connecting}>
           Cancelar
         </button>
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={connecting || (typing ? typed.trim() === '' : chosen === '')}
+          disabled={connecting || (typing ? !accountComplete : chosen === '')}
         >
           {saveLabel}
         </button>

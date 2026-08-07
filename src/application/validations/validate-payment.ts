@@ -53,7 +53,13 @@ import type { IdGen } from '../../shared/id.ts';
 import { logger, maskReference } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import { type AccountCredentials, credentialsByUsage } from '../banking/account-credentials.ts';
-import type { BankEnvironment, BankFailure, BankGateway, BankId } from '../ports/bank-gateway.ts';
+import type {
+  BankEnvironment,
+  BankFailure,
+  BankGateway,
+  BankId,
+  FoundPayment,
+} from '../ports/bank-gateway.ts';
 
 /**
  * The ports, declared here and structurally.
@@ -66,10 +72,10 @@ import type { BankEnvironment, BankFailure, BankGateway, BankId } from '../ports
  * classes that produce them are not.
  */
 type BankAccountReader = {
-  findActiveForCompany(
+  listActiveForCompany(
     companyId: string,
     environment: BankEnvironment,
-  ): Promise<BankAccount | null>;
+  ): Promise<readonly BankAccount[]>;
 };
 
 type ValidationWriter = {
@@ -110,6 +116,12 @@ export type ValidatePaymentInput = {
   readonly idempotencyKey: string;
   /** Which of the company's accounts answers. Production unless asked. */
   readonly environment?: BankEnvironment;
+  /**
+   * Scope the search to one of the company's accounts. Absent — the default —
+   * asks every usable account for the environment in turn. Scoped by `companyId`
+   * either way, so a tampered id reaches at worst this company's own account.
+   */
+  readonly accountId?: string;
 };
 
 /**
@@ -179,23 +191,34 @@ export function makeValidatePayment({
       return outcome({ kind: 'confirmed', validation: replay });
     }
 
-    // ── 2. the account, then the secrets ──────────────────────────────────
+    // ── 2. the accounts, then the secrets ─────────────────────────────────
     const environment = input.environment ?? 'production';
-    const account = await accounts.findActiveForCompany(input.companyId, environment);
-    if (account === null) {
+    const usable = await accounts.listActiveForCompany(input.companyId, environment);
+    // An explicit choice scopes to one account; otherwise the counter asks each
+    // usable account in turn. A stale chosen id — the account was removed since
+    // the till loaded — narrows to nothing and reads as "no account", the same
+    // as none connected.
+    const candidates = input.accountId ? usable.filter((a) => a.id === input.accountId) : usable;
+    if (candidates.length === 0) {
       // Deliberately unrecorded: the metrics point is keyed by bank and
       // environment, and there is no bank in this story to attribute it to.
       logger.warn('validation_no_bank_account', { companyId: input.companyId, environment });
       return err('no_bank_account');
     }
 
-    const record = (point: {
-      outcome: AttemptOutcome;
-      strategy: SearchStrategy;
-      bankStatus?: string | null;
-      /** Only ever the bank's own figure, and only when a movement matched. */
-      amountCents?: number;
-    }): void => {
+    // One metric per attempt. The loop below finds the account the bank reports
+    // the movement on (or the last bank that would not answer), and the single
+    // point is recorded once, after — attributed to that account.
+    const record = (
+      account: BankAccount,
+      point: {
+        outcome: AttemptOutcome;
+        strategy: SearchStrategy;
+        bankStatus?: string | null;
+        /** Only ever the bank's own figure, and only when a movement matched. */
+        amountCents?: number;
+      },
+    ): void => {
       metrics.record({
         companyId: input.companyId,
         bank: account.bank,
@@ -208,48 +231,71 @@ export function makeValidatePayment({
       });
     };
 
-    const secrets = await openAccount(credsKey, account);
-    const gateway = banks.get(account.bank);
+    // Walk the accounts until one reports the movement. A payment lands in a
+    // single receiving account, so at most one answers with a movement and the
+    // rest answer null; the first hit wins and the loop stops — no extra round
+    // trips at the counter once the payment is found. A bank that will not
+    // answer at all is remembered, and surfaced only if no account has the
+    // payment: a bank being down outranks "todavía no aparece".
+    let deciding: { account: BankAccount; payment: FoundPayment } | null = null;
+    let failure: { account: BankAccount; error: BankFailure } | null = null;
 
-    // The counter runs on the operate pair — Banesco's Confirmación. The gateway
-    // says which key that is; the other pairs, if any, only listed accounts at
-    // onboarding and have no business here.
-    const operate = credentialsByUsage(gateway.credentialGroups, secrets.credentials, 'operate');
-    if (operate === null) {
-      throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
-    }
+    for (const account of candidates) {
+      const secrets = await openAccount(credsKey, account);
+      const gateway = banks.get(account.bank);
 
-    const session = await gateway.authenticate(account.environment, operate);
-    if (!session.ok) {
-      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: session.error });
-      return err(toCounterFailure(session.error));
-    }
+      // The counter runs on the operate pair — Banesco's Confirmación. The
+      // gateway says which key that is; the other pairs, if any, only listed
+      // accounts at onboarding and have no business here.
+      const operate = credentialsByUsage(gateway.credentialGroups, secrets.credentials, 'operate');
+      if (operate === null) {
+        throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
+      }
 
-    const found = await gateway.findPayment(session.value, {
-      accountId: secrets.accountNumber,
-      reference: claim.reference,
-      payerPhone: claim.payerPhone,
-      sourceBankId: claim.sourceBankId,
-      onDate: venezuelaDate(clock.nowSeconds()),
-      sessionId: input.sessionId,
-    });
-    if (!found.ok) {
-      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: found.error });
-      return err(toCounterFailure(found.error));
+      const session = await gateway.authenticate(account.environment, operate);
+      if (!session.ok) {
+        failure = { account, error: session.error };
+        continue;
+      }
+
+      const found = await gateway.findPayment(session.value, {
+        accountId: secrets.accountNumber,
+        reference: claim.reference,
+        payerPhone: claim.payerPhone,
+        sourceBankId: claim.sourceBankId,
+        onDate: venezuelaDate(clock.nowSeconds()),
+        sessionId: input.sessionId,
+      });
+      if (!found.ok) {
+        failure = { account, error: found.error };
+        continue;
+      }
+
+      if (found.value !== null) {
+        deciding = { account, payment: found.value };
+        break;
+      }
     }
 
     // ── 3. the verdict ────────────────────────────────────────────────────
-    const payment = found.value;
-    if (payment === null) {
-      record({ outcome: 'not_found', strategy: 'none' });
+    if (deciding === null) {
+      if (failure !== null) {
+        record(failure.account, {
+          outcome: 'bank_failure',
+          strategy: 'none',
+          bankStatus: failure.error,
+        });
+        return err(toCounterFailure(failure.error));
+      }
+      record(candidates[0], { outcome: 'not_found', strategy: 'none' });
       logger.info('payment_not_found', {
         companyId: input.companyId,
-        bank: account.bank,
         reference: maskReference(claim.reference),
       });
       return outcome({ kind: 'not_found' });
     }
 
+    const { account, payment } = deciding;
     const verdict = matchPayment({
       movement: payment.movement,
       expected: { reference: claim.reference, amountCents: claim.amountCents },
@@ -266,7 +312,7 @@ export function makeValidatePayment({
       // the dataset without inventing a code the schema does not have:
       // `outcome = 'not_found' AND search_strategy <> 'none'` is exactly the
       // set of attempts where the bank had a movement and it did not match.
-      record({ outcome: 'not_found', strategy: payment.strategy, bankStatus: reason });
+      record(account, { outcome: 'not_found', strategy: payment.strategy, bankStatus: reason });
       logger.info('payment_rejected', {
         companyId: input.companyId,
         bank: account.bank,
@@ -318,7 +364,7 @@ export function makeValidatePayment({
       });
 
       if (written.outcome === 'inserted') {
-        record({
+        record(account, {
           outcome: 'confirmed',
           strategy: payment.strategy,
           amountCents: movement.amountCents,
@@ -336,7 +382,7 @@ export function makeValidatePayment({
       // Another cashier charged this payment first. There is nothing to retry:
       // the index refused the payment, not the code.
       if (written.outcome === 'duplicate_payment') {
-        record({
+        record(account, {
           outcome: 'already_charged',
           strategy: payment.strategy,
           amountCents: movement.amountCents,

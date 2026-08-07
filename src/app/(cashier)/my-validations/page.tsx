@@ -6,6 +6,7 @@
  * scoped to this cashier's id and this company's id — a cashier sees their own
  * work and nothing of the till beside them.
  */
+import { ContentLayout } from '../../_components/content-layout.tsx';
 import { NoValidations, ValidationCards } from '../../_components/validation-list.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
@@ -42,24 +43,10 @@ export default async function MyValidationsPage({
   const nowSeconds = Math.floor(list.to || Date.now() / 1000);
 
   return (
-    <main
-      style={{
-        padding: '20px 18px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        maxWidth: 720,
-        marginInline: 'auto',
-        width: '100%',
-      }}
+    <ContentLayout
+      title="Mis validaciones"
+      subtitle={`${list.items.length} ${list.items.length === 1 ? 'pago' : 'pagos'} en este rango`}
     >
-      <div>
-        <h4 style={{ margin: 0 }}>Mis validaciones</h4>
-        <span className="text-muted" style={{ fontSize: 12 }}>
-          {list.items.length} {list.items.length === 1 ? 'pago' : 'pagos'} en este rango
-        </span>
-      </div>
-
       <div className="seg" style={{ width: '100%' }}>
         {RANGE_TABS.map((tab) => (
           <a
@@ -87,7 +74,7 @@ export default async function MyValidationsPage({
       ) : (
         <ValidationCards items={list.items} nowSeconds={nowSeconds} />
       )}
-    </main>
+    </ContentLayout>
   );
 }
 

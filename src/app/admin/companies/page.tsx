@@ -8,6 +8,7 @@
  */
 import Link from 'next/link';
 
+import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
@@ -30,26 +31,14 @@ export default async function CompaniesPage({
   const suspendedCount = items.filter((c) => c.status === 'suspended').length;
 
   return (
-    <main style={{ padding: '28px 24px', maxWidth: 1120, marginInline: 'auto', width: '100%' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 16,
-          marginBottom: 20,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <h4 style={{ margin: '0 0 2px' }}>Empresas</h4>
-          <span className="text-muted" style={{ fontSize: 13 }}>
-            {activeCount} {activeCount === 1 ? 'activa' : 'activas'}
-            {suspendedCount > 0 &&
-              ` · ${suspendedCount} suspendida${suspendedCount === 1 ? '' : 's'}`}{' '}
-            · {total} en total
-          </span>
-        </div>
+    <ContentLayout
+      title="Empresas"
+      subtitle={`${activeCount} ${activeCount === 1 ? 'activa' : 'activas'}${
+        suspendedCount > 0
+          ? ` · ${suspendedCount} suspendida${suspendedCount === 1 ? '' : 's'}`
+          : ''
+      } · ${total} en total`}
+      actions={
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <form>
             <input
@@ -62,14 +51,19 @@ export default async function CompaniesPage({
           </form>
           <NewCompanyDialog />
         </div>
-      </div>
-
+      }
+    >
       {items.length === 0 ? (
-        <p className="text-muted" style={{ fontSize: 14, padding: '32px 0', textAlign: 'center' }}>
-          No hay empresas que coincidan.
-        </p>
+        <section className="box">
+          <p
+            className="text-muted"
+            style={{ fontSize: 14, padding: '20px 0', textAlign: 'center', margin: 0 }}
+          >
+            No hay empresas que coincidan.
+          </p>
+        </section>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <section className="box" style={{ padding: 0, overflowX: 'auto' }}>
           <table className="table">
             <thead>
               <tr>
@@ -110,9 +104,9 @@ export default async function CompaniesPage({
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
-    </main>
+    </ContentLayout>
   );
 }
 

@@ -3,6 +3,7 @@
  * change, and a way out. The email is read-only here; changing it is not part
  * of the v1.
  */
+import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { initialsOf } from '../../_lib/venezuela-format.ts';
 import { ChangePasswordForm } from './change-password-form.tsx';
@@ -14,8 +15,8 @@ export default async function ProfilePage() {
   const { name, email } = resolved.session;
 
   return (
-    <main style={{ padding: '26px 24px', maxWidth: 460, marginInline: 'auto', width: '100%' }}>
-      <div className="card" style={{ background: 'var(--color-bg)', gap: 14, padding: 24 }}>
+    <ContentLayout title="Ajustes" subtitle="Tu perfil, tu contraseña y la salida.">
+      <section className="box" style={{ gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="avatar" style={{ width: 44, height: 44 }}>
             {initialsOf(name)}
@@ -45,7 +46,7 @@ export default async function ProfilePage() {
             Cerrar sesión
           </button>
         </form>
-      </div>
-    </main>
+      </section>
+    </ContentLayout>
   );
 }

@@ -11,6 +11,7 @@
  */
 
 import { formatBolivares } from '../../../domain/money.ts';
+import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { ValidationCards } from '../../_components/validation-list.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
@@ -58,62 +59,10 @@ export default async function ValidationsPage({
     totals.totalCount === 0 ? 0 : Math.round(totals.totalAmountCents / totals.totalCount);
 
   return (
-    <main style={{ padding: '28px 24px', maxWidth: 1120, marginInline: 'auto', width: '100%' }}>
-      {!hasBank && (
-        <div
-          className="card elev-sm"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 14,
-            padding: 16,
-            marginBottom: 20,
-            boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent)',
-            background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
-          }}
-        >
-          <span
-            className="avatar"
-            style={{
-              width: 40,
-              height: 40,
-              background: 'var(--color-accent-800)',
-              color: 'var(--color-accent-100)',
-              fontSize: 20,
-            }}
-          >
-            <Icon name="bank" />
-          </span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: 15 }}>
-              Conecta un banco para empezar a validar
-            </div>
-            <span className="text-muted" style={{ fontSize: 12 }}>
-              Sin una cuenta conectada, la caja no tiene a quién preguntarle por un pago.
-            </span>
-          </div>
-          <a className="btn btn-primary" href="/banks" style={{ whiteSpace: 'nowrap' }}>
-            <Icon name="plus" />
-            Conectar banco
-          </a>
-        </div>
-      )}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 16,
-          marginBottom: 20,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <h4 style={{ margin: '0 0 2px' }}>Validaciones</h4>
-          <span className="text-muted" style={{ fontSize: 13 }}>
-            Hoy · {totals.totalCount} pagos validados · {formatBolivares(totals.totalAmountCents)}
-          </span>
-        </div>
+    <ContentLayout
+      title="Validaciones"
+      subtitle={`Hoy · ${totals.totalCount} pagos validados · ${formatBolivares(totals.totalAmountCents)}`}
+      actions={
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div className="seg">
             {ENV_TABS.map((tab) => (
@@ -148,9 +97,48 @@ export default async function ValidationsPage({
             />
           </form>
         </div>
-      </div>
+      }
+    >
+      {!hasBank && (
+        <div
+          className="card elev-sm"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 14,
+            padding: 16,
+            boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent)',
+            background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
+          }}
+        >
+          <span
+            className="avatar"
+            style={{
+              width: 40,
+              height: 40,
+              background: 'var(--color-accent-800)',
+              color: 'var(--color-accent-100)',
+              fontSize: 20,
+            }}
+          >
+            <Icon name="bank" />
+          </span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontSize: 15 }}>
+              Conecta un banco para empezar a validar
+            </div>
+            <span className="text-muted" style={{ fontSize: 12 }}>
+              Sin una cuenta conectada, la caja no tiene a quién preguntarle por un pago.
+            </span>
+          </div>
+          <a className="btn btn-primary" href="/banks" style={{ whiteSpace: 'nowrap' }}>
+            <Icon name="plus" />
+            Conectar banco
+          </a>
+        </div>
+      )}
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <StatCard
           kicker="Cobrado hoy"
           value={formatBolivares(totals.totalAmountCents)}
@@ -165,12 +153,17 @@ export default async function ValidationsPage({
       </div>
 
       {list.items.length === 0 ? (
-        <p className="text-muted" style={{ fontSize: 14, padding: '32px 0', textAlign: 'center' }}>
-          No hay validaciones en este filtro.
-        </p>
+        <section className="box">
+          <p
+            className="text-muted"
+            style={{ fontSize: 14, padding: '20px 0', textAlign: 'center', margin: 0 }}
+          >
+            No hay validaciones en este filtro.
+          </p>
+        </section>
       ) : (
         <>
-          <div style={{ overflowX: 'auto' }} className="only-desktop">
+          <section className="box only-desktop" style={{ padding: 0, overflowX: 'auto' }}>
             <table className="table">
               <thead>
                 <tr>
@@ -218,13 +211,13 @@ export default async function ValidationsPage({
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
           <div className="only-mobile">
             <ValidationCards items={list.items} nowSeconds={nowSeconds} />
           </div>
         </>
       )}
-    </main>
+    </ContentLayout>
   );
 }
 

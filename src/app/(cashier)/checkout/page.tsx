@@ -13,7 +13,6 @@
  */
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
-import { formatClock } from '../../_lib/venezuela-format.ts';
 import { CheckoutForm } from './checkout-form.tsx';
 import { NoBankAccount } from './no-bank-account.tsx';
 
@@ -26,7 +25,22 @@ export default async function CheckoutPage() {
   // A cashier always has a company; the type carries null only for a platform
   // admin, whom `requireArea('counter')` already turned away.
   const accounts = companyId ? await container().banking.listBankAccounts({ companyId }) : [];
-  const active = pickActiveAccount(accounts);
+  // Production wins when a company holds both a production and a sandbox account;
+  // sandbox answers a till only when it is all that is connected (the QA case).
+  // Every usable account for that environment is offered — the counter asks each
+  // in turn, with an optional selector to scope to one.
+  const usable = accounts.filter((a) => a.status === 'active' || a.status === 'needs_reverify');
+  const environment: 'production' | 'sandbox' = usable.some((a) => a.environment === 'production')
+    ? 'production'
+    : 'sandbox';
+  const envAccounts = usable.filter((a) => a.environment === environment);
+  const accountViews = envAccounts.map((a) => ({
+    id: a.id,
+    last4: a.accountLast4,
+    bankName: bankDisplayName(a.bank),
+  }));
+  const bankNames = [...new Set(accountViews.map((a) => a.bankName))];
+  const bankName = bankNames.length === 1 ? (bankNames[0] ?? 'el banco') : 'el banco';
 
   // The "mi turno" pane on the right: today's charges by whoever is signed in.
   const mine = companyId
@@ -38,51 +52,33 @@ export default async function CheckoutPage() {
     : { items: [] };
   const turnoCount = mine.items.length;
   const turnoCents = mine.items.reduce((sum, v) => sum + v.amountCents, 0);
+  // The full charge per row, so tapping one in "mi turno" re-opens it read-only.
   const recent = mine.items.slice(0, 6).map((v) => ({
     controlCode: v.controlCode,
+    reference: v.reference,
     amountCents: v.amountCents,
-    label: `${formatClock(v.trnAt)} · ref ${v.reference} · ${v.sourceBankId}`,
+    payerPhone: v.payerPhone,
+    createdAt: v.createdAt,
+    isSandbox: v.isSandbox,
+    latencyMs: v.latencyMs,
+    sourceBankId: v.sourceBankId,
   }));
 
-  if (active === null) return <NoBankAccount />;
+  if (accountViews.length === 0) return <NoBankAccount />;
 
   // Full width — the till is a two-pane layout that fills the shell's content
   // column. The header is the shell's, which reads the session's role, so a
   // company owner working the till keeps their own left rail.
   return (
     <CheckoutForm
-      bankName={bankDisplayName(active.bank)}
-      accountLast4={active.accountLast4}
-      environment={active.environment}
+      bankName={bankName}
+      accounts={accountViews}
+      environment={environment}
       recent={recent}
       turnoCount={turnoCount}
       turnoCents={turnoCents}
     />
   );
-}
-
-type ActiveAccount = { bank: string; accountLast4: string; environment: 'production' | 'sandbox' };
-
-/**
- * Which connected account a charge goes to. An active production account is
- * preferred over a sandbox one; a sandbox account answers only when it is the
- * only thing connected. A `needs_reverify` account still answers — closing a
- * till a week before anything is actually wrong is the worse failure.
- */
-function pickActiveAccount(
-  accounts: readonly {
-    bank: string;
-    environment: 'production' | 'sandbox';
-    accountLast4: string;
-    status: string;
-  }[],
-): ActiveAccount | null {
-  const usable = accounts.filter((a) => a.status === 'active' || a.status === 'needs_reverify');
-  const production = usable.find((a) => a.environment === 'production');
-  const chosen = production ?? usable.find((a) => a.environment === 'sandbox') ?? null;
-  return chosen === null
-    ? null
-    : { bank: chosen.bank, accountLast4: chosen.accountLast4, environment: chosen.environment };
 }
 
 /** The only bank today. A registry lookup would be the general form. */

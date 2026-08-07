@@ -1,23 +1,11 @@
+import { ContentLayout } from '../../_components/content-layout.tsx';
 import { SkeletonCards } from '../../_components/skeleton.tsx';
 
-/** The list mid-load: same-height cards, so nothing jumps when they land. */
+/** The list mid-load: the frame and title stay, only the cards are a skeleton. */
 export default function Loading() {
   return (
-    <main
-      style={{
-        padding: '20px 18px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        maxWidth: 720,
-        marginInline: 'auto',
-        width: '100%',
-      }}
-    >
-      <div>
-        <h4 style={{ margin: 0 }}>Mis validaciones</h4>
-      </div>
+    <ContentLayout title="Mis validaciones">
       <SkeletonCards count={6} />
-    </main>
+    </ContentLayout>
   );
 }

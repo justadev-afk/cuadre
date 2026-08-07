@@ -68,6 +68,16 @@ export interface BankAccountRepository {
     companyId: string,
     environment: BankEnvironment,
   ): Promise<BankAccount | null>;
+  /**
+   * Every usable account for this environment, most-recently-verified first —
+   * what the counter asks in turn when no single account is chosen. A merchant
+   * with two receiving accounts has the payment on exactly one of them, and this
+   * is the list the use case walks until the bank reports it.
+   */
+  listActiveForCompany(
+    companyId: string,
+    environment: BankEnvironment,
+  ): Promise<readonly BankAccount[]>;
   markVerified(
     id: string,
     at: number,
@@ -198,6 +208,21 @@ export class D1BankAccountRepository implements BankAccountRepository {
       .bind(companyId, environment)
       .first<D1Row>();
     return row === null ? null : toBankAccount(row);
+  }
+
+  async listActiveForCompany(
+    companyId: string,
+    environment: BankEnvironment,
+  ): Promise<readonly BankAccount[]> {
+    const page = await this.db
+      .prepare(
+        `SELECT ${COLUMNS} FROM bank_accounts
+            WHERE company_id = ? AND environment = ? AND status <> 'removed'
+            ORDER BY (status = 'active') DESC, verified_at DESC, created_at DESC`,
+      )
+      .bind(companyId, environment)
+      .all<D1Row>();
+    return page.results.map(toBankAccount);
   }
 
   /**
