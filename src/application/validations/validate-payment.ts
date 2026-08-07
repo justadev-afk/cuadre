@@ -52,8 +52,9 @@ import { AppError, forbidden } from '../../shared/errors.ts';
 import type { IdGen } from '../../shared/id.ts';
 import { logger, maskReference } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
-import { type AccountCredentials, credentialsByUsage } from '../banking/account-credentials.ts';
+import { type OpenedCredential, operateCredential } from '../banking/account-credentials.ts';
 import type {
+  BankCredentials,
   BankEnvironment,
   BankFailure,
   BankGateway,
@@ -278,10 +279,10 @@ export function makeValidatePayment({
       const secrets = await openAccount(credsKey, account);
       const gateway = banks.get(account.bank);
 
-      // The counter runs on the operate pair — Banesco's Confirmación. The
-      // gateway says which key that is; the other pairs, if any, only listed
-      // accounts at onboarding and have no business here.
-      const operate = credentialsByUsage(gateway.credentialGroups, secrets.credentials, 'operate');
+      // The counter runs on the operate pair — Banesco's Confirmación. A bank
+      // with a single stored pair uses it whatever its usage; the other pairs,
+      // if any, only listed accounts at onboarding and have no business here.
+      const operate = operateCredential(secrets.credentials);
       if (operate === null) {
         throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
       }
@@ -511,10 +512,16 @@ function readClaim(input: ValidatePaymentInput): Result<Claim, 'invalid_input'> 
 async function openAccount(
   credsKey: string,
   account: BankAccount,
-): Promise<{ credentials: AccountCredentials; accountNumber: string }> {
+): Promise<{ credentials: OpenedCredential[]; accountNumber: string }> {
   try {
     const [credentials, accountNumber] = await Promise.all([
-      unseal<AccountCredentials>(credsKey, account.credentials),
+      Promise.all(
+        account.credentials.map(async (stored) => ({
+          credKey: stored.credKey,
+          usage: stored.usage,
+          credentials: await unseal<BankCredentials>(credsKey, stored.credentials),
+        })),
+      ),
       unseal<string>(credsKey, account.accountNumber),
     ]);
     return { credentials, accountNumber };

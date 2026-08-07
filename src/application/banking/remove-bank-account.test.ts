@@ -15,9 +15,11 @@ function account(overrides: Partial<BankAccount> = {}): BankAccount {
     companyId: 'la-espiga',
     bank: 'banesco',
     environment: 'production',
-    credentials: SEALED,
     clientIdLast6: 'client',
     accountNumber: SEALED,
+    credentials: [
+      { credKey: 'main', usage: 'operate', clientIdLast6: 'client', credentials: SEALED },
+    ],
     accountLast4: '8514',
     accountType: 'Corriente',
     holderId: 'J-12345678-9',

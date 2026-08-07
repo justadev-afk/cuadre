@@ -5,22 +5,24 @@
  *
  * The bank and the environment are the account's identity: the per-company
  * unique key is (bank, environment, last4), so neither changes here — to switch
- * bank or environment a merchant connects a *new* account. Only the sealed
- * credentials are rewritten, and the account number is re-sealed alongside them
- * so the row's single key version stays true for both envelopes (see the note
- * in `bank-account.repository.ts`).
+ * bank or environment a merchant connects a *new* account. Only the credential
+ * pairs are rewritten. Each now lives on its own row with its own key version
+ * (migration 0003), so the account number's envelope is left untouched — there
+ * is no shared version to keep true anymore.
  *
  * Nothing about the old secret is read back to the caller; the new pairs are
  * proven the same way onboarding proves them — by authenticating each — and only
- * then sealed onto the row.
+ * then sealed onto their rows.
  */
 import type {
   BankAccount,
   BankAccountWriteFailure,
+  NewStoredCredential,
 } from '../../adapters/d1/bank-account.repository.ts';
 import type { Clock } from '../../shared/clock.ts';
-import { type Sealed, seal, unseal } from '../../shared/crypto.ts';
+import { seal } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
+import type { IdGen } from '../../shared/id.ts';
 import { logger } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import type { BankGateway, BankId } from '../ports/bank-gateway.ts';
@@ -34,10 +36,9 @@ type BankAccess = {
 
 type BankAccountStore = {
   findById(id: string): Promise<BankAccount | null>;
-  updateCredentials(
+  replaceCredentials(
     id: string,
-    credentials: Sealed,
-    accountNumber: Sealed,
+    credentials: readonly NewStoredCredential[],
     clientIdLast6: string | null,
     verifiedAt: number,
   ): Promise<Result<BankAccount, BankAccountWriteFailure>>;
@@ -48,6 +49,7 @@ export type ChangeBankCredentialsDeps = {
   readonly accounts: BankAccountStore;
   readonly credsKey: string;
   readonly clock: Clock;
+  readonly ids: IdGen;
 };
 
 export type ChangeBankCredentialsInput = {
@@ -68,6 +70,7 @@ export function makeChangeBankCredentials({
   accounts,
   credsKey,
   clock,
+  ids,
 }: ChangeBankCredentialsDeps): ChangeBankCredentials {
   return async (input) => {
     const account = await accounts.findById(input.accountId);
@@ -84,8 +87,9 @@ export function makeChangeBankCredentials({
 
     // Every group the merchant filled is authenticated — the strongest proof
     // available without a payment in hand — and the required (operate) one must
-    // be present. Nothing is written unless the bank accepts them.
-    const provided: AccountCredentials = {};
+    // be present. Nothing is written unless the bank accepts them. Each accepted
+    // pair becomes a fresh row, sealed on its own; the whole set replaces the old.
+    const rows: NewStoredCredential[] = [];
     for (const group of gateway.credentialGroups) {
       const pair = input.credentials[group.key];
       const filled = pair !== undefined && pair.clientId !== '' && pair.clientSecret !== '';
@@ -110,24 +114,22 @@ export function makeChangeBankCredentials({
         if (!listed.ok) return err(toOnboardingFailure(listed.error));
         if (listed.value.length === 0) return err('no_accounts');
       }
-      provided[group.key] = pair;
+
+      rows.push({
+        id: ids.uuid(),
+        credKey: group.key,
+        usage: group.usage,
+        clientIdLast6: pair.clientId.slice(-6),
+        credentials: await seal(credsKey, pair),
+      });
     }
 
-    // Re-seal both envelopes at the current key version: the account number is
-    // unchanged in plaintext but re-sealed so its `creds_key_v` matches the new
-    // credentials'. Writing one without the other would break the shared version.
-    const accountNumber = await unseal<string>(credsKey, account.accountNumber).catch(() => {
-      throw new AppError('internal', `account number unreadable for account ${account.id}`);
-    });
-    const sealedCredentials = await seal(credsKey, provided);
-    const sealedAccount = await seal(credsKey, accountNumber);
-    const operate = provided[operateGroup.key];
+    const operate = input.credentials[operateGroup.key];
     const clientIdLast6 = operate === undefined ? null : operate.clientId.slice(-6);
 
-    const updated = await accounts.updateCredentials(
+    const updated = await accounts.replaceCredentials(
       account.id,
-      sealedCredentials,
-      sealedAccount,
+      rows,
       clientIdLast6,
       clock.nowSeconds(),
     );
@@ -137,6 +139,7 @@ export function makeChangeBankCredentials({
       companyId: input.companyId,
       bank: account.bank,
       environment: account.environment,
+      pairs: rows.length,
     });
 
     return ok(toBankAccountView(updated.value));

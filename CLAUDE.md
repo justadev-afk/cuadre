@@ -205,6 +205,11 @@ gateway at call time.
 - **Nothing readable at rest.** The bank client secret and the full account
   number are AES-GCM sealed with a versioned key. What survives in the clear is
   the last 4 of the account and the last 6 of the client id — all the UI shows.
+  Credentials live one pair per row in `bank_account_credentials` (`cred_key`,
+  `usage`, own key version), never as a JSON blob on the account; **an account is
+  written together with at least one pair or not at all** — the invariant is
+  enforced in `D1BankAccountRepository.insert`, not just intended (migration
+  0003).
 - **IPs are stored hashed** with `IP_PEPPER`, never raw.
 - **Migrations** are numbered and forward-only. A destructive migration ships
   alone, after a backup, never with feature work.
@@ -285,7 +290,7 @@ gateway at call time.
   return the test pago móvil. **Proven end to end in the UI**: a cashier
   validated ref `12346090431` → CR Bs 630 → control code `582422`, persisted.
 
-### The two-client problem (open, affects onboarding design)
+### The two-client problem (resolved: a per-pair credentials table)
 
 **Banesco splits its two APIs across two separate OAuth clients that cannot call
 each other's service** (each 403s on the other): Consulta de Cuentas is
@@ -293,12 +298,15 @@ each other's service** (each 403s on the other): Consulta de Cuentas is
 
 The onboarding wizard lists accounts through **Consulta**, but a cashier
 validates through **Confirmación** — so a bank account connected with one client
-**cannot be validated with it**. The one-credential-pair-per-account model is
-wrong for Banesco. **The fix is a bank account that carries both pairs** (a
-schema + wizard change): Consulta for the alta/reconciliation, Confirmación for
-the counter. Until then, `scripts/seed-demo.ts` seeds an account straight to
-"connected" with the Confirmación credentials — enough to validate real
-payments, which is the core.
+**cannot be validated with it**. The one-credential-pair-per-account model was
+wrong for Banesco, and it is now fixed structurally: **an account carries its
+pairs in `bank_account_credentials`, one row each**, keyed by the bank's
+credential-group key (`confirmation`, `consulta`) and tagged with a `usage`
+(`operate` for the counter, `discover` for the alta). `operateCredential` picks
+the pair the counter runs on — the `operate` one, or, for a single-pair bank,
+that lone pair whatever its usage says. Adding a pair is a row, not a column,
+and no use case branches per bank. `scripts/seed-demo.ts` seeds the demo account
+plus its Confirmación row the same way `connect` does.
 
 ### Still open with Banesco
 

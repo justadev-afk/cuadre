@@ -119,7 +119,7 @@ async function harness(
 }
 
 describe('connect bank account', () => {
-  it('seals the account number and the credential map, and keeps only the tails', async () => {
+  it('seals the account number and one row per credential pair, keeping only the tails', async () => {
     const { connectBankAccount, inserted } = await harness();
 
     await connectBankAccount(INPUT);
@@ -138,9 +138,15 @@ describe('connect bank account', () => {
       createdAt: NOW,
     });
     expect(await unseal<string>(CREDS_KEY, row?.accountNumber ?? empty())).toBe(ACCOUNT_NUMBER);
-    // The whole map is sealed as one blob, keyed by service.
-    expect(await unseal(CREDS_KEY, row?.credentials ?? empty())).toEqual({ confirmation: OPERATE });
-    expect(row?.credentials.keyVersion).toBe(row?.accountNumber.keyVersion);
+    // One row per pair, keyed by service; the operate key is marked operate.
+    expect(row?.credentials).toHaveLength(1);
+    const confirmation = row?.credentials[0];
+    expect(confirmation).toMatchObject({
+      credKey: 'confirmation',
+      usage: 'operate',
+      clientIdLast6: 'client',
+    });
+    expect(await unseal(CREDS_KEY, confirmation?.credentials ?? empty())).toEqual(OPERATE);
   });
 
   it('never asks the bank anything — connect only writes', async () => {
@@ -178,7 +184,7 @@ describe('connect bank account', () => {
     expect(await unseal<string>(CREDS_KEY, row?.accountNumber ?? empty())).toBe(
       '01340804108041005394',
     );
-    expect(await unseal(CREDS_KEY, row?.credentials ?? empty())).toEqual({ confirmation: OPERATE });
+    expect(await unseal(CREDS_KEY, row?.credentials[0]?.credentials ?? empty())).toEqual(OPERATE);
   });
 
   it('lets a typed number override the picker when the account is not listed', async () => {

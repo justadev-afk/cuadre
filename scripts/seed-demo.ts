@@ -6,13 +6,15 @@
  * (0fedfa00) — and neither can call the other's service. The onboarding wizard
  * lists accounts through Consulta, but a cashier validates through
  * Confirmación, so a bank account connected with one client cannot be validated
- * with it. Until the model carries both credential pairs, this seeds a bank
- * account straight into the "connected" state with the **Confirmación**
- * credentials, which is what a real pago-móvil validation needs.
+ * with it. This seeds a bank account straight into the "connected" state with a
+ * single **Confirmación** credential pair — which the counter uses whatever its
+ * usage, by the single-credential rule — which is what a real pago-móvil
+ * validation needs.
  *
- * It seals exactly as `connect-bank-account.ts` does — `seal(credsKey, creds)`
- * and `seal(credsKey, accountNumber)` — so `validate-payment.ts` unseals it
- * unchanged. The sealing key must be the one the target environment uses:
+ * It seals exactly as `connect-bank-account.ts` does — the credential pair onto
+ * its own `bank_account_credentials` row and the account number onto the
+ * account — so `validate-payment.ts` unseals it unchanged. The sealing key must
+ * be the one the target environment uses:
  * `.dev.vars`' CREDS_KEY for local, the Worker secret for production. Pass it
  * as the first argument.
  *
@@ -62,15 +64,18 @@ function q(value: string): string {
 
 const now = Math.floor(1_786_060_000); // a fixed recent instant; scripts have no clock
 
-// The account's sealed blob carries both pairs; the demo only has the operate
-// (Confirmación) one, which is all the counter needs. `discover` is null.
-const sealedCreds = await seal(credsKey, { operate: CONFIRMATION, discover: null });
+// One credential pair (Confirmación), sealed onto its own row; the account
+// number sealed onto the account. A single-pair account, so the counter uses
+// this pair whatever its usage.
+const sealedCreds = await seal(credsKey, CONFIRMATION);
 const sealedAccount = await seal(credsKey, ACCOUNT_NUMBER);
+const clientIdLast6 = CONFIRMATION.clientId.slice(-6);
 
 const companyId = COMPANY_ID;
 const cashierId = `demo-cashier-${randomBytes(4).toString('hex')}`;
 const companyUserId = `demo-company-${randomBytes(4).toString('hex')}`;
 const bankAccountId = `demo-bank-${randomBytes(4).toString('hex')}`;
+const credentialId = `demo-cred-${randomBytes(4).toString('hex')}`;
 
 const statements = [
   // Company (idempotent-ish: the slug is the PK).
@@ -82,9 +87,12 @@ const statements = [
   // Cashier: (company_id, username) + PIN. No email, by CHECK constraint.
   `INSERT OR REPLACE INTO users (id, company_id, role, name, email, username, password_hash, status, created_at) VALUES (${q(cashierId)}, ${q(companyId)}, 'cashier', ${q('María Rodríguez')}, NULL, ${q(CASHIER_USERNAME)}, ${q(hashPassword(CASHIER_PIN))}, 'active', ${now});`,
 
-  // The Banesco sandbox account, already "connected": Confirmación credentials
-  // and the full account number, both AES-GCM sealed with the env's CREDS_KEY.
-  `INSERT OR REPLACE INTO bank_accounts (id, company_id, bank, environment, creds_ct, creds_iv, creds_key_v, client_id_last6, account_ct, account_iv, account_last4, account_type, holder_id, verified_at, creds_expire_at, status, created_at) VALUES (${q(bankAccountId)}, ${q(companyId)}, 'banesco', 'sandbox', X'${toHex(sealedCreds.ciphertext)}', X'${toHex(sealedCreds.iv)}', ${sealedCreds.keyVersion}, ${q('fedfa00')}, X'${toHex(sealedAccount.ciphertext)}', X'${toHex(sealedAccount.iv)}', '5394', 'DDA', ${q('J003075523')}, ${now}, NULL, 'active', ${now});`,
+  // The Banesco sandbox account, already "connected": the full account number
+  // AES-GCM sealed with the env's CREDS_KEY, on its own key version.
+  `INSERT OR REPLACE INTO bank_accounts (id, company_id, bank, environment, client_id_last6, account_ct, account_iv, account_key_v, account_last4, account_type, holder_id, verified_at, creds_expire_at, status, created_at) VALUES (${q(bankAccountId)}, ${q(companyId)}, 'banesco', 'sandbox', ${q(clientIdLast6)}, X'${toHex(sealedAccount.ciphertext)}', X'${toHex(sealedAccount.iv)}', ${sealedAccount.keyVersion}, '5394', 'DDA', ${q('J003075523')}, ${now}, NULL, 'active', ${now});`,
+
+  // Its single Confirmación credential pair, sealed onto its own row.
+  `INSERT OR REPLACE INTO bank_account_credentials (id, bank_account_id, cred_key, usage, client_id_last6, creds_ct, creds_iv, creds_key_v, created_at) VALUES (${q(credentialId)}, ${q(bankAccountId)}, 'confirmation', 'operate', ${q(clientIdLast6)}, X'${toHex(sealedCreds.ciphertext)}', X'${toHex(sealedCreds.iv)}', ${sealedCreds.keyVersion}, ${now});`,
 ];
 
 process.stdout.write(`${statements.join('\n')}\n`);

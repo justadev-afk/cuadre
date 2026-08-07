@@ -78,9 +78,16 @@ async function bankAccount(overrides: Partial<BankAccount> = {}): Promise<BankAc
     companyId: COMPANY,
     bank: 'banesco',
     environment: 'production',
-    credentials: await seal(CREDS_KEY, { main: CREDENTIALS }),
     clientIdLast6: 'client',
     accountNumber: await seal(CREDS_KEY, ACCOUNT_NUMBER),
+    credentials: [
+      {
+        credKey: 'main',
+        usage: 'operate',
+        clientIdLast6: 'client',
+        credentials: await seal(CREDS_KEY, CREDENTIALS),
+      },
+    ],
     accountLast4: '8514',
     accountType: 'Corriente',
     holderId: 'J-12345678-9',

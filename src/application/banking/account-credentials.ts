@@ -1,38 +1,42 @@
 /**
- * What actually sits inside a connected account's sealed `credentials` blob: a
- * plain map from a bank's credential-group key to that pair.
+ * The credential pairs a connected account runs on, in two shapes.
  *
- * A bank may run on one credential pair or on several (Banesco splits its API
- * across two OAuth clients). Rather than fix a slot per service — which would
- * mean a schema change every time a bank adds one — the account stores whatever
- * pairs it was given as a keyed JSON object, sealed as one opaque blob. The
- * database sees a single sealed value; this map is its shape once opened, and it
- * names no bank and no fixed service.
+ * `AccountCredentials` is the *input* map — what the onboarding wizard collected
+ * and parked in KV before anything was written: a plain map from a bank's
+ * credential-group key to that pair. A bank may run on one pair or several
+ * (Banesco splits its API across two OAuth clients), and the map names no bank
+ * and no fixed service. `verify` parks it; `connect` and `change` seal it into
+ * per-pair rows (see `bank-account.repository.ts`).
  *
- * Nobody reads the map by guessing keys. A caller that needs "the pair the
- * counter runs on" asks `credentialsByUsage(gateway.credentialGroups, map,
- * 'operate')`: the gateway's own declaration says which key that is, so the
- * knowledge of what each pair is *for* stays in the adapter, not here.
+ * `OpenedCredential` is one *stored* pair, unsealed for the length of a single
+ * bank call — what `validate` and `reverify` hold after opening a row.
+ *
+ * Neither side reads a pair by guessing keys. A caller that needs "the pair the
+ * counter runs on" asks `operateCredential(opened)`: the choice is the pair
+ * stored with `operate` usage, or — for a bank with a single pair — that lone
+ * pair whatever its usage says.
  */
-import type {
-  BankCredentialGroup,
-  BankCredentials,
-  BankCredentialUsage,
-} from '../ports/bank-gateway.ts';
+import type { BankCredentials, BankCredentialUsage } from '../ports/bank-gateway.ts';
 
 /** Keyed by `BankCredentialGroup.key`. Present keys are the pairs that were given. */
 export type AccountCredentials = Record<string, BankCredentials>;
 
+/** One stored credential pair, unsealed. */
+export type OpenedCredential = {
+  readonly credKey: string;
+  readonly usage: BankCredentialUsage;
+  readonly credentials: BankCredentials;
+};
+
 /**
- * The credentials the gateway's group with this usage was stored under, or
- * `null` when the bank declares no such group or the map does not carry it.
+ * The pair the counter runs on, or `null` when the account holds none.
+ *
+ * A bank with a single stored pair uses it for everything — so a lone pair is
+ * the operate one whatever its `usage` says. Otherwise it is the pair stored
+ * with `operate` usage. This is the whole per-bank branch, and it lives here,
+ * not in a use case.
  */
-export function credentialsByUsage(
-  groups: readonly BankCredentialGroup[],
-  credentials: AccountCredentials,
-  usage: BankCredentialUsage,
-): BankCredentials | null {
-  const group = groups.find((candidate) => candidate.usage === usage);
-  if (group === undefined) return null;
-  return credentials[group.key] ?? null;
+export function operateCredential(opened: readonly OpenedCredential[]): BankCredentials | null {
+  if (opened.length === 1) return opened[0]?.credentials ?? null;
+  return opened.find((candidate) => candidate.usage === 'operate')?.credentials ?? null;
 }

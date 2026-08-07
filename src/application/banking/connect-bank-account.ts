@@ -20,6 +20,7 @@ import type {
   BankAccount,
   BankAccountWriteFailure,
   NewBankAccount,
+  NewStoredCredential,
 } from '../../adapters/d1/bank-account.repository.ts';
 import type { Clock } from '../../shared/clock.ts';
 import { type Sealed, seal, unseal } from '../../shared/crypto.ts';
@@ -96,23 +97,27 @@ export function makeConnectBankAccount({
     const chosen = resolveAccount(pending, input);
     if (!chosen.ok) return chosen;
 
-    // The whole credential map is sealed as one blob, exactly as it was parked —
-    // whichever pairs the merchant gave, keyed by service. What survives in the
-    // clear is the tail of the operate pair's client id, which is all the UI shows.
+    // One row per pair the merchant gave, keyed by service. The operate key
+    // (Banesco's Confirmación) is marked `operate`; anything else the wizard
+    // collected only ever listed accounts, so it is `discover`. Each pair is
+    // sealed on its own; what survives in the clear is the six-digit tail of
+    // each client id, which is all the panel shows.
+    const accountId = ids.uuid();
+    const credentials = await sealCredentials(credsKey, pending, ids);
     const operateClientId = pending.credentials[pending.operateKey]?.clientId ?? '';
 
     const now = clock.nowSeconds();
     const written = await accounts.insert({
-      id: ids.uuid(),
+      id: accountId,
       companyId: input.companyId,
       bank: pending.bank,
       environment: pending.environment,
-      credentials: await seal(credsKey, pending.credentials),
       clientIdLast6: lastSix(operateClientId),
       accountNumber: await seal(credsKey, chosen.value.fullNumber),
       accountLast4: chosen.value.accountLast4,
       accountType: chosen.value.accountType,
       holderId: chosen.value.holderId,
+      credentials,
       // The bank tells us its credentials expire by rejecting them. No bank has
       // yet returned an expiry we could read, so nothing is invented here.
       credsExpireAt: null,
@@ -227,6 +232,27 @@ function lastFourDigits(fullNumber: string, masked: string): string {
   // per-company unique key, so an empty value would collapse two accounts into
   // one row's worth of uniqueness.
   return digits.length >= 4 ? digits.slice(-4) : masked.slice(-4);
+}
+
+/**
+ * One `NewStoredCredential` per pair the wizard collected. The operate key is
+ * marked `operate`, every other pair `discover` — the only two roles a bank
+ * declares — and each pair is sealed onto its own row.
+ */
+function sealCredentials(
+  credsKey: string,
+  pending: VerificationPayload,
+  ids: IdGen,
+): Promise<NewStoredCredential[]> {
+  return Promise.all(
+    Object.entries(pending.credentials).map(async ([credKey, pair]) => ({
+      id: ids.uuid(),
+      credKey,
+      usage: credKey === pending.operateKey ? 'operate' : 'discover',
+      clientIdLast6: lastSix(pair.clientId),
+      credentials: await seal(credsKey, pair),
+    })),
+  );
 }
 
 function lastSix(clientId: string): string | null {

@@ -23,8 +23,8 @@ import { unseal } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
 import { logger } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
-import type { BankFailure, BankGateway, BankId } from '../ports/bank-gateway.ts';
-import { type AccountCredentials, credentialsByUsage } from './account-credentials.ts';
+import type { BankCredentials, BankFailure, BankGateway, BankId } from '../ports/bank-gateway.ts';
+import { type OpenedCredential, operateCredential } from './account-credentials.ts';
 import { type BankAccountView, toBankAccountView } from './bank-account-view.ts';
 import { type BankOnboardingFailure, toOnboardingFailure } from './bank-failure.ts';
 
@@ -75,23 +75,21 @@ export function makeReverifyBankAccount({
     if (account === null || account.companyId !== input.companyId) return err('not_found');
     if (account.status === 'removed') return err('not_found');
 
-    const credentials = await unseal<AccountCredentials>(credsKey, account.credentials).catch(
-      () => {
-        // Unlike a pending verification, this envelope is the only copy: nobody
-        // can paste it again. A row we cannot open is an operational fault, and
-        // it must page someone rather than read as "the bank said no".
-        throw new AppError('internal', `bank credentials unreadable for account ${account.id}`);
-      },
-    );
+    // Unlike a pending verification, these envelopes are the only copy: nobody
+    // can paste them again. A row we cannot open is an operational fault, and it
+    // must page someone rather than read as "the bank said no".
+    const opened = await openCredentials(credsKey, account).catch(() => {
+      throw new AppError('internal', `bank credentials unreadable for account ${account.id}`);
+    });
     const accountNumber = await unseal<string>(credsKey, account.accountNumber).catch(() => {
       throw new AppError('internal', `account number unreadable for account ${account.id}`);
     });
 
     // Reverify asks the same question the counter does, so it uses the same
-    // pair: the operate one. The gateway says which key that is; other pairs, if
-    // present, only ever listed accounts at onboarding.
+    // pair: the operate one — or the lone pair, for a single-credential bank.
+    // Other pairs, if present, only ever listed accounts at onboarding.
     const gateway = banks.get(account.bank);
-    const operate = credentialsByUsage(gateway.credentialGroups, credentials, 'operate');
+    const operate = operateCredential(opened);
     if (operate === null) {
       throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
     }
@@ -147,4 +145,15 @@ async function failed(
   });
 
   return err(toOnboardingFailure(failure));
+}
+
+/** Every stored pair, unsealed. A single failure rejects the whole read. */
+function openCredentials(credsKey: string, account: BankAccount): Promise<OpenedCredential[]> {
+  return Promise.all(
+    account.credentials.map(async (stored) => ({
+      credKey: stored.credKey,
+      usage: stored.usage,
+      credentials: await unseal<BankCredentials>(credsKey, stored.credentials),
+    })),
+  );
 }

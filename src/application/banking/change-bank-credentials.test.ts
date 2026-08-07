@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import type {
   BankAccount,
   BankAccountWriteFailure,
+  NewStoredCredential,
 } from '../../adapters/d1/bank-account.repository.ts';
 import { fixedClock } from '../../shared/clock.ts';
-import { type Sealed, seal, unseal } from '../../shared/crypto.ts';
+import { seal, unseal } from '../../shared/crypto.ts';
+import { fakeIdGen } from '../../shared/id.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import type { BankFailure, BankGateway, BankSession } from '../ports/bank-gateway.ts';
 import type { AccountCredentials } from './account-credentials.ts';
@@ -28,9 +30,16 @@ async function account(overrides: Partial<BankAccount> = {}): Promise<BankAccoun
     companyId: 'la-espiga',
     bank: 'banesco',
     environment: 'production',
-    credentials: await seal(CREDS_KEY, OLD),
     clientIdLast6: '000000',
     accountNumber: await seal(CREDS_KEY, ACCOUNT_NUMBER),
+    credentials: [
+      {
+        credKey: 'main',
+        usage: 'operate',
+        clientIdLast6: '000000',
+        credentials: await seal(CREDS_KEY, OLD.main),
+      },
+    ],
     accountLast4: '8514',
     accountType: 'Corriente',
     holderId: 'J-12345678-9',
@@ -68,8 +77,7 @@ function fakeBanks(authenticate?: Result<BankSession, BankFailure>) {
 
 function fakeAccounts(stored: BankAccount) {
   const updates: {
-    credentials: Sealed;
-    accountNumber: Sealed;
+    credentials: readonly NewStoredCredential[];
     clientIdLast6: string | null;
     verifiedAt: number;
   }[] = [];
@@ -80,18 +88,16 @@ function fakeAccounts(stored: BankAccount) {
       async findById(id: string) {
         return stored.id === id ? stored : null;
       },
-      async updateCredentials(
+      async replaceCredentials(
         _id: string,
-        credentials: Sealed,
-        accountNumber: Sealed,
+        credentials: readonly NewStoredCredential[],
         clientIdLast6: string | null,
         verifiedAt: number,
       ): Promise<Result<BankAccount, BankAccountWriteFailure>> {
-        updates.push({ credentials, accountNumber, clientIdLast6, verifiedAt });
+        updates.push({ credentials, clientIdLast6, verifiedAt });
         return ok({
           ...stored,
           credentials,
-          accountNumber,
           clientIdLast6,
           verifiedAt,
           status: 'active',
@@ -111,6 +117,7 @@ async function harness(
     accounts: store.accounts,
     credsKey: CREDS_KEY,
     clock: fixedClock(NOW),
+    ids: fakeIdGen({ uuids: ['cred-1', 'cred-2'] }),
   });
   return { changeBankCredentials, ...store };
 }
@@ -128,9 +135,12 @@ describe('change bank credentials', () => {
       value: { status: 'active', clientIdLast6: '999999' },
     });
     expect(updates).toHaveLength(1);
-    // The row now seals the NEW pair; the account number rides along unchanged.
-    expect(await unseal<AccountCredentials>(CREDS_KEY, updates[0].credentials)).toEqual(NEW);
-    expect(await unseal<string>(CREDS_KEY, updates[0].accountNumber)).toBe(ACCOUNT_NUMBER);
+    // The account is rewritten with one row for the NEW pair; the account number
+    // is not among the arguments — its envelope is left untouched.
+    const rows = updates[0].credentials;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ credKey: 'main', usage: 'operate', clientIdLast6: '999999' });
+    expect(await unseal(CREDS_KEY, rows[0].credentials)).toEqual(NEW.main);
     expect(updates[0].verifiedAt).toBe(NOW);
   });
 
