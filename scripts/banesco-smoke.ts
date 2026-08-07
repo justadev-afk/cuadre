@@ -92,17 +92,40 @@ if (!found.ok) {
   process.exit(1);
 }
 
-if (found.value === null) {
+if (found.value !== null) {
+  const movement = found.value.movement;
+  process.stdout.write(
+    `✅ PASS — ref ${reference}: ${movement.isCredit ? 'CR' : 'DB'} ${movement.amountCents} cents ` +
+      `(${movement.currency}) via ${found.value.strategy} on account ${tail}\n`,
+  );
+  process.exit(0);
+}
+
+// Not on the connected account. Re-ask with the account filter OFF (an empty
+// accountId makes the last-four check a no-op) to reveal whether the bank has
+// this payment at all, and on which account — the whole point when a validation
+// says "todavía no aparece" but the payment plainly exists.
+const probe = await gateway.findPayment(session.value, {
+  reference,
+  accountId: '',
+  payerPhone,
+  sourceBankId,
+  onDate,
+  sessionId: 'banesco-smoke-probe',
+});
+
+if (probe.ok && probe.value !== null) {
+  const onAccount = probe.value.movement.accountMasked || '(sin máscara de cuenta)';
   process.stderr.write(
-    `❌ not found: the bank does not report ref ${reference} on account ${tail}.\n` +
-      '   Check that this is the account the payment was actually received on.\n',
+    `❌ ref ${reference} EXISTE, pero en la cuenta ${onAccount} — no en la conectada ${tail}.\n` +
+      `   Conecta la cuenta ${onAccount} (es la que recibió el pago), no la ${tail}.\n`,
   );
   process.exit(1);
 }
 
-const movement = found.value.movement;
-process.stdout.write(
-  `✅ PASS — ref ${reference}: ${movement.isCredit ? 'CR' : 'DB'} ${movement.amountCents} cents ` +
-    `(${movement.currency}) via ${found.value.strategy} on account ${tail}\n`,
+process.stderr.write(
+  `❌ ref ${reference}: el banco no lo reporta ni ignorando la cuenta.\n` +
+    '   O estas credenciales de Confirmación no ven ese pago (otro RIF/afiliación),\n' +
+    '   o el dato de QA cambió. No es la cuenta: es el pago o las credenciales.\n',
 );
-process.exit(0);
+process.exit(1);
