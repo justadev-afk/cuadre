@@ -357,6 +357,20 @@ figcaption {
 }
 
 @media print {
+  /* The sheet IS the ticket: 80mm wide, height to content, no margins — which is
+     also what drops the browser's date/title/URL/page-number, since those print
+     in the margin the receipt no longer leaves. */
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+  html,
+  body {
+    width: 80mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff;
+  }
   body * {
     visibility: hidden !important;
   }
@@ -369,5 +383,7 @@ figcaption {
     left: 0;
     top: 0;
     width: 80mm;
+    margin: 0;
+    padding: 0;
   }
 }

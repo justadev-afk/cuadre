@@ -44,7 +44,7 @@ export function PrintReceiptButton({ className }: { className?: string }) {
 export function ThermalReceipt({ data }: { data: ReceiptData }) {
   return (
     <div className="receipt-print-root" aria-hidden="true">
-      <div className="mx-auto w-[80mm] max-w-full bg-white px-3 py-4 text-center font-mono text-[12px] leading-tight text-black">
+      <div className="w-full bg-white px-3 py-4 text-center font-mono text-[12px] leading-tight text-black">
         <div className="text-[20px] font-bold tracking-[0.35em]">CUADRE</div>
         {data.merchantName ? <div className="mt-0.5 text-[11px]">{data.merchantName}</div> : null}
 
