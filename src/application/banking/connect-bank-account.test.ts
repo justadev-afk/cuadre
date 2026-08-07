@@ -181,6 +181,24 @@ describe('connect bank account', () => {
     expect(await unseal(CREDS_KEY, row?.credentials ?? empty())).toEqual({ confirmation: OPERATE });
   });
 
+  it('lets a typed number override the picker when the account is not listed', async () => {
+    // The discover list has ...8514, but the merchant banks on ...5394 (masked,
+    // or a different affiliation). Typing it wins over the handle.
+    const { connectBankAccount, inserted } = await harness();
+
+    const result = await connectBankAccount({
+      companyId: 'la-espiga',
+      verifyId: 'verify-1',
+      accountNumber: '01340804108041005394',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(inserted[0]?.accountLast4).toBe('5394');
+    expect(await unseal<string>(CREDS_KEY, inserted[0]?.accountNumber ?? empty())).toBe(
+      '01340804108041005394',
+    );
+  });
+
   it('refuses a typed number that is not a plausible account', async () => {
     const { connectBankAccount, inserted } = await harness({ payload: MANUAL_PAYLOAD });
 

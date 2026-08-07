@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
+import { canReach } from '../../../application/session.ts';
 import { container, currentSession } from '../../_lib/current-session.ts';
 import type { ChargeInput, ChargeOutcome } from './charge-types.ts';
 
@@ -11,7 +12,9 @@ export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
   if (resolved === null) redirect('/login');
 
   const { session } = resolved;
-  if (session.role !== 'cashier' || session.companyId === null) redirect('/');
+  // The counter is shared: a cashier works it, and so can a company owner. Both
+  // reach the till, so both may charge — the guard is the same `counter` area.
+  if (!canReach(session.role, 'counter') || session.companyId === null) redirect('/');
 
   const outcome = await container().validations.validatePayment({
     companyId: session.companyId,

@@ -11,11 +11,8 @@
  * the sandbox one only answers a till when it is the only one connected, which
  * is the acceptance-testing case.
  */
-import { AppNav } from '../../_components/app-nav.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
-import { COMPANY_LINKS } from '../../(company)/_lib/nav.ts';
-import { CASHIER_LINKS, cashierWho } from '../_lib/nav.ts';
 import { CheckoutForm } from './checkout-form.tsx';
 import { NoBankAccount } from './no-bank-account.tsx';
 
@@ -31,20 +28,10 @@ export default async function CheckoutPage() {
 
   const active = pickActiveAccount(accounts);
 
-  // The counter is shared: a cashier reaches it, and so does a company owner
-  // working the till. Each keeps their own header rather than being handed the
-  // other role's — a company owner here still sees Validaciones, Empleados,
-  // Bancos and Cobrar, with "Cobrar" marked.
-  const isCompany = session.role === 'company';
-
+  // The header is the shell's, which reads the session's role — so a company
+  // owner working the till keeps their own left rail, a cashier keeps theirs.
   return (
-    <>
-      <AppNav
-        links={isCompany ? COMPANY_LINKS : CASHIER_LINKS}
-        current="/checkout"
-        roleLabel={isCompany ? 'Empresa' : 'Cajero'}
-        who={isCompany ? session.name : cashierWho(session.name, session.username)}
-      />
+    <div style={{ padding: '28px 24px', maxWidth: 560, marginInline: 'auto', width: '100%' }}>
       {active === null ? (
         <NoBankAccount />
       ) : (
@@ -54,7 +41,7 @@ export default async function CheckoutPage() {
           environment={active.environment}
         />
       )}
-    </>
+    </div>
   );
 }
 

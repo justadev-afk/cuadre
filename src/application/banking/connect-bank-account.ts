@@ -168,6 +168,24 @@ function resolveAccount(
   pending: VerificationPayload,
   input: ConnectBankAccountInput,
 ): Result<ResolvedAccount, 'unknown_account' | 'invalid_account'> {
+  // A typed number wins over the picker. The account the merchant banks on may
+  // not be in the discover list at all — the list is masked, or the discover
+  // pair belongs to a different affiliation than the operate pair — so the
+  // wizard always lets them type it, and when they do, that is the choice. A
+  // Venezuelan account is twenty digits; the bound is loose on purpose, enough
+  // to reject an empty field or a phone number without refusing a real number
+  // from a bank we have not met yet.
+  const typed = (input.accountNumber ?? '').replace(/\D/g, '');
+  if (typed !== '') {
+    if (typed.length < 10 || typed.length > 24) return err('invalid_account');
+    return ok({
+      fullNumber: typed,
+      accountLast4: typed.slice(-4),
+      accountType: null,
+      holderId: null,
+    });
+  }
+
   if (pending.accounts.length > 0) {
     const chosen = accountByHandle(pending.accounts, input.accountId ?? '');
     if (chosen === null) return err('unknown_account');
@@ -179,17 +197,7 @@ function resolveAccount(
     });
   }
 
-  const digits = (input.accountNumber ?? '').replace(/\D/g, '');
-  // A Venezuelan account is twenty digits; other banks may differ, so this is
-  // deliberately loose — enough to reject an empty field or a phone number, not
-  // so strict it refuses a real number from a bank we have not met yet.
-  if (digits.length < 10 || digits.length > 24) return err('invalid_account');
-  return ok({
-    fullNumber: digits,
-    accountLast4: digits.slice(-4),
-    accountType: null,
-    holderId: null,
-  });
+  return err('invalid_account');
 }
 
 /**

@@ -187,7 +187,10 @@ function AccountStep({
   const [typed, setTyped] = useState('');
 
   // A discover pair listed accounts → pick one; none did → type the number in.
+  // Even with a list, the merchant can switch to typing: the account they bank
+  // on may be masked in the list or belong to a different affiliation.
   const hasAccounts = accounts.length > 0;
+  const [typing, setTyping] = useState(!hasAccounts);
 
   // The action revalidated /banks; closing drops the modal over the fresh list.
   useEffect(() => {
@@ -203,22 +206,47 @@ function AccountStep({
   return (
     <form action={connectAction} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <input type="hidden" name="verifyId" value={verifyId} />
-      {hasAccounts ? (
-        <input type="hidden" name="accountId" value={chosen} />
-      ) : (
-        <input type="hidden" name="accountNumber" value={typed} />
-      )}
+      {/* connect prefers a typed number when present; sending both keeps the
+          picker's choice available the moment the merchant switches back. */}
+      <input type="hidden" name="accountId" value={typing ? '' : chosen} />
+      <input type="hidden" name="accountNumber" value={typing ? typed : ''} />
 
       <div>
         <div className="dialog-title">¿Qué cuenta recibe los pagos?</div>
         <span className="text-muted" style={{ fontSize: 13 }}>
-          {hasAccounts
-            ? `${displayName} reporta ${accounts.length} ${accounts.length === 1 ? 'cuenta' : 'cuentas'} para estas credenciales.`
-            : 'No diste credenciales de Consulta, así que escribe el número de la cuenta receptora.'}
+          {typing
+            ? 'Escribe el número completo de la cuenta que recibe los pagos.'
+            : `${displayName} reporta ${accounts.length} ${accounts.length === 1 ? 'cuenta' : 'cuentas'} para estas credenciales.`}
         </span>
       </div>
 
-      {hasAccounts ? (
+      {typing ? (
+        <div className="field">
+          <label htmlFor="manual-account">Número de cuenta (20 dígitos)</label>
+          <input
+            className="input tnum"
+            id="manual-account"
+            inputMode="numeric"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="0134 0000 0000 0000 0000"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value.replace(/[^\d\s]/g, ''))}
+            style={{ fontFamily: 'ui-monospace, monospace' }}
+          />
+          {hasAccounts && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ marginTop: 8, alignSelf: 'flex-start', fontSize: 12 }}
+              onClick={() => setTyping(false)}
+            >
+              <Icon name="arrow-left" />
+              Volver a la lista
+            </button>
+          )}
+        </div>
+      ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {accounts.map((account) => {
             const selected = account.accountId === chosen;
@@ -263,21 +291,14 @@ function AccountStep({
               </button>
             );
           })}
-        </div>
-      ) : (
-        <div className="field">
-          <label htmlFor="manual-account">Número de cuenta (20 dígitos)</label>
-          <input
-            className="input tnum"
-            id="manual-account"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="0134 0000 0000 0000 0000"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value.replace(/[^\d\s]/g, ''))}
-            style={{ fontFamily: 'ui-monospace, monospace' }}
-          />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ alignSelf: 'flex-start', fontSize: 12 }}
+            onClick={() => setTyping(true)}
+          >
+            La cuenta no está en la lista — escribir el número
+          </button>
         </div>
       )}
 
@@ -303,7 +324,7 @@ function AccountStep({
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={connecting || (hasAccounts ? chosen === '' : typed.trim() === '')}
+          disabled={connecting || (typing ? typed.trim() === '' : chosen === '')}
         >
           {saveLabel}
         </button>

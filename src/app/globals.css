@@ -755,3 +755,250 @@ select.input { appearance: none; }
   margin-top: 2px;
   color: var(--color-accent);
 }
+
+/* ══ v2 app shell ═══════════════════════════════════════════════════════════
+   A left sidebar and a content column, shared by every signed-in role — the
+   same frame for admin, company and cashier, only the content changes. The
+   design draws all of this inline; naming it here is what keeps a layout file
+   free of the same forty style props repeated on every screen. Every value is
+   a Nocturne token. Dividers are inset hairlines, never borders — the design's
+   one structural idiom. */
+
+.shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+.shell-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 12px;
+  background: var(--color-neutral-900);
+  box-shadow: inset -1px 0 0 var(--color-divider);
+}
+.shell-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.side-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 6px;
+  color: inherit;
+  text-decoration: none;
+}
+/* The company switcher: an outlined row of initials + name over its code. */
+.side-switcher {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  color: inherit;
+  text-decoration: none;
+}
+.side-switcher-mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--color-neutral-800);
+  color: var(--color-neutral-200);
+  font-family: var(--font-heading);
+  font-size: 10px;
+}
+
+.side-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.side-group-label {
+  padding: 0 8px 6px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 40%, transparent);
+}
+.side-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: inherit;
+  text-decoration: none;
+}
+.side-nav-item:hover {
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+.side-nav-item[aria-current='page'] {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.side-nav-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.side-nav-item[aria-current='page'] .side-nav-count {
+  color: inherit;
+}
+
+.side-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.side-user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 4px;
+}
+.side-user-out {
+  display: inline-flex;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+}
+.side-user-out:hover {
+  color: var(--color-accent);
+}
+
+/* The content column's own top bar: a breadcrumb, actions on the right. */
+.shell-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  box-shadow: inset 0 -1px 0 var(--color-divider);
+}
+.crumb {
+  font-size: 12px;
+}
+.crumb-sep {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 40%, transparent);
+}
+
+/* The page body inside the shell. 20px gutters, as every v2 screen uses. */
+.shell-body {
+  padding: 20px;
+  min-width: 0;
+}
+
+/* Underline tabs — an accent 2px rule riding the section divider. Not .seg. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 20px;
+  box-shadow: inset 0 -1px 0 var(--color-divider);
+  overflow-x: auto;
+}
+.tab {
+  padding: 9px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  text-decoration: none;
+}
+.tab[aria-current='page'] {
+  color: var(--color-accent);
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+/* Indicator cards: a kicker, a big tabular number, a muted note. */
+.stat-card {
+  flex: 1;
+  min-width: 150px;
+  gap: 2px;
+}
+.stat-num {
+  font-family: var(--font-heading);
+  font-size: 23px;
+}
+
+/* The 6-digit control code, the product's one hero number. */
+.control-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-accent-700);
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+}
+.control-hero-num {
+  font-family: var(--font-heading);
+  font-size: 28px;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+}
+
+/* Mobile: the sidebar folds away behind a top bar and a bottom tab bar. */
+.shell-topbar {
+  display: none;
+}
+.shell-mobilebar {
+  display: none;
+}
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shell-sidebar {
+    display: none;
+  }
+  .shell-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 16px;
+    background: var(--color-neutral-900);
+    box-shadow: inset 0 -1px 0 var(--color-divider);
+  }
+  .shell-mobilebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px 12px;
+    background: var(--color-neutral-900);
+    box-shadow: inset 0 1px 0 var(--color-divider);
+  }
+  .shell-mobilebar a {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 0;
+    font-size: 10px;
+    text-decoration: none;
+    color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  }
+  .shell-mobilebar a[aria-current='page'] {
+    color: var(--color-accent);
+  }
+  .shell-mobilebar i {
+    font-size: 19px;
+  }
+  .shell-body {
+    padding: 16px;
+  }
+}
