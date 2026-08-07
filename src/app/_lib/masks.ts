@@ -42,10 +42,14 @@ export function maskRif(raw: string): string {
 export function maskPhone(raw: string): string {
   let digits = raw.replace(/\D/g, '');
   if (digits.startsWith('58')) digits = `0${digits.slice(2)}`;
-  digits = digits.slice(0, 11);
+  if (digits === '') return '';
 
-  if (digits.length <= 4) return digits;
-  return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  // A Venezuelan pago-móvil number always begins 04. Strip an optional leading
+  // 0 and 4 the caller may have typed, then re-impose the trunk, so the field
+  // can only ever hold `04XX-XXXXXXX` — the shape `normalisePhone` accepts.
+  const line = digits.replace(/^0?4?/, '').slice(0, 9);
+  const full = `04${line}`;
+  return full.length <= 4 ? full : `${full.slice(0, 4)}-${full.slice(4)}`;
 }
 
 /**
@@ -68,6 +72,17 @@ export function maskCurrency(raw: string): string {
   const whole = cents.slice(0, -2);
   const fraction = cents.slice(-2);
   return `${groupThousands(whole)},${fraction}`;
+}
+
+/**
+ * '0134 0000 0000 0000 0000' — a 20-digit bank account in groups of four, the
+ * way the placeholder shows it. Purely cosmetic: `connect-bank-account` strips
+ * every non-digit before it judges or seals the number, so the spaces never
+ * reach the bank.
+ */
+export function maskAccountNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 20);
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ');
 }
 
 /** '1240' → '1.240'. Dots every three digits from the right. */
