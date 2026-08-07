@@ -53,6 +53,16 @@ build is green. Commit locally when asked; publishing is always a separate,
 explicit request. (This rule overrides any earlier instruction to deploy/push at
 the end of a task.)
 
+**A push to `main` publishes: it auto-deploys.** The Cloudflare git integration
+builds and ships `main` on every push, so a push *is* a deploy — there is no
+separate `bun run deploy` to run afterwards, and "push" and "publish" are the
+same request. Two consequences follow. First, never push to checkpoint: a push
+goes live. Second, **a schema migration is not part of the auto-deploy** —
+`wrangler d1 migrations apply --remote` stays a deliberate, separate step, and a
+*breaking* migration (a dropped or retyped column the running code depends on)
+must be applied right around the push, never left behind it, so prod code and
+prod schema never diverge for longer than a moment.
+
 **Work on `main`; never create a branch** unless the maintainer asks for one in
 that turn. This repo is trunk-based: commit straight to `main`. A stray feature
 branch is friction nobody asked for, so the default "branch first" habit does
