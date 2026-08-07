@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { epochToIso } from '../../shared/clock.ts';
+import { toBase64 } from '../../shared/crypto.ts';
 import {
   D1BankAccountRepository,
   toBankAccount,
@@ -7,21 +9,15 @@ import {
 } from './bank-account.repository.ts';
 import { makeFakeD1, uniqueViolation } from './d1.fake.ts';
 
-/** The account number's envelope, sealed on the account row. */
-const ACCOUNT_CT = new Uint8Array([10, 20, 30]);
-const ACCOUNT_IV = new Uint8Array([1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]);
-/** A credential pair's envelope, sealed on its own credential row. */
+/** A credential pair's envelope: still sealed, but stored base64 (no BLOBs). */
 const CRED_CT = new Uint8Array([1, 2, 3, 4]);
 const CRED_IV = new Uint8Array([9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2]);
+/** The account number is stored in the clear now (§6). */
+const ACCOUNT_NUMBER = '01340000000000007788';
+const VERIFIED_AT = 1_770_000_000;
+const CREATED_AT = 1_760_000_000;
 
-/** D1 hands BLOB columns back as `ArrayBuffer`, not as the view that went in. */
-function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(copy).set(bytes);
-  return copy;
-}
-
-/** A `bank_accounts` row, as D1 returns it. No credential columns anymore. */
+/** A `bank_accounts` row, as D1 returns it: number in the clear, timestamps ISO. */
 function accountRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'acct-1',
@@ -29,21 +25,19 @@ function accountRow(overrides: Record<string, unknown> = {}): Record<string, unk
     bank: 'banesco',
     environment: 'production',
     client_id_last6: 'a1b2c3',
-    account_ct: asArrayBuffer(ACCOUNT_CT),
-    account_iv: asArrayBuffer(ACCOUNT_IV),
-    account_key_v: 1,
+    account_number: ACCOUNT_NUMBER,
     account_last4: '7788',
     account_type: 'Corriente',
     holder_id: 'J-401234567',
-    verified_at: 1_770_000_000,
+    verified_at: epochToIso(VERIFIED_AT),
     creds_expire_at: null,
     status: 'active',
-    created_at: 1_760_000_000,
+    created_at: epochToIso(CREATED_AT),
     ...overrides,
   };
 }
 
-/** A `bank_account_credentials` row, as the grouping query returns it. */
+/** A `bank_account_credentials` row: the sealed pair as base64 text, created ISO. */
 function credRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     bank_account_id: 'acct-1',
@@ -51,10 +45,10 @@ function credRow(overrides: Record<string, unknown> = {}): Record<string, unknow
     cred_key: 'confirmation',
     usage: 'operate',
     client_id_last6: 'fedfa0',
-    creds_ct: asArrayBuffer(CRED_CT),
-    creds_iv: asArrayBuffer(CRED_IV),
+    creds_ct: toBase64(CRED_CT),
+    creds_iv: toBase64(CRED_IV),
     creds_key_v: 1,
-    created_at: 1_760_000_000,
+    created_at: epochToIso(CREATED_AT),
     ...overrides,
   };
 }
@@ -65,7 +59,7 @@ const NEW_ACCOUNT = {
   bank: 'banesco',
   environment: 'production',
   clientIdLast6: 'a1b2c3',
-  accountNumber: { ciphertext: ACCOUNT_CT, iv: ACCOUNT_IV, keyVersion: 1 },
+  accountNumber: ACCOUNT_NUMBER,
   accountLast4: '7788',
   accountType: 'Corriente',
   holderId: 'J-401234567',
@@ -79,32 +73,24 @@ const NEW_ACCOUNT = {
     },
   ],
   credsExpireAt: null,
-  createdAt: 1_760_000_000,
+  createdAt: CREATED_AT,
 } as const;
 
 describe('toBankAccount', () => {
-  it('reads the account and credential BLOB columns back as Uint8Array', () => {
+  it('reads the number in the clear, the credential envelope back as bytes, times as epoch', () => {
     const account = toBankAccount(accountRow(), [toStoredCredential(credRow())]);
 
-    expect(account.accountNumber.ciphertext).toBeInstanceOf(Uint8Array);
-    expect([...account.accountNumber.ciphertext]).toEqual([10, 20, 30]);
-    expect([...account.accountNumber.iv]).toEqual([...ACCOUNT_IV]);
+    expect(account.accountNumber).toBe(ACCOUNT_NUMBER);
+    expect(account.credentials[0].credentials.ciphertext).toBeInstanceOf(Uint8Array);
     expect([...account.credentials[0].credentials.ciphertext]).toEqual([1, 2, 3, 4]);
     expect([...account.credentials[0].credentials.iv]).toEqual([...CRED_IV]);
+    // ISO in the column, epoch seconds back out.
+    expect(account.verifiedAt).toBe(VERIFIED_AT);
+    expect(account.createdAt).toBe(CREATED_AT);
   });
 
-  it('accepts the byte-array form older D1 revisions returned', () => {
-    const account = toBankAccount(accountRow({ account_ct: [10, 20, 30] }), []);
-    expect([...account.accountNumber.ciphertext]).toEqual([10, 20, 30]);
-  });
-
-  it('gives each sealed value its own key version', () => {
-    // The account number and each credential pair now carry independent key
-    // versions — the whole point of splitting the credentials into their own rows.
-    const account = toBankAccount(accountRow({ account_key_v: 2 }), [
-      toStoredCredential(credRow({ creds_key_v: 5 })),
-    ]);
-    expect(account.accountNumber.keyVersion).toBe(2);
+  it('reads each credential pair’s own key version', () => {
+    const account = toBankAccount(accountRow(), [toStoredCredential(credRow({ creds_key_v: 5 }))]);
     expect(account.credentials[0].credentials.keyVersion).toBe(5);
   });
 
@@ -138,13 +124,13 @@ describe('toBankAccount', () => {
     );
   });
 
-  it('refuses a BLOB column that is not bytes', () => {
-    expect(() => toBankAccount(accountRow({ account_ct: 'not-bytes' }), [])).toThrow();
+  it('refuses an account number that is not text', () => {
+    expect(() => toBankAccount(accountRow({ account_number: 123 }), [])).toThrow();
   });
 });
 
 describe('toStoredCredential', () => {
-  it('reads a credential row into a sealed pair', () => {
+  it('reads a credential row into a sealed pair, base64-decoded', () => {
     const cred = toStoredCredential(credRow());
     expect(cred).toMatchObject({
       credKey: 'confirmation',
@@ -162,43 +148,36 @@ describe('toStoredCredential', () => {
     expect(toStoredCredential(credRow({ usage: 'operate' })).usage).toBe('operate');
   });
 
-  it('refuses a BLOB column that is not bytes', () => {
-    expect(() => toStoredCredential(credRow({ creds_ct: 'not-bytes' }))).toThrow();
+  it('refuses a credential ciphertext that is not valid base64', () => {
+    expect(() => toStoredCredential(credRow({ creds_ct: 'not base64!' }))).toThrow();
   });
 });
 
 describe('insert', () => {
-  it('binds the sealed values as Uint8Array, each on its own statement', async () => {
+  it('binds the account number in the clear and the credential envelope as base64', async () => {
     const fake = makeFakeD1();
     fake.reply({ rows: [accountRow()] });
 
     await new D1BankAccountRepository(fake.db).insert(NEW_ACCOUNT);
 
-    // calls[0] is the account insert; it binds the account-number envelope.
-    expect(fake.calls[0]?.args).toContain(ACCOUNT_CT);
-    expect(fake.calls[0]?.args).toContain(ACCOUNT_IV);
-    // calls[1] is the credential-row insert; it binds the pair's envelope.
-    expect(fake.calls[1]?.args).toContain(CRED_CT);
-    expect(fake.calls[1]?.args).toContain(CRED_IV);
+    // calls[0] is the account insert: the number goes in the clear now.
+    expect(fake.calls[0]?.args).toContain(ACCOUNT_NUMBER);
+    // calls[1] is the credential-row insert: the sealed pair as base64 text.
+    expect(fake.calls[1]?.args).toContain(toBase64(CRED_CT));
+    expect(fake.calls[1]?.args).toContain(toBase64(CRED_IV));
   });
 
-  it('never binds a plaintext account number or secret', async () => {
+  it('never binds a BLOB: no raw secret bytes reach the database', async () => {
     const fake = makeFakeD1();
     fake.reply({ rows: [accountRow()] });
 
     await new D1BankAccountRepository(fake.db).insert(NEW_ACCOUNT);
 
-    const strings = (fake.calls[0]?.args ?? []).filter((a) => typeof a === 'string');
-    expect(strings).toEqual([
-      'acct-1',
-      'la-espiga',
-      'banesco',
-      'production',
-      'a1b2c3',
-      '7788',
-      'Corriente',
-      'J-401234567',
-    ]);
+    const allArgs = fake.calls.flatMap((call) => call.args ?? []);
+    // The whole point of migration 0004: nothing is bound as bytes any more.
+    expect(allArgs.some((arg) => arg instanceof Uint8Array)).toBe(false);
+    // The secret bytes exist only inside the base64, never as a bound value.
+    expect(allArgs).not.toContain(CRED_CT);
   });
 
   it('refuses to write an account with no credentials, before touching the db', async () => {
@@ -256,8 +235,9 @@ describe('replaceCredentials', () => {
     expect(result.ok).toBe(true);
     expect(fake.calls[0]?.sql).toContain('DELETE FROM bank_account_credentials');
     expect(fake.calls.at(-1)?.sql).toContain('UPDATE bank_accounts');
-    // The account number is not among the arguments — its envelope is untouched.
-    expect(fake.calls.at(-1)?.args).not.toContain(ACCOUNT_CT);
+    // Re-stamps verified_at as ISO, and never touches the account number.
+    expect(fake.calls.at(-1)?.args).toContain(epochToIso(1_770_000_900));
+    expect(fake.calls.at(-1)?.args).not.toContain(ACCOUNT_NUMBER);
   });
 
   it('is not_found when the account update matches nothing', async () => {
@@ -295,7 +275,10 @@ describe('lifecycle', () => {
 
   it('clears needs_reverify when the credentials are verified again', async () => {
     const fake = makeFakeD1();
-    fake.reply({ rows: [accountRow({ verified_at: 1_770_000_500 })] }, { rows: [credRow()] });
+    fake.reply(
+      { rows: [accountRow({ verified_at: epochToIso(1_770_000_500) })] },
+      { rows: [credRow()] },
+    );
 
     const result = await new D1BankAccountRepository(fake.db).markVerified(
       'acct-1',
@@ -305,6 +288,8 @@ describe('lifecycle', () => {
 
     expect(fake.calls[0]?.sql).toContain("status = 'active'");
     expect(fake.calls[0]?.sql).toContain("status <> 'removed'");
+    // Bound as ISO; read back as epoch.
+    expect(fake.calls[0]?.args).toContain(epochToIso(1_770_000_500));
     expect(result.ok && result.value.verifiedAt).toBe(1_770_000_500);
   });
 

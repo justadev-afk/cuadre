@@ -81,9 +81,8 @@ export function makeReverifyBankAccount({
     const opened = await openCredentials(credsKey, account).catch(() => {
       throw new AppError('internal', `bank credentials unreadable for account ${account.id}`);
     });
-    const accountNumber = await unseal<string>(credsKey, account.accountNumber).catch(() => {
-      throw new AppError('internal', `account number unreadable for account ${account.id}`);
-    });
+    // The account number is stored in the clear now (§6) — no unseal.
+    const accountNumber = account.accountNumber;
 
     // Reverify asks the same question the counter does, so it uses the same
     // pair: the operate one — or the lone pair, for a single-credential bank.

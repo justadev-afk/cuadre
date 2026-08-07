@@ -26,6 +26,8 @@
  */
 import { pbkdf2Sync, randomBytes, randomUUID } from 'node:crypto';
 
+import { epochToIso } from '../src/shared/clock.ts';
+
 const PBKDF2_ITERATIONS = 100_000;
 const SALT_BYTES = 16;
 const DERIVED_BYTES = 32;
@@ -69,7 +71,7 @@ const now = Math.floor(Date.now() / 1000);
 // works against both local and remote.
 process.stdout.write(
   `INSERT INTO users (id, company_id, role, name, email, username, password_hash, status, created_at) ` +
-    `VALUES (${quote(id)}, NULL, 'admin', ${quote(name)}, ${quote(email.toLowerCase())}, NULL, ${quote(hashPassword(password))}, 'active', ${now});`,
+    `VALUES (${quote(id)}, NULL, 'admin', ${quote(name)}, ${quote(email.toLowerCase())}, NULL, ${quote(hashPassword(password))}, 'active', ${quote(epochToIso(now))});`,
 );
 
 process.stderr.write(`admin ${email} → ${id}\n`);

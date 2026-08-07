@@ -11,7 +11,15 @@
  * one thing that must not happen here is somebody writing a raw address into a
  * column whose name invites it.
  */
-import { type D1Row, integer, optionalInteger, optionalText, text } from './row.ts';
+import { epochToIso } from '../../shared/clock.ts';
+import {
+  type D1Row,
+  epochFromIso,
+  integer,
+  optionalEpochFromIso,
+  optionalText,
+  text,
+} from './row.ts';
 
 export type PasswordReset = {
   readonly tokenHash: string;
@@ -54,7 +62,13 @@ export class D1PasswordResetRepository implements PasswordResetRepository {
              (token_hash, user_id, expires_at, requested_ip, created_at)
            VALUES (?, ?, ?, ?, ?)`,
       )
-      .bind(input.tokenHash, input.userId, input.expiresAt, input.requestedIpHash, input.createdAt)
+      .bind(
+        input.tokenHash,
+        input.userId,
+        epochToIso(input.expiresAt),
+        input.requestedIpHash,
+        epochToIso(input.createdAt),
+      )
       .run();
   }
 
@@ -78,7 +92,7 @@ export class D1PasswordResetRepository implements PasswordResetRepository {
         `UPDATE password_resets SET used_at = ?
             WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
       )
-      .bind(at, tokenHash, at)
+      .bind(epochToIso(at), tokenHash, epochToIso(at))
       .run();
     return result.meta.changes === 1;
   }
@@ -91,7 +105,7 @@ export class D1PasswordResetRepository implements PasswordResetRepository {
   async invalidateAllForUser(userId: string, at: number): Promise<number> {
     const result = await this.db
       .prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL')
-      .bind(at, userId)
+      .bind(epochToIso(at), userId)
       .run();
     return result.meta.changes;
   }
@@ -107,7 +121,7 @@ export class D1PasswordResetRepository implements PasswordResetRepository {
         `SELECT COUNT(*) AS total FROM password_resets
             WHERE user_id = ? AND created_at >= ?`,
       )
-      .bind(userId, since)
+      .bind(userId, epochToIso(since))
       .first<D1Row>();
     return row === null ? 0 : integer(row, 'total');
   }
@@ -117,9 +131,9 @@ export function toPasswordReset(row: D1Row): PasswordReset {
   return {
     tokenHash: text(row, 'token_hash'),
     userId: text(row, 'user_id'),
-    expiresAt: integer(row, 'expires_at'),
-    usedAt: optionalInteger(row, 'used_at'),
+    expiresAt: epochFromIso(row, 'expires_at'),
+    usedAt: optionalEpochFromIso(row, 'used_at'),
     requestedIpHash: optionalText(row, 'requested_ip'),
-    createdAt: integer(row, 'created_at'),
+    createdAt: epochFromIso(row, 'created_at'),
   };
 }

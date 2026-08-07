@@ -31,7 +31,7 @@ async function account(overrides: Partial<BankAccount> = {}): Promise<BankAccoun
     bank: 'banesco',
     environment: 'production',
     clientIdLast6: '000000',
-    accountNumber: await seal(CREDS_KEY, ACCOUNT_NUMBER),
+    accountNumber: ACCOUNT_NUMBER,
     credentials: [
       {
         credKey: 'main',

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { epochToIso } from '../../shared/clock.ts';
 import { makeFakeD1, uniqueViolation } from './d1.fake.ts';
 import { D1UserRepository, toUser, toUserWithSecret } from './user.repository.ts';
 
+// Timestamp columns hold ISO-8601 UTC text since migration 0004; the repo maps
+// them back to the epoch seconds the domain asserts on.
 function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'user-1',
@@ -13,8 +16,8 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     username: 'maria.r',
     password_hash: 'pbkdf2$210000$c2FsdA==$aGFzaA==',
     status: 'active',
-    last_login_at: 1_770_000_000,
-    created_at: 1_760_000_000,
+    last_login_at: epochToIso(1_770_000_000),
+    created_at: epochToIso(1_760_000_000),
     ...overrides,
   };
 }

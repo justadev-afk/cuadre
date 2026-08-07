@@ -16,7 +16,7 @@ function account(overrides: Partial<BankAccount> = {}): BankAccount {
     bank: 'banesco',
     environment: 'production',
     clientIdLast6: 'client',
-    accountNumber: SEALED,
+    accountNumber: '01340000000000008514',
     credentials: [
       { credKey: 'main', usage: 'operate', clientIdLast6: 'client', credentials: SEALED },
     ],

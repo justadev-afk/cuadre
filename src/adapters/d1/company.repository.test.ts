@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { epochToIso } from '../../shared/clock.ts';
 import { D1CompanyRepository, toCompany, toCompanyWithCounts } from './company.repository.ts';
 import { makeFakeD1, uniqueViolation } from './d1.fake.ts';
 
+// `created_at` is ISO-8601 UTC text since migration 0004; the repo maps it back
+// to epoch seconds, and the `activeSince` floor is bound as ISO for the same
+// reason (it compares against an ISO column).
 function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'la-espiga',
@@ -10,7 +14,7 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     rif: 'J-401234567',
     industry: 'panaderia',
     status: 'active',
-    created_at: 1_760_000_000,
+    created_at: epochToIso(1_760_000_000),
     ...overrides,
   };
 }
@@ -83,7 +87,7 @@ describe('list', () => {
     expect(sql).toContain("u.role = 'cashier'");
     expect(sql).toContain("u.status = 'active'");
     expect(sql).toContain('v.is_sandbox = 0');
-    expect(fake.calls[0]?.args).toEqual([1_767_408_000, 20, 0]);
+    expect(fake.calls[0]?.args).toEqual([epochToIso(1_767_408_000), 20, 0]);
     expect(page.items[0]?.recentValidationCount).toBe(42);
     expect(page.total).toBe(1);
   });
@@ -94,7 +98,7 @@ describe('list', () => {
 
     await new D1CompanyRepository(fake.db).list({ activeSince: 0, search: ' espiga ' });
 
-    expect(fake.calls[0]?.args).toEqual([0, '%espiga%', '%espiga%', 20, 0]);
+    expect(fake.calls[0]?.args).toEqual([epochToIso(0), '%espiga%', '%espiga%', 20, 0]);
   });
 
   it('treats % and _ in a merchant name as literal characters', async () => {
@@ -130,7 +134,7 @@ describe('list', () => {
       offset: -5,
     });
 
-    expect(fake.calls[0]?.args).toEqual([0, 'suspended', 100, 0]);
+    expect(fake.calls[0]?.args).toEqual([epochToIso(0), 'suspended', 100, 0]);
   });
 });
 

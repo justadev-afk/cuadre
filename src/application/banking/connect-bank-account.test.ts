@@ -137,7 +137,7 @@ describe('connect bank account', () => {
       credsExpireAt: null,
       createdAt: NOW,
     });
-    expect(await unseal<string>(CREDS_KEY, row?.accountNumber ?? empty())).toBe(ACCOUNT_NUMBER);
+    expect(row?.accountNumber).toBe(ACCOUNT_NUMBER);
     // One row per pair, keyed by service; the operate key is marked operate.
     expect(row?.credentials).toHaveLength(1);
     const confirmation = row?.credentials[0];
@@ -181,9 +181,7 @@ describe('connect bank account', () => {
     expect(result.ok).toBe(true);
     const row = inserted[0];
     expect(row?.accountLast4).toBe('5394');
-    expect(await unseal<string>(CREDS_KEY, row?.accountNumber ?? empty())).toBe(
-      '01340804108041005394',
-    );
+    expect(row?.accountNumber).toBe('01340804108041005394');
     expect(await unseal(CREDS_KEY, row?.credentials[0]?.credentials ?? empty())).toEqual(OPERATE);
   });
 
@@ -200,9 +198,7 @@ describe('connect bank account', () => {
 
     expect(result.ok).toBe(true);
     expect(inserted[0]?.accountLast4).toBe('5394');
-    expect(await unseal<string>(CREDS_KEY, inserted[0]?.accountNumber ?? empty())).toBe(
-      '01340804108041005394',
-    );
+    expect(inserted[0]?.accountNumber).toBe('01340804108041005394');
   });
 
   it('refuses a typed number that is not a plausible account', async () => {

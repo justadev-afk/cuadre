@@ -79,7 +79,7 @@ async function bankAccount(overrides: Partial<BankAccount> = {}): Promise<BankAc
     bank: 'banesco',
     environment: 'production',
     clientIdLast6: 'client',
-    accountNumber: await seal(CREDS_KEY, ACCOUNT_NUMBER),
+    accountNumber: ACCOUNT_NUMBER,
     credentials: [
       {
         credKey: 'main',
@@ -648,8 +648,8 @@ describe('validate payment across accounts', () => {
 
   async function twoAccounts(): Promise<readonly BankAccount[]> {
     return [
-      await bankAccount({ id: 'account-a', accountNumber: await seal(CREDS_KEY, AccA) }),
-      await bankAccount({ id: 'account-b', accountNumber: await seal(CREDS_KEY, AccB) }),
+      await bankAccount({ id: 'account-a', accountNumber: AccA }),
+      await bankAccount({ id: 'account-b', accountNumber: AccB }),
     ];
   }
 

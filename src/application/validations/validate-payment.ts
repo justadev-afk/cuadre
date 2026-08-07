@@ -514,17 +514,16 @@ async function openAccount(
   account: BankAccount,
 ): Promise<{ credentials: OpenedCredential[]; accountNumber: string }> {
   try {
-    const [credentials, accountNumber] = await Promise.all([
-      Promise.all(
-        account.credentials.map(async (stored) => ({
-          credKey: stored.credKey,
-          usage: stored.usage,
-          credentials: await unseal<BankCredentials>(credsKey, stored.credentials),
-        })),
-      ),
-      unseal<string>(credsKey, account.accountNumber),
-    ]);
-    return { credentials, accountNumber };
+    // Only the credential pairs are sealed now; the account number is stored in
+    // the clear (§6), so it comes straight off the row.
+    const credentials = await Promise.all(
+      account.credentials.map(async (stored) => ({
+        credKey: stored.credKey,
+        usage: stored.usage,
+        credentials: await unseal<BankCredentials>(credsKey, stored.credentials),
+      })),
+    );
+    return { credentials, accountNumber: account.accountNumber };
   } catch {
     throw new AppError('internal', `bank account ${account.id} could not be unsealed`);
   }

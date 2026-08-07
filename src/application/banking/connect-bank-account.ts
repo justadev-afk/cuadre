@@ -113,7 +113,9 @@ export function makeConnectBankAccount({
       bank: pending.bank,
       environment: pending.environment,
       clientIdLast6: lastSix(operateClientId),
-      accountNumber: await seal(credsKey, chosen.value.fullNumber),
+      // The account number is not sealed any more — it is the merchant's own
+      // receiving account, not a secret (§6). The client secrets still are.
+      accountNumber: chosen.value.fullNumber,
       accountLast4: chosen.value.accountLast4,
       accountType: chosen.value.accountType,
       holderId: chosen.value.holderId,

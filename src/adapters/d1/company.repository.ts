@@ -4,10 +4,11 @@
  * INSERT. `update` builds its SET clause from a patch that has no `id` field at
  * all, which is the cheapest way to make "never update the id" unforgettable.
  */
+import { epochToIso } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import { isUniqueIndex, readConstraintFailure, type UniqueIndex } from './constraint-error.ts';
-import { type D1Row, integer, optionalText, text } from './row.ts';
+import { type D1Row, epochFromIso, integer, optionalText, text } from './row.ts';
 
 export type CompanyStatus = 'active' | 'suspended';
 
@@ -96,7 +97,7 @@ export class D1CompanyRepository implements CompanyRepository {
              VALUES (?, ?, ?, ?, ?)
              RETURNING ${COLUMNS}`,
         )
-        .bind(input.id, input.name, input.rif, input.industry, input.createdAt)
+        .bind(input.id, input.name, input.rif, input.industry, epochToIso(input.createdAt))
         .first<D1Row>();
 
       if (row === null) throw new AppError('internal', 'company insert returned no row');
@@ -133,7 +134,7 @@ export class D1CompanyRepository implements CompanyRepository {
               ORDER BY c.created_at DESC
               LIMIT ? OFFSET ?`,
         )
-        .bind(query.activeSince, ...filter.args, limit, offset)
+        .bind(epochToIso(query.activeSince), ...filter.args, limit, offset)
         .all<D1Row>(),
       this.db
         .prepare(`SELECT COUNT(*) AS total FROM companies c ${filter.where}`)
@@ -219,7 +220,7 @@ export function toCompany(row: D1Row): Company {
     rif: text(row, 'rif'),
     industry: optionalText(row, 'industry'),
     status: toCompanyStatus(text(row, 'status')),
-    createdAt: integer(row, 'created_at'),
+    createdAt: epochFromIso(row, 'created_at'),
   };
 }
 

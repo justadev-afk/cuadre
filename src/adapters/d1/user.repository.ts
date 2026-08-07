@@ -12,10 +12,11 @@
  * the hash has to ask for `UserWithSecret` by name, so no serialiser can put it
  * in a response by accident.
  */
+import { epochToIso } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import { isUniqueIndex, readConstraintFailure, type UniqueIndex } from './constraint-error.ts';
-import { type D1Row, integer, optionalInteger, optionalText, text } from './row.ts';
+import { type D1Row, epochFromIso, optionalEpochFromIso, optionalText, text } from './row.ts';
 
 export type UserRole = 'admin' | 'company' | 'cashier';
 export type UserStatus = 'active' | 'disabled';
@@ -120,7 +121,7 @@ export class D1UserRepository implements UserRepository {
           input.email,
           input.username,
           input.passwordHash,
-          input.createdAt,
+          epochToIso(input.createdAt),
         )
         .first<D1Row>();
 
@@ -219,7 +220,10 @@ export class D1UserRepository implements UserRepository {
    * good password into a failed login, so it does not report an outcome.
    */
   async touchLastLogin(id: string, at: number): Promise<void> {
-    await this.db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(at, id).run();
+    await this.db
+      .prepare('UPDATE users SET last_login_at = ? WHERE id = ?')
+      .bind(epochToIso(at), id)
+      .run();
   }
 
   /**
@@ -298,8 +302,8 @@ export function toUser(row: D1Row): User {
     email: optionalText(row, 'email'),
     username: optionalText(row, 'username'),
     status: toStatus(text(row, 'status')),
-    lastLoginAt: optionalInteger(row, 'last_login_at'),
-    createdAt: integer(row, 'created_at'),
+    lastLoginAt: optionalEpochFromIso(row, 'last_login_at'),
+    createdAt: epochFromIso(row, 'created_at'),
   };
 }
 

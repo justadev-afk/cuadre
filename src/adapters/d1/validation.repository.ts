@@ -14,10 +14,18 @@
  * read "not charged yet" and both charge.
  */
 import type { FoundPayment } from '../../application/ports/bank-gateway.ts';
-import { VENEZUELA_UTC_OFFSET_MINUTES } from '../../shared/clock.ts';
+import { epochToIso, VENEZUELA_UTC_OFFSET_MINUTES } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 import { isUniqueIndex, readConstraintFailure, type UniqueIndex } from './constraint-error.ts';
-import { type D1Row, flag, integer, optionalInteger, optionalText, text } from './row.ts';
+import {
+  type D1Row,
+  epochFromIso,
+  flag,
+  integer,
+  optionalInteger,
+  optionalText,
+  text,
+} from './row.ts';
 import type { ValidationCursor } from './validation-cursor.ts';
 
 /** Mirrors the `search_mode` CHECK, which mirrors the gateway's own strategies. */
@@ -151,8 +159,8 @@ const LIST_COLUMNS = `v.id, v.company_id, v.cashier_id, v.bank_account_id, v.ban
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
-/** `date(created_at + this, 'unixepoch')` is the counter's day, not UTC's. */
-const LOCAL_DAY_OFFSET_SECONDS = VENEZUELA_UTC_OFFSET_MINUTES * 60;
+/** A SQLite modifier that shifts the stored UTC timestamp to the counter's day. */
+const VENEZUELA_DAY_MODIFIER = `${VENEZUELA_UTC_OFFSET_MINUTES} minutes`;
 
 export class D1ValidationRepository implements ValidationRepository {
   constructor(private readonly db: D1Database) {}
@@ -212,11 +220,11 @@ export class D1ValidationRepository implements ValidationRepository {
           input.currency,
           input.payerPhone,
           input.sourceBankId,
-          input.trnAt,
+          epochToIso(input.trnAt),
           input.latencyMs,
           input.searchMode,
           input.idempotencyKey,
-          input.createdAt,
+          epochToIso(input.createdAt),
         )
         .first<D1Row>();
 
@@ -248,7 +256,7 @@ export class D1ValidationRepository implements ValidationRepository {
   async dailyTotals(query: DailyTotalsQuery): Promise<readonly DailyTotal[]> {
     const result = await this.db
       .prepare(
-        `SELECT date(created_at + ?, 'unixepoch') AS local_date,
+        `SELECT date(created_at, ?) AS local_date,
                   COUNT(*) AS total_count,
                   SUM(amount_cents) AS total_amount_cents
              FROM validations
@@ -257,7 +265,7 @@ export class D1ValidationRepository implements ValidationRepository {
             GROUP BY local_date
             ORDER BY local_date DESC`,
       )
-      .bind(LOCAL_DAY_OFFSET_SECONDS, query.companyId, query.from, query.to)
+      .bind(VENEZUELA_DAY_MODIFIER, query.companyId, epochToIso(query.from), epochToIso(query.to))
       .all<D1Row>();
 
     return result.results.map((row) => ({
@@ -273,8 +281,11 @@ export class D1ValidationRepository implements ValidationRepository {
     query: ValidationListQuery | CashierListQuery,
   ): Promise<ValidationPage> {
     const limit = clamp(query.limit);
+    // Timestamps are stored as ISO-8601 UTC text, which sorts lexicographically
+    // in the same order as chronologically — so the epoch bounds and cursor just
+    // convert to ISO and every comparison and ORDER BY keeps working.
     const conditions = [`v.${ownerColumn} = ?`, 'v.created_at >= ?', 'v.created_at <= ?'];
-    const args: unknown[] = [ownerId, query.from, query.to];
+    const args: unknown[] = [ownerId, epochToIso(query.from), epochToIso(query.to)];
 
     if (query.isSandbox !== undefined) {
       conditions.push('v.is_sandbox = ?');
@@ -283,7 +294,8 @@ export class D1ValidationRepository implements ValidationRepository {
 
     if (query.cursor !== undefined) {
       conditions.push('(v.created_at < ? OR (v.created_at = ? AND v.id < ?))');
-      args.push(query.cursor.createdAt, query.cursor.createdAt, query.cursor.id);
+      const cursorAt = epochToIso(query.cursor.createdAt);
+      args.push(cursorAt, cursorAt, query.cursor.id);
     }
 
     // LEFT JOIN, not INNER: a validation whose cashier was later removed still
@@ -364,11 +376,11 @@ export function toValidation(row: D1Row): Validation {
     currency: text(row, 'currency'),
     payerPhone: text(row, 'payer_phone'),
     sourceBankId: text(row, 'source_bank_id'),
-    trnAt: integer(row, 'trn_at'),
+    trnAt: epochFromIso(row, 'trn_at'),
     latencyMs: optionalInteger(row, 'latency_ms'),
     searchMode: toSearchMode(optionalText(row, 'search_mode')),
     idempotencyKey: text(row, 'idempotency_key'),
-    createdAt: integer(row, 'created_at'),
+    createdAt: epochFromIso(row, 'created_at'),
     // Present only on list rows (the LEFT JOIN); absent → null on other paths.
     cashierName: optionalText(row, 'cashier_name'),
   };

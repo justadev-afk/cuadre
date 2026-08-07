@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
+import { epochToIso } from '../../shared/clock.ts';
 import { makeFakeD1 } from './d1.fake.ts';
 import { D1PasswordResetRepository, toPasswordReset } from './password-reset.repository.ts';
 
 const TOKEN_HASH = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
+// Timestamp columns hold ISO-8601 UTC text since migration 0004; the repo maps
+// them back to epoch seconds, and binds its epoch comparisons as ISO too.
 function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     token_hash: TOKEN_HASH,
     user_id: 'user-1',
-    expires_at: 1_770_001_800,
+    expires_at: epochToIso(1_770_001_800),
     used_at: null,
     requested_ip: 'b1946ac92492d2347c6235b4d2611184',
-    created_at: 1_770_000_000,
+    created_at: epochToIso(1_770_000_000),
     ...overrides,
   };
 }
@@ -40,7 +43,7 @@ describe('toPasswordReset', () => {
   });
 
   it('carries the spend instant once used', () => {
-    expect(toPasswordReset(row({ used_at: 1_770_000_120 })).usedAt).toBe(1_770_000_120);
+    expect(toPasswordReset(row({ used_at: epochToIso(1_770_000_120) })).usedAt).toBe(1_770_000_120);
   });
 });
 
@@ -60,9 +63,9 @@ describe('create', () => {
     expect(fake.calls[0]?.args).toEqual([
       TOKEN_HASH,
       'user-1',
-      1_770_001_800,
+      epochToIso(1_770_001_800),
       'b1946ac92492d2347c6235b4d2611184',
-      1_770_000_000,
+      epochToIso(1_770_000_000),
     ]);
   });
 });
@@ -76,7 +79,11 @@ describe('markUsed', () => {
 
     expect(fake.calls[0]?.sql).toContain('used_at IS NULL');
     expect(fake.calls[0]?.sql).toContain('expires_at > ?');
-    expect(fake.calls[0]?.args).toEqual([1_770_000_120, TOKEN_HASH, 1_770_000_120]);
+    expect(fake.calls[0]?.args).toEqual([
+      epochToIso(1_770_000_120),
+      TOKEN_HASH,
+      epochToIso(1_770_000_120),
+    ]);
     expect(spent).toBe(true);
   });
 
@@ -112,7 +119,7 @@ describe('countRecentForUser', () => {
     );
 
     expect(fake.calls[0]?.sql).not.toContain('used_at');
-    expect(fake.calls[0]?.args).toEqual(['user-1', 1_769_996_400]);
+    expect(fake.calls[0]?.args).toEqual(['user-1', epochToIso(1_769_996_400)]);
     expect(count).toBe(3);
   });
 

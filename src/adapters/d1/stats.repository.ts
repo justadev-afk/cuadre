@@ -6,7 +6,9 @@
  * validation today, sandbox included — unlike the company panel's *cash* totals,
  * which exclude sandbox because those are money and this is activity.
  */
+
 import type { LoginStatsReader } from '../../application/stats/login-stats.ts';
+import { epochToIso } from '../../shared/clock.ts';
 
 export class D1StatsRepository implements LoginStatsReader {
   constructor(private readonly db: D1Database) {}
@@ -26,7 +28,7 @@ export class D1StatsRepository implements LoginStatsReader {
            FROM validations
           WHERE created_at >= ?`,
       )
-      .bind(since)
+      .bind(epochToIso(since))
       .first<{ n: number; avg_ms: number | null }>();
 
     return {

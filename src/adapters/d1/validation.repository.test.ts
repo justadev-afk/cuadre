@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { epochToIso } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 import { makeFakeD1, uniqueViolation } from './d1.fake.ts';
 import { D1ValidationRepository, toValidation } from './validation.repository.ts';
@@ -19,11 +20,11 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     currency: 'BS',
     payer_phone: '584143125566',
     source_bank_id: '0134',
-    trn_at: 1_770_000_000,
+    trn_at: epochToIso(1_770_000_000),
     latency_ms: 812,
     search_mode: 'exact_reference',
     idempotency_key: 'idem-1',
-    created_at: 1_770_000_060,
+    created_at: epochToIso(1_770_000_060),
     ...overrides,
   };
 }
@@ -223,10 +224,10 @@ describe('listByCompany', () => {
     expect(fake.calls[0]?.sql).toContain('v.created_at < ? OR (v.created_at = ? AND v.id < ?)');
     expect(fake.calls[0]?.args).toEqual([
       'la-espiga',
-      1,
-      2,
-      1_770_000_060,
-      1_770_000_060,
+      epochToIso(1),
+      epochToIso(2),
+      epochToIso(1_770_000_060),
+      epochToIso(1_770_000_060),
       'val-1',
       21,
     ]);
@@ -272,9 +273,9 @@ describe('dailyTotals', () => {
     });
 
     expect(fake.calls[0]?.sql).toContain('is_sandbox = 0');
-    // UTC−4, in seconds. Grouping on the raw epoch would move the boundary to
-    // eight in the evening, local.
-    expect(fake.calls[0]?.args[0]).toBe(-14_400);
+    // UTC−4, as a SQLite datetime modifier on the ISO column. Grouping on the raw
+    // UTC day would move the boundary to eight in the evening, local.
+    expect(fake.calls[0]?.args[0]).toBe('-240 minutes');
     expect(totals).toEqual([{ date: '2026-08-05', count: 12, amountCents: 480_000 }]);
   });
 });

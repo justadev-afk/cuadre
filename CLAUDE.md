@@ -206,15 +206,25 @@ gateway at call time.
   A company is renamed through `name`; its slug never changes.
 - **The cashier login tuple is `(company_id, username)`**, which is literally
   what is typed on the login screen: `la-espiga` + `maria.r`.
-- **Money is INTEGER cents. Timestamps are epoch seconds.** Both, everywhere.
-- **Nothing readable at rest.** The bank client secret and the full account
-  number are AES-GCM sealed with a versioned key. What survives in the clear is
-  the last 4 of the account and the last 6 of the client id — all the UI shows.
-  Credentials live one pair per row in `bank_account_credentials` (`cred_key`,
-  `usage`, own key version), never as a JSON blob on the account; **an account is
-  written together with at least one pair or not at all** — the invariant is
-  enforced in `D1BankAccountRepository.insert`, not just intended (migration
-  0003).
+- **Money is INTEGER cents.** Always, everywhere.
+- **The domain works in epoch seconds; the database stores ISO-8601 UTC.**
+  Timestamps compare and order as epoch-seconds numbers in the domain, but the
+  columns hold `2026-08-07T18:42:12Z` TEXT (migration 0004) so a human or an IDE
+  can read a row. The repositories convert at the boundary (`epochToIso` /
+  `isoToEpoch` in `clock.ts`); ISO-8601 UTC sorts the same lexically as
+  chronologically, so `created_at DESC` indexes keep working. Nothing in the
+  domain ever sees a date string.
+- **No BLOB columns.** They are unreadable in the tools the team inspects data
+  with. What was sealed is stored as **base64 TEXT** instead.
+- **The client secret is sealed; the account number is not.** The OAuth client
+  secret is AES-GCM sealed (then base64) — it is a password. The full account
+  number is **stored in the clear** (`account_number` TEXT): it is the merchant's
+  own receiving account, not sensitive enough to seal. What the UI shows is still
+  the last 4 of the account and the last 6 of the client id. Credentials live one
+  pair per row in `bank_account_credentials` (`cred_key`, `usage`, own key
+  version), never as a JSON blob on the account; **an account is written together
+  with at least one pair or not at all** — the invariant is enforced in
+  `D1BankAccountRepository.insert`, not just intended (migrations 0003–0004).
 - **IPs are stored hashed** with `IP_PEPPER`, never raw.
 - **Migrations** are numbered and forward-only. A destructive migration ships
   alone, after a backup, never with feature work.

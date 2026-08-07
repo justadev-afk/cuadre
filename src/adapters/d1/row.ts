@@ -12,6 +12,7 @@
  * hold payment references, phone numbers and sealed credentials, and the detail
  * reaches the logs.
  */
+import { isoToEpoch } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 
 export type D1Row = Record<string, unknown>;
@@ -51,6 +52,20 @@ export function optionalInteger(row: D1Row, column: string): number | null {
   const value = row[column];
   if (value === null || value === undefined) return null;
   return integer(row, column);
+}
+
+/**
+ * A timestamp column. Stored as ISO-8601 UTC text since migration 0004, read
+ * back as the epoch seconds the domain compares and orders in — the conversion
+ * lives here, at the boundary, so the domain never sees a string.
+ */
+export function epochFromIso(row: D1Row, column: string): number {
+  return isoToEpoch(text(row, column));
+}
+
+export function optionalEpochFromIso(row: D1Row, column: string): number | null {
+  const value = optionalText(row, column);
+  return value === null ? null : isoToEpoch(value);
 }
 
 /** An INTEGER column constrained to 0/1. Anything else is corruption. */

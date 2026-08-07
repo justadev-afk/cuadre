@@ -23,11 +23,19 @@ import type {
   BankEnvironment,
   BankId,
 } from '../../application/ports/bank-gateway.ts';
-import type { Sealed } from '../../shared/crypto.ts';
+import { epochToIso } from '../../shared/clock.ts';
+import { fromBase64, type Sealed, toBase64 } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import { isUniqueIndex, readConstraintFailure, type UniqueIndex } from './constraint-error.ts';
-import { bytes, type D1Row, integer, optionalInteger, optionalText, text } from './row.ts';
+import {
+  type D1Row,
+  epochFromIso,
+  integer,
+  optionalEpochFromIso,
+  optionalText,
+  text,
+} from './row.ts';
 
 export type BankAccountStatus = 'active' | 'needs_reverify' | 'removed';
 
@@ -54,8 +62,8 @@ export type BankAccount = {
   readonly environment: BankEnvironment;
   /** Safe to render: the operate pair's tail. The whole id is in `credentials`. */
   readonly clientIdLast6: string | null;
-  /** The full account number, sealed. */
-  readonly accountNumber: Sealed;
+  /** The full account number, in the clear (not sensitive enough to seal — §6). */
+  readonly accountNumber: string;
   /** Safe to render, and the fourth column of the per-company unique key. */
   readonly accountLast4: string;
   readonly accountType: string | null;
@@ -74,7 +82,8 @@ export type NewBankAccount = {
   readonly bank: BankId;
   readonly environment: BankEnvironment;
   readonly clientIdLast6: string | null;
-  readonly accountNumber: Sealed;
+  /** The full account number, in the clear. */
+  readonly accountNumber: string;
   readonly accountLast4: string;
   readonly accountType: string | null;
   readonly holderId: string | null;
@@ -146,7 +155,7 @@ const ACCOUNT_INDEX: UniqueIndex = {
 };
 
 const COLUMNS = `id, company_id, bank, environment, client_id_last6,
-                 account_ct, account_iv, account_key_v, account_last4, account_type, holder_id,
+                 account_number, account_last4, account_type, holder_id,
                  verified_at, creds_expire_at, status, created_at`;
 
 /** The credential-row columns, minus `bank_account_id` which grouping selects. */
@@ -177,9 +186,9 @@ export class D1BankAccountRepository implements BankAccountRepository {
       .prepare(
         `INSERT INTO bank_accounts
              (id, company_id, bank, environment, client_id_last6,
-              account_ct, account_iv, account_key_v, account_last4, account_type, holder_id,
+              account_number, account_last4, account_type, holder_id,
               creds_expire_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING ${COLUMNS}`,
       )
       .bind(
@@ -188,14 +197,12 @@ export class D1BankAccountRepository implements BankAccountRepository {
         input.bank,
         input.environment,
         input.clientIdLast6,
-        input.accountNumber.ciphertext,
-        input.accountNumber.iv,
-        input.accountNumber.keyVersion,
+        input.accountNumber,
         input.accountLast4,
         input.accountType,
         input.holderId,
-        input.credsExpireAt,
-        input.createdAt,
+        input.credsExpireAt === null ? null : epochToIso(input.credsExpireAt),
+        epochToIso(input.createdAt),
       );
     const credentials = input.credentials.map((cred) =>
       this.credInsert(input.id, cred, input.createdAt),
@@ -287,7 +294,7 @@ export class D1BankAccountRepository implements BankAccountRepository {
             SET verified_at = ?, creds_expire_at = ?, status = 'active'
           WHERE id = ? AND status <> 'removed'
           RETURNING ${COLUMNS}`,
-      [at, credsExpireAt, id],
+      [epochToIso(at), credsExpireAt === null ? null : epochToIso(credsExpireAt), id],
     );
   }
 
@@ -329,7 +336,7 @@ export class D1BankAccountRepository implements BankAccountRepository {
             WHERE id = ? AND status <> 'removed'
             RETURNING ${COLUMNS}`,
       )
-      .bind(clientIdLast6, verifiedAt, id);
+      .bind(clientIdLast6, epochToIso(verifiedAt), id);
 
     const results = await this.db.batch<D1Row>([clear, ...written, account]);
     const row = results[results.length - 1]?.results[0];
@@ -355,10 +362,10 @@ export class D1BankAccountRepository implements BankAccountRepository {
         cred.credKey,
         cred.usage,
         cred.clientIdLast6,
-        cred.credentials.ciphertext,
-        cred.credentials.iv,
+        toBase64(cred.credentials.ciphertext),
+        toBase64(cred.credentials.iv),
         cred.credentials.keyVersion,
-        createdAt,
+        epochToIso(createdAt),
       );
   }
 
@@ -419,19 +426,15 @@ export function toBankAccount(row: D1Row, credentials: readonly StoredCredential
     bank: text(row, 'bank'),
     environment: toEnvironment(text(row, 'environment')),
     clientIdLast6: optionalText(row, 'client_id_last6'),
-    accountNumber: {
-      ciphertext: bytes(row, 'account_ct'),
-      iv: bytes(row, 'account_iv'),
-      keyVersion: integer(row, 'account_key_v'),
-    },
+    accountNumber: text(row, 'account_number'),
     accountLast4: text(row, 'account_last4'),
     accountType: optionalText(row, 'account_type'),
     holderId: optionalText(row, 'holder_id'),
     credentials,
-    verifiedAt: optionalInteger(row, 'verified_at'),
-    credsExpireAt: optionalInteger(row, 'creds_expire_at'),
+    verifiedAt: optionalEpochFromIso(row, 'verified_at'),
+    credsExpireAt: optionalEpochFromIso(row, 'creds_expire_at'),
     status: toStatus(text(row, 'status')),
-    createdAt: integer(row, 'created_at'),
+    createdAt: epochFromIso(row, 'created_at'),
   };
 }
 
@@ -441,8 +444,8 @@ export function toStoredCredential(row: D1Row): StoredCredential {
     usage: toUsage(text(row, 'usage')),
     clientIdLast6: optionalText(row, 'client_id_last6'),
     credentials: {
-      ciphertext: bytes(row, 'creds_ct'),
-      iv: bytes(row, 'creds_iv'),
+      ciphertext: fromBase64(text(row, 'creds_ct')),
+      iv: fromBase64(text(row, 'creds_iv')),
       keyVersion: integer(row, 'creds_key_v'),
     },
   };
