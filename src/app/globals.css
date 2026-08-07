@@ -1002,3 +1002,208 @@ select.input { appearance: none; }
     padding: 16px;
   }
 }
+
+/* ══ the counter — v2 screen 11, a two-pane till ═══════════════════════════ */
+.till {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
+}
+.till-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 28px;
+}
+.till-turno {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  background: var(--color-neutral-900);
+  box-shadow: inset 1px 0 0 var(--color-divider);
+}
+.till-turno-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.till-recent {
+  display: flex;
+  flex-direction: column;
+}
+.till-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  background: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in srgb, var(--color-text) 8%, transparent) 20px,
+      color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px),
+      transparent
+    )
+    no-repeat bottom / 100% 1px;
+}
+
+.cx-kicker {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.cx-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+/* The hero reference field: big, centred, the one number the cashier reads. */
+.cx-reference {
+  min-height: 66px;
+  font-size: 30px;
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+.cx-bank-select {
+  cursor: pointer;
+}
+/* Amount, entered like a POS terminal: a fixed 'Bs', right-aligned digits. */
+.cx-amount {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+.cx-amount:focus-within {
+  border-color: var(--color-accent);
+}
+.cx-amount-currency {
+  margin-right: 8px;
+  font-family: var(--font-heading);
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.cx-amount-input {
+  flex: 1;
+  min-height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: right;
+  font-family: var(--font-heading);
+  font-size: 22px;
+}
+.cx-amount-input:hover,
+.cx-amount-input:focus-visible {
+  border: none;
+  outline: none;
+}
+.cx-submit {
+  min-height: 50px;
+  font-size: 16px;
+  margin-top: 2px;
+}
+.cx-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: auto 0 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.cx-note > i {
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.cx-problem {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-accent-300);
+}
+
+/* The bank's answer — a centred card, screens 12/17/26. */
+.cx-result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(560px, 100%);
+  margin: 28px auto;
+  padding: 26px 28px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+}
+.cx-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.cx-verdict {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.cx-verdict-column {
+  flex-direction: column;
+  text-align: center;
+}
+.cx-verdict-body {
+  font-size: 13px;
+  max-width: 42ch;
+}
+.cx-mark {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 24px;
+}
+.cx-mark-ok {
+  border: 1px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+}
+.cx-mark-quiet {
+  border: 1px solid var(--color-neutral-500);
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+  color: var(--color-neutral-300);
+}
+.cx-details {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 13px;
+}
+.cx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cx-actions {
+  display: flex;
+  gap: 10px;
+}
+.cx-actions > .btn {
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .till {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .till-turno {
+    box-shadow: inset 0 1px 0 var(--color-divider);
+  }
+  .cx-reference {
+    min-height: 58px;
+    font-size: 26px;
+  }
+}

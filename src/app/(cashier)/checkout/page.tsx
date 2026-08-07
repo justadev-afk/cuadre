@@ -13,6 +13,7 @@
  */
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
+import { formatClock } from '../../_lib/venezuela-format.ts';
 import { CheckoutForm } from './checkout-form.tsx';
 import { NoBankAccount } from './no-bank-account.tsx';
 
@@ -25,23 +26,38 @@ export default async function CheckoutPage() {
   // A cashier always has a company; the type carries null only for a platform
   // admin, whom `requireArea('counter')` already turned away.
   const accounts = companyId ? await container().banking.listBankAccounts({ companyId }) : [];
-
   const active = pickActiveAccount(accounts);
 
-  // The header is the shell's, which reads the session's role — so a company
-  // owner working the till keeps their own left rail, a cashier keeps theirs.
+  // The "mi turno" pane on the right: today's charges by whoever is signed in.
+  const mine = companyId
+    ? await container().validations.listMyValidations({
+        companyId,
+        cashierId: session.userId,
+        range: 'today',
+      })
+    : { items: [] };
+  const turnoCount = mine.items.length;
+  const turnoCents = mine.items.reduce((sum, v) => sum + v.amountCents, 0);
+  const recent = mine.items.slice(0, 6).map((v) => ({
+    controlCode: v.controlCode,
+    amountCents: v.amountCents,
+    label: `${formatClock(v.trnAt)} · ref ${v.reference} · ${v.sourceBankId}`,
+  }));
+
+  if (active === null) return <NoBankAccount />;
+
+  // Full width — the till is a two-pane layout that fills the shell's content
+  // column. The header is the shell's, which reads the session's role, so a
+  // company owner working the till keeps their own left rail.
   return (
-    <div style={{ padding: '28px 24px', maxWidth: 560, marginInline: 'auto', width: '100%' }}>
-      {active === null ? (
-        <NoBankAccount />
-      ) : (
-        <CheckoutForm
-          bankName={bankDisplayName(active.bank)}
-          accountLast4={active.accountLast4}
-          environment={active.environment}
-        />
-      )}
-    </div>
+    <CheckoutForm
+      bankName={bankDisplayName(active.bank)}
+      accountLast4={active.accountLast4}
+      environment={active.environment}
+      recent={recent}
+      turnoCount={turnoCount}
+      turnoCents={turnoCents}
+    />
   );
 }
 

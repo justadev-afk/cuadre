@@ -10,6 +10,8 @@
       "!dist",
       "!.wrangler",
       "!.next",
+      "!.vinext",
+      "!.claude",
       "!next-env.d.ts"
     ]
   },

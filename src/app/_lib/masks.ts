@@ -47,3 +47,35 @@ export function maskPhone(raw: string): string {
   if (digits.length <= 4) return digits;
   return `${digits.slice(0, 4)}-${digits.slice(4)}`;
 }
+
+/**
+ * '1.240,00' — an amount that is always exactly two decimals, entered the way a
+ * calculator or a POS terminal takes it: every digit is a cent, filling from
+ * the right. Typing `3` `0` `2` `1` `5` reads `3,02` → `30,21` → `302,15`, so
+ * the decimal point is never a keystroke and the field can never hold `1.005`
+ * or `12,` — the two states `parseAmountToCents` refuses. Matches the reference
+ * `CurrencyInput` (react-native-currency-input, precision 2, `.`/`,`).
+ *
+ * The result parses straight back: `parseAmountToCents('1.240,00')` is 124000.
+ */
+export function maskCurrency(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits === '') return '';
+
+  // Cents, leading zeros stripped but padded to at least three so there is a
+  // whole part and two decimals ('5' → '005' → '0,05').
+  const cents = String(Number(digits)).padStart(3, '0');
+  const whole = cents.slice(0, -2);
+  const fraction = cents.slice(-2);
+  return `${groupThousands(whole)},${fraction}`;
+}
+
+/** '1240' → '1.240'. Dots every three digits from the right. */
+function groupThousands(digits: string): string {
+  let out = '';
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += '.';
+    out += digits[i];
+  }
+  return out;
+}

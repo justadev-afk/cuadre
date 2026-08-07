@@ -1,34 +1,38 @@
 'use client';
 
 /**
- * The counter. Four fields, one question, and three things the bank can answer
- * (screens 15, 16, 17 and 26).
+ * The counter — v2 screens 11, 12, 15, 16, 17, 26.
  *
- * This is the one screen in the product with real client state, and it earns it:
- * the picker, the amount, the in-flight spinner and the result all replace each
- * other in place, and a cashier with a customer waiting must not lose a typed
+ * A two-pane till: the form on the left, "mi turno" on the right. The reference,
+ * the amount, the in-flight spinner and the bank's answer all replace each other
+ * in place, because a cashier with a customer waiting must not lose a typed
  * reference to a navigation. The bank call itself stays on the server — this
- * component awaits `chargeAction` and never speaks to a bank or to an API of
- * ours.
+ * component awaits `chargeAction` and never speaks to a bank.
  *
  * The rules that decide whether a submission is even askable are the domain's,
- * imported directly: `parseAmountToCents` refuses an amount that is not an
- * exact count of cents, `normalisePhone` refuses a number with no pago móvil
- * behind it, and `searchBanks` is the same filter the picker on the server would
- * use. Re-implementing any of them here is how the counter and the use case
- * start disagreeing about what a valid claim is.
+ * imported directly: `parseAmountToCents` refuses an amount that is not an exact
+ * count of cents, `normalisePhone` refuses a number with no pago móvil behind
+ * it. Re-implementing either here is how the counter and the use case start
+ * disagreeing about what a valid claim is.
  */
 import { useId, useRef, useState } from 'react';
 
 import { formatBolivares, parseAmountToCents } from '../../../domain/money.ts';
 import { formatPhoneForDisplay, normalisePhone } from '../../../domain/phone.ts';
-import { findBank, SUDEBAN_BANKS, searchBanks } from '../../../domain/sudeban.ts';
+import { findBank, SUDEBAN_BANKS } from '../../../domain/sudeban.ts';
 import { Icon } from '../../_components/icon.tsx';
 import { BankSpinner } from '../../_components/skeleton.tsx';
-import { maskPhone } from '../../_lib/masks.ts';
+import { maskCurrency, maskPhone } from '../../_lib/masks.ts';
 import { formatDateTime, formatSeconds } from '../../_lib/venezuela-format.ts';
 import { chargeAction } from './actions.ts';
 import type { ChargeOutcome } from './charge-types.ts';
+
+/** One row of the "mi turno" list on the right pane. */
+export type RecentCharge = {
+  readonly controlCode: string;
+  readonly amountCents: number;
+  readonly label: string;
+};
 
 type CheckoutFormProps = {
   /** The bank that answers — the one holding the company's receiving account. */
@@ -37,25 +41,29 @@ type CheckoutFormProps = {
   accountLast4: string;
   /** Which of the company's accounts answers. Sandbox only when there is no other. */
   environment: 'production' | 'sandbox';
+  /** The last few charges on this till, for the right pane. */
+  recent: readonly RecentCharge[];
+  turnoCount: number;
+  turnoCents: number;
 };
 
-/** What the screen is showing. The result and the spinner are states, not routes. */
-type View = 'form' | 'banks';
-
-export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFormProps) {
+export function CheckoutForm({
+  bankName,
+  accountLast4,
+  environment,
+  recent,
+  turnoCount,
+  turnoCents,
+}: CheckoutFormProps) {
   const referenceId = useId();
   const phoneId = useId();
   const bankId = useId();
   const amountId = useId();
-  const searchId = useId();
 
-  const [view, setView] = useState<View>('form');
   const [reference, setReference] = useState('');
   const [phone, setPhone] = useState('');
   const [bankCode, setBankCode] = useState('');
   const [amount, setAmount] = useState('');
-  const [editingAmount, setEditingAmount] = useState(true);
-  const [query, setQuery] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ChargeOutcome | null>(null);
@@ -73,7 +81,6 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
 
   const bank = findBank(bankCode);
   const amountCents = parseAmountToCents(amount);
-  const results = searchBanks(query);
 
   function edited(): void {
     idempotencyKey.current = null;
@@ -120,7 +127,6 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
     setPhone('');
     setBankCode('');
     setAmount('');
-    setEditingAmount(true);
     setOutcome(null);
     setProblem(null);
     setBusy(false);
@@ -131,7 +137,6 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
     attempt.current += 1;
     setOutcome(null);
     setBusy(false);
-    setView('form');
   }
 
   async function copyControlCode(code: string): Promise<void> {
@@ -139,10 +144,10 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
     setCopied(true);
   }
 
-  // ── the bank is answering (screen 26) ─────────────────────────────────────
+  // ── the bank is answering ─────────────────────────────────────────────────
   if (busy) {
     return (
-      <div className="cx-panel">
+      <div className="cx-result">
         <div className="cx-waiting">
           <BankSpinner />
           <div style={{ fontFamily: 'var(--font-heading)', fontSize: 19 }}>
@@ -151,41 +156,39 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
           <span className="text-muted tnum" style={{ fontSize: 12 }}>
             Ref. {reference} · {amountCents === null ? '' : formatBolivares(amountCents)}
           </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+            <div className="sk" style={{ height: 11, width: '80%' }} />
+            <div className="sk" style={{ height: 11, width: '55%', animationDelay: '.2s' }} />
+          </div>
+          {/* Cancelling stops the screen from waiting, not the payment from being
+              confirmed: the idempotency key survives, so resubmitting the same
+              data returns that same charge rather than making a second one. */}
+          <button type="button" className="btn btn-secondary btn-block" onClick={backToForm}>
+            Cancelar
+          </button>
         </div>
-        <div className="hr" style={{ margin: 0 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="sk" style={{ height: 11, width: '80%' }} />
-          <div className="sk" style={{ height: 11, width: '55%', animationDelay: '.2s' }} />
-        </div>
-        {/*
-          The bank keeps answering after this: cancelling stops the screen from
-          waiting, not the payment from being confirmed. The idempotency key
-          survives, so submitting the same data again returns that same charge
-          rather than making a second one.
-        */}
-        <button type="button" className="btn btn-secondary btn-block" onClick={backToForm}>
-          Cancelar
-        </button>
       </div>
     );
   }
 
-  // ── the bank answered (screen 17) ─────────────────────────────────────────
+  // ── the bank answered ─────────────────────────────────────────────────────
   if (outcome !== null) {
     if (outcome.status === 'confirmed') {
       const { charge } = outcome;
       return (
-        <div className="cx-panel">
+        <div className="cx-result">
           <div className="cx-verdict">
             <span className="cx-mark cx-mark-ok">
               <Icon name="check" />
             </span>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: 22 }}>Pago confirmado</div>
-            <span className="text-muted" style={{ fontSize: 12 }}>
-              {charge.latencyMs === null
-                ? `${bankName} confirmó el movimiento`
-                : `${bankName} respondió en ${formatSeconds(charge.latencyMs)}`}
-            </span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 22 }}>Pago confirmado</div>
+              <span className="text-muted" style={{ fontSize: 12 }}>
+                {charge.latencyMs === null
+                  ? `${bankName} confirmó el movimiento`
+                  : `${bankName} respondió en ${formatSeconds(charge.latencyMs)}`}
+              </span>
+            </div>
             {charge.isSandbox && (
               <span className="tag tag-outline">
                 <Icon name="flask" style={{ marginRight: 4 }} />
@@ -194,10 +197,10 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
             )}
           </div>
 
-          <div className="cx-code-box">
+          <div className="control-hero" style={{ flexDirection: 'row', alignItems: 'center' }}>
             <div style={{ flex: 1 }}>
-              <div className="cx-kicker">Código de control</div>
-              <div className="cx-control tnum">{charge.controlCode}</div>
+              <span className="cx-kicker">Código de control</span>
+              <div className="control-hero-num">{charge.controlCode}</div>
             </div>
             <button
               type="button"
@@ -210,24 +213,10 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
           </div>
 
           <div className="cx-details">
-            <div className="cx-row">
-              <span className="text-muted">Monto</span>
-              <span style={{ fontFamily: 'var(--font-heading)', fontSize: 17 }}>
-                {formatBolivares(charge.amountCents)}
-              </span>
-            </div>
-            <div className="cx-row">
-              <span className="text-muted">Referencia</span>
-              <span className="tnum">{charge.reference}</span>
-            </div>
-            <div className="cx-row">
-              <span className="text-muted">Teléfono</span>
-              <span>{formatPhoneForDisplay(charge.payerPhone)}</span>
-            </div>
-            <div className="cx-row">
-              <span className="text-muted">Fecha</span>
-              <span>{formatDateTime(charge.createdAt)}</span>
-            </div>
+            <Row label="Monto" strong value={formatBolivares(charge.amountCents)} />
+            <Row label="Referencia" mono value={charge.reference} />
+            <Row label="Teléfono" value={formatPhoneForDisplay(charge.payerPhone)} />
+            <Row label="Fecha" value={formatDateTime(charge.createdAt)} />
           </div>
 
           <div className="cx-actions">
@@ -245,8 +234,8 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
 
     const verdict = readVerdict(outcome, bankName, reference, amountCents);
     return (
-      <div className="cx-panel">
-        <div className="cx-verdict">
+      <div className="cx-result">
+        <div className="cx-verdict cx-verdict-column">
           <span className="cx-mark cx-mark-quiet">
             <Icon name={verdict.icon} />
           </span>
@@ -269,192 +258,198 @@ export function CheckoutForm({ bankName, accountLast4, environment }: CheckoutFo
             Verificar datos
           </button>
         </div>
+        <p className="text-muted" style={{ fontSize: 11, textAlign: 'center', margin: 0 }}>
+          Este intento no se guarda como cobro.
+        </p>
       </div>
     );
   }
 
-  // ── the bank picker (screen 16) ───────────────────────────────────────────
-  if (view === 'banks') {
-    return (
-      <div className="cx-panel">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon"
-            aria-label="Volver al cobro"
-            onClick={() => setView('form')}
-          >
-            <Icon name="arrow-left" />
-          </button>
-          <h4 style={{ margin: 0, fontSize: 18 }}>Banco emisor</h4>
-        </div>
-
-        <div className="input cx-search">
-          <Icon name="magnifying-glass" style={{ color: 'var(--color-neutral-500)' }} />
-          <input
-            id={searchId}
-            className="cx-search-input"
-            placeholder="Nombre o código"
-            value={query}
-            autoComplete="off"
-            aria-label="Buscar un banco por nombre o código"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <span className="text-muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-            {results.length} de {SUDEBAN_BANKS.length}
+  // ── the till ──────────────────────────────────────────────────────────────
+  return (
+    <div className="till">
+      <form
+        className="till-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <div>
+          <h4 style={{ margin: '0 0 2px' }}>Validar pago móvil</h4>
+          <span className="text-muted" style={{ fontSize: 12 }}>
+            Pide al cliente la referencia completa y su teléfono.
           </span>
         </div>
-        <span className="cx-kicker">Busca por nombre o código</span>
 
-        <div className="cx-bank-list">
-          {results.map((option) => (
-            <button
-              key={option.code}
-              type="button"
-              className="cx-bank"
-              onClick={() => {
-                setBankCode(option.code);
-                setQuery('');
-                setView('form');
+        <div className="field">
+          <label htmlFor={referenceId}>Referencia completa</label>
+          <input
+            id={referenceId}
+            className="input tnum cx-reference"
+            value={reference}
+            inputMode="numeric"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="0000000000"
+            onChange={(event) => {
+              setReference(event.target.value.replace(/\D/g, ''));
+              edited();
+            }}
+          />
+        </div>
+
+        <div className="cx-pair">
+          <div className="field">
+            <label htmlFor={phoneId}>Teléfono del pagador</label>
+            <input
+              id={phoneId}
+              className="input cx-phone"
+              value={phone}
+              inputMode="tel"
+              autoComplete="off"
+              placeholder="0414-3125566"
+              onChange={(event) => {
+                setPhone(maskPhone(event.target.value));
+                edited();
+              }}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor={bankId}>Banco emisor</label>
+            <select
+              id={bankId}
+              className="input cx-bank-select"
+              value={bankCode}
+              onChange={(event) => {
+                setBankCode(event.target.value);
                 edited();
               }}
             >
-              <span className="cx-bank-code tnum">{option.code}</span>
-              <span style={{ fontSize: 14 }}>{option.name}</span>
-            </button>
-          ))}
-          {results.length === 0 && (
-            <span className="text-muted" style={{ fontSize: 13, padding: '10px 8px' }}>
-              Ningún banco con ese nombre o código.
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ── the form (screen 15) ──────────────────────────────────────────────────
-  return (
-    <form
-      className="cx-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
-      <div>
-        <h4 style={{ margin: '0 0 2px' }}>Validar pago móvil</h4>
-        <span className="text-muted" style={{ fontSize: 12 }}>
-          Pide al cliente la referencia completa y su teléfono.
-        </span>
-      </div>
-
-      <div className="field">
-        <label htmlFor={referenceId}>Referencia completa</label>
-        <input
-          id={referenceId}
-          className="input tnum cx-reference"
-          value={reference}
-          inputMode="numeric"
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => {
-            setReference(event.target.value);
-            edited();
-          }}
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor={phoneId}>Teléfono del pagador</label>
-        <input
-          id={phoneId}
-          className="input cx-phone"
-          value={phone}
-          inputMode="tel"
-          autoComplete="off"
-          placeholder="0414-3125566"
-          onChange={(event) => {
-            setPhone(maskPhone(event.target.value));
-            edited();
-          }}
-        />
-      </div>
-
-      <div className="cx-pair">
-        <div className="field">
-          <label htmlFor={bankId}>Banco emisor</label>
-          <button
-            id={bankId}
-            type="button"
-            className="input cx-select"
-            onClick={() => setView('banks')}
-          >
-            {bank === null ? (
-              <span className="text-muted">Elige el banco</span>
-            ) : (
-              <>
-                <span className="cx-bank-code tnum">{bank.code}</span>
-                {bank.name}
-              </>
-            )}
-            <Icon name="caret-down" className="cx-caret" />
-          </button>
+              <option value="">Elige el banco</option>
+              {SUDEBAN_BANKS.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.code} · {option.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="field">
           <label htmlFor={amountId}>Monto del cobro</label>
-          {editingAmount || amountCents === null || amountCents <= 0 ? (
+          <div className="cx-amount">
+            <span className="cx-amount-currency">Bs</span>
             <input
               id={amountId}
               className="input tnum cx-amount-input"
               value={amount}
-              inputMode="decimal"
+              inputMode="numeric"
               autoComplete="off"
               placeholder="0,00"
               onChange={(event) => {
-                setAmount(event.target.value);
+                setAmount(maskCurrency(event.target.value));
                 edited();
               }}
-              onBlur={() => {
-                const cents = parseAmountToCents(amount);
-                if (cents !== null && cents > 0) setEditingAmount(false);
-              }}
             />
-          ) : (
-            <div className="input cx-amount">
-              <span className="tnum cx-amount-value">{formatBolivares(amountCents)}</span>
-              <button
-                type="button"
-                className="btn btn-ghost cx-amount-change"
-                onClick={() => setEditingAmount(true)}
-              >
-                Cambiar
-              </button>
-            </div>
-          )}
+          </div>
         </div>
-      </div>
 
-      {problem !== null && (
-        <p className="cx-problem" role="alert">
-          {problem}
+        {problem !== null && (
+          <p className="cx-problem" role="alert">
+            {problem}
+          </p>
+        )}
+
+        <button type="submit" className="btn btn-primary cx-submit">
+          Validar
+          <Icon name="arrow-right" />
+        </button>
+
+        <p className="cx-note">
+          <Icon name="bank" style={{ marginTop: 2 }} />
+          <span>
+            Consultamos a {bankName} con la referencia, el teléfono y el monto. Cuenta receptora
+            ···· {accountLast4}.
+          </span>
         </p>
-      )}
+      </form>
 
-      <button type="submit" className="btn btn-primary cx-submit">
-        Validar
-        <Icon name="arrow-right" />
-      </button>
+      <aside className="till-turno">
+        <div className="till-turno-head">
+          <span style={{ fontFamily: 'var(--font-heading)', fontSize: 14 }}>Mi turno</span>
+        </div>
+        <div className="cx-pair" style={{ gap: 10 }}>
+          <div className="card elev-sm" style={{ gap: 1, padding: 11 }}>
+            <span className="cx-kicker">Validados</span>
+            <span style={{ fontFamily: 'var(--font-heading)', fontSize: 20 }}>{turnoCount}</span>
+          </div>
+          <div className="card elev-sm" style={{ gap: 1, padding: 11 }}>
+            <span className="cx-kicker">Cobrado</span>
+            <span className="tnum" style={{ fontFamily: 'var(--font-heading)', fontSize: 20 }}>
+              {formatBolivares(turnoCents)}
+            </span>
+          </div>
+        </div>
 
-      <p className="cx-note">
-        <Icon name="bank" style={{ marginTop: 2 }} />
-        <span>
-          Consultamos a {bankName} con la referencia, el teléfono y el monto. Cuenta receptora ····{' '}
-          {accountLast4}.
+        <span className="cx-kicker" style={{ marginTop: 4 }}>
+          Últimos cobros
         </span>
-      </p>
-    </form>
+        {recent.length === 0 ? (
+          <span className="text-muted" style={{ fontSize: 12 }}>
+            Todavía no validas nada en este turno.
+          </span>
+        ) : (
+          <div className="till-recent">
+            {recent.map((row) => (
+              <div className="till-recent-row" key={row.controlCode}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="tnum" style={{ fontFamily: 'var(--font-heading)', fontSize: 15 }}>
+                    {formatBolivares(row.amountCents)}
+                  </div>
+                  <span className="text-muted" style={{ fontSize: 11 }}>
+                    {row.label}
+                  </span>
+                </div>
+                <span className="tnum" style={{ fontSize: 12, color: 'var(--color-accent-300)' }}>
+                  {row.controlCode}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <a href="/my-validations" style={{ fontSize: 12, marginTop: 'auto' }}>
+          Ver todas mis validaciones
+        </a>
+      </aside>
+    </div>
+  );
+}
+
+/** A label/value row in the confirmation details. */
+function Row({
+  label,
+  value,
+  strong,
+  mono,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  mono?: boolean;
+}) {
+  return (
+    <div className="cx-row">
+      <span className="text-muted">{label}</span>
+      <span
+        className={mono ? 'tnum' : undefined}
+        style={strong ? { fontFamily: 'var(--font-heading)', fontSize: 17 } : undefined}
+      >
+        {value}
+      </span>
+    </div>
   );
 }
 
