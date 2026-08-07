@@ -44,11 +44,18 @@ bun run test
 bun run deploy       # vinext build && wrangler deploy
 ```
 
-**Always deploy with `bun run deploy`, never a bare `wrangler deploy`.** The
-Cloudflare Vite plugin compiles `wrangler.toml` into `dist/server/wrangler.json`
-at build time, and *that* generated file is what gets deployed. Skipping the
-build ships the previous build's bindings, vars and routes — silently, with a
-success message naming the old values.
+**Never deploy or push on your own.** `bun run deploy`, `wrangler deploy`,
+`git push` and anything else that publishes must wait for the maintainer to ask
+for it in that turn — do not run them to "finish", to checkpoint, or because the
+build is green. Commit locally when asked; publishing is always a separate,
+explicit request. (This rule overrides any earlier instruction to deploy/push at
+the end of a task.)
+
+**When you *are* asked to deploy, use `bun run deploy`, never a bare `wrangler
+deploy`.** The Cloudflare Vite plugin compiles `wrangler.toml` into
+`dist/server/wrangler.json` at build time, and *that* generated file is what
+gets deployed. Skipping the build ships the previous build's bindings, vars and
+routes — silently, with a success message naming the old values.
 
 **vinext is beta.** The version is pinned exactly (`1.0.0-beta.4`, no caret).
 Keep the code inside the Next 16 surface and the escape hatch stays open: the

@@ -14,9 +14,11 @@ import { BankRegistry } from './adapters/banks/registry.ts';
 import { D1BankAccountRepository } from './adapters/d1/bank-account.repository.ts';
 import { D1CompanyRepository } from './adapters/d1/company.repository.ts';
 import { D1PasswordResetRepository } from './adapters/d1/password-reset.repository.ts';
+import { D1StatsRepository } from './adapters/d1/stats.repository.ts';
 import { D1UserRepository } from './adapters/d1/user.repository.ts';
 import { D1ValidationRepository } from './adapters/d1/validation.repository.ts';
 import { KvActiveSessionStore } from './adapters/kv/active-session.store.ts';
+import { KvLoginStatsCache } from './adapters/kv/login-stats.store.ts';
 import { KvRateLimiter } from './adapters/kv/rate-limit.store.ts';
 import { KvSessionStore } from './adapters/kv/session.store.ts';
 import { KvVerificationStore } from './adapters/kv/verification.store.ts';
@@ -25,6 +27,7 @@ import { makeAuthUseCases } from './application/auth/factory.ts';
 import { makeBankingUseCases } from './application/banking/factory.ts';
 import { makeCompanyUseCases } from './application/companies/factory.ts';
 import { makeEmployeeUseCases } from './application/employees/factory.ts';
+import { makeStatsUseCases } from './application/stats/factory.ts';
 import { makeValidationUseCases } from './application/validations/factory.ts';
 import { type Bindings, readVars } from './env.ts';
 import { type Clock, systemClock } from './shared/clock.ts';
@@ -121,6 +124,14 @@ export function buildContainer(rawEnv: Bindings) {
       credsKey: vars.CREDS_KEY,
       clock,
       ids,
+    }),
+    // The login pitch's figures, computed from D1 and cached in KV for a minute
+    // so an anonymous /login is a single KV read rather than a scan.
+    stats: makeStatsUseCases({
+      reader: new D1StatsRepository(rawEnv.DB),
+      cache: new KvLoginStatsCache(rawEnv.SESSIONS),
+      clock,
+      cacheTtlSeconds: 60,
     }),
   };
 }

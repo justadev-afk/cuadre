@@ -21,9 +21,14 @@ export function AuthShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** The two-column split. Children are the panel and the aside, in that order. */
+/** The two-column split, centred in the viewport as a card. Children are the
+ *  panel and the aside, in that order. */
 export function AuthSplit({ children }: { children: ReactNode }) {
-  return <main className="auth">{children}</main>;
+  return (
+    <main className="auth">
+      <div className="auth-card">{children}</div>
+    </main>
+  );
 }
 
 /** The accent rule and the sentence under it, as the design pairs them. */

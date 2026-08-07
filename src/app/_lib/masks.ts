@@ -71,7 +71,7 @@ export function maskCurrency(raw: string): string {
 }
 
 /** '1240' → '1.240'. Dots every three digits from the right. */
-function groupThousands(digits: string): string {
+export function groupThousands(digits: string): string {
   let out = '';
   for (let i = 0; i < digits.length; i++) {
     if (i > 0 && (digits.length - i) % 3 === 0) out += '.';

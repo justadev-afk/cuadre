@@ -33,82 +33,104 @@ type Door = 'company' | 'cashier';
 
 export type LoginNotice = { readonly tone: 'error' | 'success'; readonly text: string };
 
+/** One figure in the pitch panel's bottom row — value already formatted. */
+export type LoginStatView = { readonly value: string; readonly label: string };
+
 type LoginFormProps = {
   /** The path the middleware bounced them off, if any. */
   readonly next: string | null;
   /** A one-off line above the form: a finished reset, a session that ended. */
   readonly notice: LoginNotice | null;
+  /** The real, server-computed figures for the pitch panel. */
+  readonly stats: readonly LoginStatView[];
 };
 
-export function LoginForm({ next, notice }: LoginFormProps) {
+export function LoginForm({ next, notice, stats }: LoginFormProps) {
   const [door, setDoor] = useState<Door>('company');
 
   return (
     <>
       <div className="auth-panel">
-        <div className="auth-top">
-          <Brand size={24} />
+        <Brand size={24} />
+
+        <div className="auth-form">
+          <div>
+            <h1 className="auth-title">Entrar</h1>
+            <p className="text-muted" style={{ fontSize: 13 }}>
+              {door === 'company'
+                ? 'Elige tu tipo de acceso.'
+                : 'Tu empresa te entrega el código y el PIN.'}
+            </p>
+          </div>
+
+          <div className="seg" style={{ width: '100%' }}>
+            <DoorTab
+              door="company"
+              current={door}
+              onPick={setDoor}
+              icon="storefront"
+              label="Empresa"
+            />
+            <DoorTab
+              door="cashier"
+              current={door}
+              onPick={setDoor}
+              icon="cash-register"
+              label="Cajero"
+            />
+          </div>
+
+          {notice !== null && <FormNote tone={notice.tone}>{notice.text}</FormNote>}
+
+          {door === 'company' ? <CompanyForm next={next} /> : <CashierForm next={next} />}
         </div>
 
-        <h1 className="auth-title">Entrar</h1>
-        <p className="text-muted" style={{ fontSize: 13, marginBottom: 18 }}>
-          {door === 'company'
-            ? 'Elige tu tipo de acceso.'
-            : 'Tu empresa te entrega el código y el PIN.'}
-        </p>
-
-        <div className="seg" style={{ width: '100%', marginBottom: 18 }}>
-          <DoorTab
-            door="company"
-            current={door}
-            onPick={setDoor}
-            icon="storefront"
-            label="Empresa"
-          />
-          <DoorTab
-            door="cashier"
-            current={door}
-            onPick={setDoor}
-            icon="cash-register"
-            label="Cajero"
-          />
+        <div className="auth-foot">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--color-accent)',
+              }}
+            />
+            Banesco operativo
+          </span>
+          <span style={{ marginLeft: 'auto' }}>Cuadre · v2</span>
         </div>
-
-        {notice !== null && <FormNote tone={notice.tone}>{notice.text}</FormNote>}
-
-        {door === 'company' ? <CompanyForm next={next} /> : <CashierForm next={next} />}
       </div>
 
       <aside className="auth-aside">
         <div className="auth-aside-rule" />
         <p className="auth-aside-quote">
           {door === 'company'
-            ? 'Cobra, valida y entrega. Sin llamar al banco ni revisar el estado de cuenta.'
+            ? 'Confirma el pago móvil en el mostrador, sin abrir el estado de cuenta.'
             : 'Confirma el pago móvil antes de entregar la compra.'}
         </p>
 
         <div className="auth-benefits">
           <Benefit
             icon="lightning"
-            title="Confirmas en segundos"
-            body="El banco responde mientras el cliente sigue en el mostrador."
+            title="Respuesta en segundos"
+            body="Consulta directa a Banesco con la referencia del cliente."
           />
           <Benefit
             icon="users-three"
-            title="Cada caja, su código"
-            body="Cajeros con PIN; el dueño ve todo desde su panel."
+            title="Cada cajero con su usuario"
+            body="Sabes quién validó cada cobro y a qué hora."
           />
           <Benefit
             icon="seal-check"
-            title="Solo lo que el banco confirma"
-            body="Ningún cobro se aprueba desde la pantalla."
+            title="Código de control"
+            body="Seis dígitos para anotar en el recibo."
           />
         </div>
 
         <div className="auth-stats">
-          <Stat value="128" label="comercios" />
-          <Stat value="9.412" label="pagos hoy" />
-          <Stat value="2,4 s" label="respuesta" />
+          {stats.map((stat) => (
+            <Stat key={stat.label} value={stat.value} label={stat.label} />
+          ))}
         </div>
       </aside>
     </>
@@ -181,6 +203,14 @@ function DoorTab({
 
 function CompanyForm({ next }: { next: string | null }) {
   const [state, action, pending] = useActionState(signInCompanyAction, NO_SIGN_IN_ERROR);
+  // Controlled, so a refused sign-in keeps what was typed: React resets an
+  // uncontrolled form once its action returns, which would wipe the fields on
+  // the exact error the person needs to correct. The password lives only in
+  // client state and is never echoed back through the action.
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [reveal, setReveal] = useState(false);
+  const [remember, setRemember] = useState(true);
 
   return (
     <form action={action}>
@@ -198,19 +228,35 @@ function CompanyForm({ next }: { next: string | null }) {
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             required
           />
         </div>
         <div className="field">
           <label htmlFor="company-password">Contraseña</label>
-          <input
-            className="input"
-            id="company-password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-          />
+          <div style={{ position: 'relative' }}>
+            <input
+              className="input"
+              id="company-password"
+              name="password"
+              type={reveal ? 'text' : 'password'}
+              autoComplete="current-password"
+              style={{ paddingRight: 40 }}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              aria-label={reveal ? 'Ocultar la contraseña' : 'Mostrar la contraseña'}
+              onClick={() => setReveal((value) => !value)}
+              style={{ position: 'absolute', right: 2, top: '50%', transform: 'translateY(-50%)' }}
+            >
+              <Icon name="eye" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -220,18 +266,18 @@ function CompanyForm({ next }: { next: string | null }) {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
-          marginTop: 16,
+          marginTop: 4,
         }}
       >
-        {/* The session is always kept: the KV TTL slides on every request and it
-            only ends at «Cerrar sesión» (CLAUDE.md §7). So this states the
-            behaviour rather than offering a choice the product does not have —
-            a control that changed nothing would be worse than none. */}
         <label className="radio">
-          <input type="checkbox" checked disabled readOnly />
+          <input
+            type="checkbox"
+            name="remember"
+            checked={remember}
+            onChange={(event) => setRemember(event.target.checked)}
+          />
           <span className="dot" />
           Mantener sesión
-          <span className="sr-only">La sesión se mantiene abierta hasta que cierres sesión.</span>
         </label>
         <Link href="/forgot-password" style={{ fontSize: 13 }}>
           ¿Olvidaste tu contraseña?
@@ -240,12 +286,7 @@ function CompanyForm({ next }: { next: string | null }) {
 
       {state.error !== null && <FormNote tone="error">{state.error}</FormNote>}
 
-      <button
-        type="submit"
-        className="btn btn-primary btn-block"
-        disabled={pending}
-        style={{ marginTop: 20, minHeight: 40 }}
-      >
+      <button type="submit" className="btn btn-primary btn-block" disabled={pending}>
         Entrar
         <Icon name="arrow-right" />
       </button>
@@ -257,6 +298,10 @@ function CashierForm({ next }: { next: string | null }) {
   const [state, action, pending] = useActionState(signInCashierAction, NO_SIGN_IN_ERROR);
   const [slug, setSlug] = useState('');
   const [remember, setRemember] = useState(false);
+  // Controlled, so a refused sign-in keeps the code, the username and the PIN
+  // rather than clearing them under the error. The PIN never leaves client state.
+  const [username, setUsername] = useState('');
+  const [pin, setPin] = useState('');
 
   // Read after mount, never during render: the server has no localStorage, and
   // a first render that differs between the two is a hydration mismatch.
@@ -309,6 +354,8 @@ function CashierForm({ next }: { next: string | null }) {
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
               required
             />
           </div>
@@ -323,6 +370,8 @@ function CashierForm({ next }: { next: string | null }) {
               inputMode="numeric"
               autoComplete="off"
               maxLength={6}
+              value={pin}
+              onChange={(event) => setPin(event.target.value)}
               required
             />
           </div>

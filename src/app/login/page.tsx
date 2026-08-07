@@ -14,10 +14,11 @@
 import { redirect } from 'next/navigation';
 
 import { AuthSplit } from '../_components/auth-shell.tsx';
-import { currentSession } from '../_lib/current-session.ts';
+import { container, currentSession } from '../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../_lib/inputs.ts';
 import { landingFor } from '../_lib/landing.ts';
-import { LoginForm, type LoginNotice } from './login-form.tsx';
+import { groupThousands } from '../_lib/masks.ts';
+import { LoginForm, type LoginNotice, type LoginStatView } from './login-form.tsx';
 import { SessionEndedModal } from './session-ended-modal.tsx';
 
 export const metadata = { title: 'Entrar · Cuadre' };
@@ -32,9 +33,20 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   // resolves anonymous and the middleware lets the page render.
   const endedElsewhere = queryValue(params, 'ended') === 'other-device';
 
+  // The pitch panel's figures are real: computed from D1, cached in KV.
+  const stats = await container().stats.loginStats();
+  const statsView: readonly LoginStatView[] = [
+    { value: groupThousands(String(stats.merchants)), label: 'comercios' },
+    { value: groupThousands(String(stats.paymentsToday)), label: 'pagos hoy' },
+    {
+      value: `${stats.avgResponseSeconds.toFixed(1).replace('.', ',')} s`,
+      label: 'respuesta media',
+    },
+  ];
+
   return (
     <AuthSplit>
-      <LoginForm next={queryValue(params, 'next')} notice={noticeFor(params)} />
+      <LoginForm next={queryValue(params, 'next')} notice={noticeFor(params)} stats={statsView} />
       {endedElsewhere && <SessionEndedModal />}
     </AuthSplit>
   );

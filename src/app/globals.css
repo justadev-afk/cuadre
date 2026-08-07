@@ -667,30 +667,62 @@ select.input { appearance: none; }
 .auth {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  place-items: center;
+  padding: 32px 24px;
+  background: var(--color-bg);
 }
-/* Screens 03 and 04 have no quote panel: one centred column. */
-.auth-solo {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
+/* The centred card the design frames the login in: a max viewport, centred on
+   both axes once the screen is larger, carrying its own border and shadow. */
+.auth-card {
+  width: min(940px, 100%);
+  height: min(600px, calc(100dvh - 64px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+/* Screens 03/04 (the admin door, the password screens) are the same card with
+   no quote panel — one centred column. */
+.auth-solo .auth-panel {
+  width: min(480px, 100%);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
 }
 .auth-panel {
-  width: 100%;
-  max-width: 520px;
-  margin-inline: auto;
-  padding: 40px 44px;
   display: flex;
   flex-direction: column;
+  padding: 36px 44px 28px;
+  min-width: 0;
+  overflow-y: auto;
+}
+/* The form block sits in the vertical middle — brand above, footer below — the
+   way the design frames it. Its own auto margins split the free space. */
+.auth-form {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 360px;
+}
+.auth-form .input {
+  min-height: 40px;
+}
+.auth-form .btn-block {
+  min-height: 42px;
+  margin-top: 2px;
 }
 .auth-aside {
   background:
     radial-gradient(120% 80% at 100% 0%, var(--color-accent-900) 0%, transparent 60%),
     linear-gradient(180deg, var(--color-neutral-900) 0%, var(--color-bg) 100%);
-  padding: 44px 40px;
+  padding: 36px 32px;
   display: flex;
   flex-direction: column;
   gap: 20px;
   box-shadow: inset 1px 0 0 var(--color-divider);
+  overflow-y: auto;
 }
 .auth-aside-rule {
   width: 34px;
@@ -734,10 +766,18 @@ select.input { appearance: none; }
   font-size: 21px;
   line-height: 1.25;
 }
-/* The brand sits at the top and pushes the form to the foot of a tall panel,
-   which is how the design positions it on a desktop screen. */
-.auth-top { margin-bottom: auto; }
-.auth-foot { margin-top: auto; }
+/* The footer along the bottom of the panel: bank status, legal links, version. */
+.auth-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 18px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+.auth-foot a {
+  font-size: 11px;
+}
 .auth-fields {
   display: flex;
   flex-direction: column;
@@ -757,15 +797,38 @@ select.input { appearance: none; }
 }
 
 @media (max-width: 768px) {
-  .auth { grid-template-columns: minmax(0, 1fr); }
-  .auth-aside { display: none; }
-  .auth-panel { padding: 28px 22px; }
-  /* On a phone the brand is a fixed gap above the heading, not a spring. */
-  .auth-top { margin-bottom: 34px; }
-  .auth-title { font-size: 20px; }
-  .auth-pair { grid-template-columns: minmax(0, 1fr); }
+  /* On a phone the card fills the screen and the quote panel drops. */
+  .auth {
+    padding: 0;
+  }
+  .auth-card {
+    width: 100%;
+    height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .auth-solo .auth-panel {
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .auth-aside {
+    display: none;
+  }
+  .auth-panel {
+    padding: 28px 22px;
+  }
+  .auth-title {
+    font-size: 20px;
+  }
+  .auth-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
   /* A 44px target is the counter's minimum: this is used one-handed. */
-  .auth-panel .btn-block { min-height: 44px; }
+  .auth-panel .btn-block {
+    min-height: 44px;
+  }
 }
 
 /* — an inline note under a form: a refused sign-in, a sent reset link —
