@@ -81,6 +81,11 @@ export function ConnectWizard({
   const [values, setValues] = useState<Record<string, string>>({});
   const setField = (key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value }));
 
+  // The optional credential groups (Banesco's Consulta) hide behind a disclosure
+  // so the form opens with only what is required — the merchant sees two fields,
+  // not four, and reveals the rest only if they have them.
+  const [showExtras, setShowExtras] = useState(false);
+
   const bankOptions: readonly SelectOption[] = banks.map((b) => ({
     value: b.id,
     label: b.displayName,
@@ -91,6 +96,7 @@ export function ConnectWizard({
     setBankId(next.id);
     setEnvironment(next.environments[0] ?? 'production');
     setValues({});
+    setShowExtras(false);
   };
 
   // A rejected credential set shows as a toast, never as an error line in the
@@ -110,6 +116,42 @@ export function ConnectWizard({
     .every((group) =>
       group.fields.every((f) => (values[fieldKey(group.key, f.name)] ?? '').trim() !== ''),
     );
+
+  const requiredGroups = selectedBank.credentialGroups.filter((g) => g.required);
+  const optionalGroups = selectedBank.credentialGroups.filter((g) => !g.required);
+
+  const renderGroup = (group: (typeof selectedBank.credentialGroups)[number]) => (
+    <div key={group.key} className="flex flex-col gap-2.5">
+      <div>
+        <h6 className="m-0 text-primary">{group.label}</h6>
+        {group.hint && (
+          <span className="mt-[3px] block text-[11px] text-muted-foreground">{group.hint}</span>
+        )}
+      </div>
+
+      {group.fields.map((f) => {
+        const key = fieldKey(group.key, f.name);
+        return (
+          <div className="flex flex-col gap-1.5" key={key}>
+            <Label htmlFor={`cred-${key}`}>{f.label}</Label>
+            <Input
+              id={`cred-${key}`}
+              name={key}
+              type={f.secret ? 'password' : 'text'}
+              autoCapitalize="none"
+              autoComplete={f.secret ? 'new-password' : 'off'}
+              spellCheck={false}
+              className="font-mono text-[13px]"
+              value={values[key] ?? ''}
+              onChange={(e) => setField(key, e.target.value)}
+              required={group.required}
+              disabled={verifying}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
 
   // Once the credentials verify, the wizard moves to choosing the account.
   if (verify.step === 'accounts') {
@@ -167,43 +209,27 @@ export function ConnectWizard({
         </Tabs>
       </div>
 
-      {selectedBank.credentialGroups.map((group) => (
-        <div key={group.key} className="flex flex-col gap-2.5">
-          <div>
-            <h6 className="m-0 text-primary">
-              {group.label}
-              {!group.required && (
-                <span className="ml-1.5 font-normal text-muted-foreground">· opcional</span>
-              )}
-            </h6>
-            {group.hint && (
-              <span className="mt-[3px] block text-[11px] text-muted-foreground">{group.hint}</span>
-            )}
-          </div>
+      {requiredGroups.map(renderGroup)}
 
-          {group.fields.map((f) => {
-            const key = fieldKey(group.key, f.name);
-            return (
-              <div className="flex flex-col gap-1.5" key={key}>
-                <Label htmlFor={`cred-${key}`}>{f.label}</Label>
-                <Input
-                  id={`cred-${key}`}
-                  name={key}
-                  type={f.secret ? 'password' : 'text'}
-                  autoCapitalize="none"
-                  autoComplete={f.secret ? 'new-password' : 'off'}
-                  spellCheck={false}
-                  className="font-mono text-[13px]"
-                  value={values[key] ?? ''}
-                  onChange={(e) => setField(key, e.target.value)}
-                  required={group.required}
-                  disabled={verifying}
-                />
-              </div>
-            );
-          })}
+      {optionalGroups.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={() => setShowExtras((v) => !v)}
+            disabled={verifying}
+            aria-expanded={showExtras}
+            className="flex items-center gap-1.5 self-start text-sm text-primary hover:opacity-80 disabled:opacity-60"
+          >
+            <Icon
+              name="caret-down"
+              className={cn('transition-transform', showExtras && 'rotate-180')}
+            />
+            Credenciales extras
+            <span className="font-normal text-muted-foreground">· opcional</span>
+          </button>
+          {showExtras && optionalGroups.map(renderGroup)}
         </div>
-      ))}
+      )}
 
       <DialogFooter>
         <Button type="button" variant="secondary" onClick={onClose}>

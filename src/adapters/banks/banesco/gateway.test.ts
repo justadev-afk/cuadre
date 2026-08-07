@@ -149,6 +149,22 @@ describe('authenticate', () => {
 
     expect(await gateway.listAccounts(forged)).toEqual({ ok: false, error: 'unavailable' });
   });
+
+  it('fails cleanly for production instead of throwing, since its hosts are unpublished', async () => {
+    // `banescoEndpoints('production')` throws by design; authenticate must catch
+    // that upstream and return a failure, or onboarding 500s instead of showing
+    // a toast. No network call is made — the guard is hit before the token round
+    // trip — so any fetch here would be a bug.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const gateway = new BanescoGateway(deps());
+
+    expect(await gateway.authenticate('production', CREDENTIALS)).toEqual({
+      ok: false,
+      error: 'unavailable',
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('findPayment', () => {

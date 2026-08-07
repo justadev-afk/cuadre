@@ -104,6 +104,16 @@ export class BanescoGateway implements BankGateway {
     environment: BankEnvironment,
     credentials: BankCredentials,
   ): Promise<Result<BankSession, BankFailure>> {
+    // Production has no published hosts yet, so `banescoEndpoints('production')`
+    // throws by design. Reaching it through the OAuth client would surface that
+    // throw as a 500 in the onboarding action; check first and return a clean
+    // failure the wizard can show as a toast. `endpoints.ts` says as much: "check
+    // first, or mean it".
+    if (environment === 'production' && !hasProductionEndpoints()) {
+      logger.warn('banesco_production_unconfigured', {});
+      return err('unavailable');
+    }
+
     const token = await this.oauth.getAccessToken({ environment, credentials });
     if (!token.ok) return token;
 

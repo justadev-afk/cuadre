@@ -15,6 +15,7 @@
  */
 import type { AccountCredentials } from '../../../application/banking/account-credentials.ts';
 import type { BankCredentials } from '../../../application/ports/bank-gateway.ts';
+import { logger } from '../../../shared/logger.ts';
 import { container } from '../../_lib/current-session.ts';
 import { secretField, textField } from '../../_lib/inputs.ts';
 import type { ConnectState, VerifyState } from './form-state.ts';
@@ -49,68 +50,83 @@ function readPair(form: FormData, prefix: string): BankCredentials {
 
 /** Step 1–2: read the picked bank's credential groups and verify them. */
 export async function verifyBankCore(companyId: string, form: FormData): Promise<VerifyState> {
-  const services = container().banking;
-
   const environment = textField(form, 'environment') === 'sandbox' ? 'sandbox' : 'production';
 
-  // The bank comes from the picker, not a literal: look it up in the catalogue
-  // and refuse anything that is not a bank we support. Its own declaration is
-  // then the list of credential pairs to read — nothing here names a service.
-  const bankId = textField(form, 'bank');
-  const bank = services.listSupportedBanks().find((b) => b.id === bankId);
-  if (bank === undefined) {
-    return { step: 'error', groupKey: 'bank', message: 'Ese banco no está disponible.' };
-  }
+  // Nothing below may throw its way out to a 500: a bank call that faults is an
+  // expected outcome the wizard shows as a toast, so any unforeseen throw is
+  // caught and turned into the same kind of error state as a clean refusal.
+  try {
+    const services = container().banking;
 
-  const credentials: AccountCredentials = {};
-  for (const group of bank.credentialGroups) {
-    const pair = readPair(form, group.key);
-    const bothFilled = pair.clientId !== '' && pair.clientSecret !== '';
-    const halfFilled = !bothFilled && (pair.clientId !== '' || pair.clientSecret !== '');
+    // The bank comes from the picker, not a literal: look it up in the catalogue
+    // and refuse anything that is not a bank we support. Its own declaration is
+    // then the list of credential pairs to read — nothing here names a service.
+    const bankId = textField(form, 'bank');
+    const bank = services.listSupportedBanks().find((b) => b.id === bankId);
+    if (bank === undefined) {
+      return { step: 'error', groupKey: 'bank', message: 'Ese banco no está disponible.' };
+    }
 
-    if (group.required && !bothFilled) {
+    const credentials: AccountCredentials = {};
+    for (const group of bank.credentialGroups) {
+      const pair = readPair(form, group.key);
+      const bothFilled = pair.clientId !== '' && pair.clientSecret !== '';
+      const halfFilled = !bothFilled && (pair.clientId !== '' || pair.clientSecret !== '');
+
+      if (group.required && !bothFilled) {
+        return {
+          step: 'error',
+          groupKey: group.key,
+          message: `Escribe el Client ID y el Client Secret de ${group.label}.`,
+        };
+      }
+      if (halfFilled) {
+        return {
+          step: 'error',
+          groupKey: group.key,
+          message: `Completa el Client ID y el Client Secret de ${group.label}, o deja ambos vacíos.`,
+        };
+      }
+      if (bothFilled) credentials[group.key] = pair;
+    }
+
+    const result = await services.verifyBankCredentials({
+      companyId,
+      bank: bank.id,
+      environment,
+      credentials,
+    });
+
+    if (!result.ok) {
       return {
         step: 'error',
-        groupKey: group.key,
-        message: `Escribe el Client ID y el Client Secret de ${group.label}.`,
+        groupKey: result.error.groupKey,
+        message: ONBOARDING_MESSAGES[result.error.failure] ?? 'No se pudo verificar.',
       };
     }
-    if (halfFilled) {
-      return {
-        step: 'error',
-        groupKey: group.key,
-        message: `Completa el Client ID y el Client Secret de ${group.label}, o deja ambos vacíos.`,
-      };
-    }
-    if (bothFilled) credentials[group.key] = pair;
-  }
 
-  const result = await services.verifyBankCredentials({
-    companyId,
-    bank: bank.id,
-    environment,
-    credentials,
-  });
-
-  if (!result.ok) {
+    return {
+      step: 'accounts',
+      verifyId: result.value.verifyId,
+      environment,
+      accounts: result.value.accounts.map((a) => ({
+        accountId: a.accountId,
+        masked: a.masked,
+        type: a.type,
+        balanceCents: a.balanceCents,
+      })),
+    };
+  } catch (error) {
+    logger.error('verify_bank_core_unexpected', {
+      companyId,
+      err: error instanceof Error ? error.message : String(error),
+    });
     return {
       step: 'error',
-      groupKey: result.error.groupKey,
-      message: ONBOARDING_MESSAGES[result.error.failure] ?? 'No se pudo verificar.',
+      groupKey: 'confirmation',
+      message: 'Algo falló al verificar con el banco. Intenta de nuevo.',
     };
   }
-
-  return {
-    step: 'accounts',
-    verifyId: result.value.verifyId,
-    environment,
-    accounts: result.value.accounts.map((a) => ({
-      accountId: a.accountId,
-      masked: a.masked,
-      type: a.type,
-      balanceCents: a.balanceCents,
-    })),
-  };
 }
 
 /** Step 3: connect the chosen (or typed) account. The caller revalidates. */
@@ -125,18 +141,27 @@ export async function connectBankCore(companyId: string, form: FormData): Promis
     return { step: 'error', message: 'Elige o escribe la cuenta que recibe los pagos.' };
   }
 
-  const result = await container().banking.connectBankAccount({
-    companyId,
-    verifyId,
-    accountId: accountId === '' ? undefined : accountId,
-    accountNumber: accountNumber === '' ? undefined : accountNumber,
-  });
-  if (!result.ok) {
-    return {
-      step: 'error',
-      message: CONNECT_MESSAGES[result.error] ?? 'No se pudo conectar la cuenta.',
-    };
-  }
+  // Same rule as verify: an unforeseen throw becomes a toast, never a 500.
+  try {
+    const result = await container().banking.connectBankAccount({
+      companyId,
+      verifyId,
+      accountId: accountId === '' ? undefined : accountId,
+      accountNumber: accountNumber === '' ? undefined : accountNumber,
+    });
+    if (!result.ok) {
+      return {
+        step: 'error',
+        message: CONNECT_MESSAGES[result.error] ?? 'No se pudo conectar la cuenta.',
+      };
+    }
 
-  return { step: 'done' };
+    return { step: 'done' };
+  } catch (error) {
+    logger.error('connect_bank_core_unexpected', {
+      companyId,
+      err: error instanceof Error ? error.message : String(error),
+    });
+    return { step: 'error', message: 'Algo falló al conectar la cuenta. Intenta de nuevo.' };
+  }
 }
