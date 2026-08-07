@@ -8,6 +8,7 @@
  */
 import { redirect } from 'next/navigation';
 
+import { Badge } from '@/components/ui/badge.tsx';
 import { AuthShell } from '../../_components/auth-shell.tsx';
 import { Brand } from '../../_components/brand.tsx';
 import { Icon } from '../../_components/icon.tsx';
@@ -24,32 +25,23 @@ export default async function AdminLoginPage() {
 
   return (
     <AuthShell>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 'auto' }}>
+      <div className="mb-auto flex items-center gap-2.5">
         <Brand internal size={24} />
-        <span className="tag tag-neutral" style={{ marginLeft: 'auto' }}>
+        <Badge variant="neutral" className="ml-auto">
           Interno
-        </span>
+        </Badge>
       </div>
 
-      <h4 style={{ margin: '0 0 2px' }}>Administración</h4>
-      <p className="text-muted" style={{ fontSize: 12, marginBottom: 18 }}>
+      <h4 className="m-0 mb-0.5 font-heading text-xl font-medium">Administración</h4>
+      <p className="mb-[18px] text-xs text-muted-foreground">
         Acceso del equipo de Cuadre. Las empresas y los cajeros entran por{' '}
-        <code style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>/login</code>.
+        <code className="font-mono text-[11px]">/login</code>.
       </p>
 
       <AdminLoginForm />
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 8,
-          fontSize: 11,
-          color: 'color-mix(in srgb, var(--color-text) 55%, transparent)',
-          marginTop: 'auto',
-        }}
-      >
-        <Icon name="lock-key" style={{ marginTop: 2 }} />
+      <div className="mt-auto flex items-start gap-2 text-[11px] text-muted-foreground">
+        <Icon name="lock-key" className="mt-0.5" />
         <span>Ruta no enlazada. Cada inicio de sesión del equipo queda en la bitácora.</span>
       </div>
     </AuthShell>

@@ -89,6 +89,19 @@ export interface BankAccountRepository {
   ): Promise<Result<BankAccount, BankAccountWriteFailure>>;
   /** A soft delete. See the note at the top of this file. */
   remove(id: string): Promise<Result<BankAccount, BankAccountWriteFailure>>;
+  /**
+   * Replaces the sealed credentials (re-stamping `verified_at`) and re-seals the
+   * account number alongside them — never touching the number itself, the bank,
+   * or the environment. Both envelopes are written together, so the row's single
+   * `creds_key_v` stays true for each: see the class note.
+   */
+  updateCredentials(
+    id: string,
+    credentials: Sealed,
+    accountNumber: Sealed,
+    clientIdLast6: string | null,
+    verifiedAt: number,
+  ): Promise<Result<BankAccount, BankAccountWriteFailure>>;
 }
 
 /**
@@ -258,6 +271,32 @@ export class D1BankAccountRepository implements BankAccountRepository {
     return this.writeAndReturn(
       `UPDATE bank_accounts SET status = 'removed' WHERE id = ? RETURNING ${COLUMNS}`,
       [id],
+    );
+  }
+
+  updateCredentials(
+    id: string,
+    credentials: Sealed,
+    accountNumber: Sealed,
+    clientIdLast6: string | null,
+    verifiedAt: number,
+  ): Promise<Result<BankAccount, BankAccountWriteFailure>> {
+    return this.writeAndReturn(
+      `UPDATE bank_accounts
+            SET creds_ct = ?, creds_iv = ?, creds_key_v = ?, client_id_last6 = ?,
+                account_ct = ?, account_iv = ?, verified_at = ?, status = 'active'
+          WHERE id = ? AND status <> 'removed'
+          RETURNING ${COLUMNS}`,
+      [
+        credentials.ciphertext,
+        credentials.iv,
+        credentials.keyVersion,
+        clientIdLast6,
+        accountNumber.ciphertext,
+        accountNumber.iv,
+        verifiedAt,
+        id,
+      ],
     );
   }
 

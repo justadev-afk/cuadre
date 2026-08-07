@@ -53,6 +53,8 @@ export type ConfirmedCharge = {
   readonly createdAt: number;
   readonly isSandbox: boolean;
   readonly latencyMs: number | null;
+  /** Which of the company's accounts the bank reported it on — the counter shows it. */
+  readonly bankAccountId: string;
 };
 
 /**
@@ -65,5 +67,10 @@ export type ChargeOutcome =
   | { readonly status: 'confirmed'; readonly charge: ConfirmedCharge }
   | { readonly status: 'not_found' }
   | { readonly status: 'rejected'; readonly reason: RejectionReason }
-  | { readonly status: 'already_charged' }
+  | {
+      readonly status: 'already_charged';
+      /** The cashier who charged it first, and when — for the counter's copy. */
+      readonly by: string | null;
+      readonly at: number;
+    }
   | { readonly status: 'failed'; readonly failure: ValidatePaymentFailure };

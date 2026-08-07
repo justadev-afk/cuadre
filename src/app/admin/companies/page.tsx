@@ -1,17 +1,17 @@
 /**
  * Screen 06 — the admin's list of companies.
  *
- * Desktop is a table, phone is cards; the same rows, laid out for the width.
- * Search and the status filter travel in the URL so the view is shareable and
- * the page stays a Server Component. "Nueva empresa" is the one interactive
- * leaf, a dialog.
+ * Each row links into that company's detail. Search and the status filter
+ * travel in the URL so the view is shareable and the page stays a Server
+ * Component; "Nueva empresa" is the one interactive leaf, a dialog.
  */
-import Link from 'next/link';
-
+import { Card } from '@/components/ui/card.tsx';
+import { Input } from '@/components/ui/input.tsx';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
+import { CompaniesTable } from './companies-table.tsx';
 import { NewCompanyDialog } from './new-company-dialog.tsx';
 
 export const metadata = { title: 'Empresas · Cuadre' };
@@ -30,6 +30,15 @@ export default async function CompaniesPage({
   const activeCount = items.filter((c) => c.status === 'active').length;
   const suspendedCount = items.filter((c) => c.status === 'suspended').length;
 
+  const rows = items.map((company) => ({
+    id: company.id,
+    name: company.name,
+    rif: company.rif,
+    status: company.status,
+    cashierCount: company.cashierCount,
+    recentValidationCount: company.recentValidationCount,
+  }));
+
   return (
     <ContentLayout
       title="Empresas"
@@ -39,72 +48,29 @@ export default async function CompaniesPage({
           : ''
       } · ${total} en total`}
       actions={
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="flex items-center gap-2">
           <form>
-            <input
-              className="input"
+            <Input
               name="q"
               defaultValue={search ?? ''}
               placeholder="Buscar por nombre o RIF"
-              style={{ width: 220 }}
+              className="w-[220px]"
             />
           </form>
           <NewCompanyDialog />
         </div>
       }
     >
-      {items.length === 0 ? (
-        <section className="box">
-          <p
-            className="text-muted"
-            style={{ fontSize: 14, padding: '20px 0', textAlign: 'center', margin: 0 }}
-          >
+      {rows.length === 0 ? (
+        <Card>
+          <p className="m-0 py-5 text-center text-sm text-muted-foreground">
             No hay empresas que coincidan.
           </p>
-        </section>
+        </Card>
       ) : (
-        <section className="box" style={{ padding: 0, overflowX: 'auto' }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Empresa</th>
-                <th>RIF</th>
-                <th>Código</th>
-                <th>Cajeros</th>
-                <th>Validaciones (30d)</th>
-                <th>Estado</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((company) => (
-                <tr key={company.id}>
-                  <td style={{ fontFamily: 'var(--font-heading)' }}>{company.name}</td>
-                  <td className="text-muted">{company.rif}</td>
-                  <td className="text-muted tnum">{company.id}</td>
-                  <td>{company.cashierCount}</td>
-                  <td className="tnum">{company.recentValidationCount}</td>
-                  <td>
-                    <span
-                      className={company.status === 'active' ? 'tag tag-accent' : 'tag tag-neutral'}
-                    >
-                      {company.status === 'active' ? 'Activa' : 'Suspendida'}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <Link
-                      href={`/admin/companies/${company.id}`}
-                      className="btn btn-ghost"
-                      style={{ fontSize: 13 }}
-                    >
-                      Bancos
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        <Card className="overflow-x-auto p-0">
+          <CompaniesTable companies={rows} />
+        </Card>
       )}
     </ContentLayout>
   );

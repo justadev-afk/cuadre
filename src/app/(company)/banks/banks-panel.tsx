@@ -5,60 +5,58 @@
  * onboarding wizard in a modal. The list of connected accounts is server-
  * rendered above it; this only owns the add flow, so a page with a bank already
  * connected still renders and reads without any client JS having run.
+ *
+ * It is handed every supported bank and passes them whole to the wizard, which
+ * opens with a bank picker — one bank today (Banesco), but nothing here names it.
  */
 import { useState } from 'react';
 
-import type { BankCredentialGroup } from '../../../application/ports/bank-gateway.ts';
+import { Button } from '@/components/ui/button.tsx';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog.tsx';
+import type { SupportedBank } from '../../../application/banking/list-supported-banks.ts';
 import { Icon } from '../../_components/icon.tsx';
-import { ModalBackdrop } from '../../_components/modal.tsx';
 import { ConnectWizard } from './connect-wizard.tsx';
+import type { ConnectState, VerifyState } from './form-state.ts';
 
 type BanksPanelProps = {
-  displayName: string;
-  environments: readonly ('production' | 'sandbox')[];
-  credentialGroups: readonly BankCredentialGroup[];
+  /** Every bank a company can connect. Passed whole; the wizard picks one. */
+  banks: readonly SupportedBank[];
   /** Whether the company already has an account, which changes the button copy. */
   hasAccount: boolean;
+  /** The admin panel passes its own verify/connect actions + the target company
+   *  to set a company up; omit them for a company's own /banks page. */
+  verifyAction?: (previous: VerifyState, form: FormData) => Promise<VerifyState>;
+  connectAction?: (previous: ConnectState, form: FormData) => Promise<ConnectState>;
+  companyId?: string;
 };
 
 export function BanksPanel({
-  displayName,
-  environments,
-  credentialGroups,
+  banks,
   hasAccount,
+  verifyAction,
+  connectAction,
+  companyId,
 }: BanksPanelProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <>
-      <button
-        type="button"
-        className="btn btn-primary"
-        style={{ minHeight: 40 }}
-        onClick={() => setOpen(true)}
-      >
-        <Icon name="plus" />
-        {hasAccount ? 'Conectar otra cuenta' : `Conectar ${displayName}`}
-      </button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="h-10">
+          <Icon name="plus" />
+          {hasAccount ? 'Conectar otra cuenta' : 'Conectar banco'}
+        </Button>
+      </DialogTrigger>
 
-      {open && (
-        <ModalBackdrop onClose={() => setOpen(false)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Conectar ${displayName}`}
-            className="dialog elev-lg"
-            style={{ width: 'min(480px, 96vw)', background: 'var(--color-surface)', padding: 24 }}
-          >
-            <ConnectWizard
-              displayName={displayName}
-              environments={environments}
-              credentialGroups={credentialGroups}
-              onClose={() => setOpen(false)}
-            />
-          </div>
-        </ModalBackdrop>
-      )}
-    </>
+      <DialogContent className="w-[min(480px,calc(100%-2rem))]">
+        <ConnectWizard
+          banks={banks}
+          onClose={() => setOpen(false)}
+          verifyAction={verifyAction}
+          connectAction={connectAction}
+          companyId={companyId}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }

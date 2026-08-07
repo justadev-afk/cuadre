@@ -31,8 +31,10 @@ Spanish identifier in a diff is a change request, not a nit.
 ## 1. Stack
 
 vinext (the Next 16 API reimplemented on Vite) · Cloudflare Workers · D1 · KV ·
-Queues · Email Sending · Analytics Engine · TypeScript `strict` · **Biome** ·
-**bun** · Node pinned in `.nvmrc` (v22 — wrangler refuses anything older).
+Queues · Email Sending · Analytics Engine · **Tailwind v4** (`@tailwindcss/vite`) ·
+**shadcn/ui** primitives (Radix + CVA, in `src/components/ui/`) · TypeScript
+`strict` · **Biome** · **bun** · Node pinned in `.nvmrc` (v22 — wrangler refuses
+anything older).
 
 ```bash
 bun install
@@ -61,6 +63,16 @@ routes — silently, with a success message naming the old values.
 Keep the code inside the Next 16 surface and the escape hatch stays open: the
 same `src/app/` runs under `next` if something blocks. Do not depend on
 build-time static prerender — every route here is dynamic and authenticated.
+
+**The UI is Tailwind v4 + shadcn.** The bespoke Nocturne CSS was retired to a
+360-line `globals.css`: the palette now lives twice there — shadcn's semantic
+tokens (`--background`, `--primary`, `--card`, …) and Nocturne's raw ramps
+(`--color-*`), joined by `@theme inline` so `bg-card`/`text-primary` and
+`bg-[var(--color-accent-800)]` both resolve, without the two ever colliding.
+Nocturne's base element styles sit in `@layer base` so utilities win over them.
+Build screens from the `src/components/ui/*` primitives + Tailwind utilities; the
+one bespoke class left is `.table` (its inset-fade row rule has no utility). `@/`
+aliases `src/` (declared in both `vite.config.ts` and `tsconfig.json`).
 
 ---
 
@@ -306,18 +318,25 @@ payments, which is the core.
 
 ## 10. Design fidelity
 
-The 27 screens are the specification, not a suggestion. Nocturne's tokens live
-in `src/app/globals.css` and are copied verbatim from the design system.
+The 27 screens are the specification, not a suggestion. The palette (Nocturne's,
+kept) lives in `src/app/globals.css`; the components are Tailwind + shadcn.
 
-- **Take every colour, font, spacing and radius from a variable.** A hex
-  literal in a component is a review rejection.
-- **Build with the system's classes** — `.btn`, `.field`, `.input`, `.seg`,
-  `.card`, `.tag`, `.nav`, `.table`, `.dialog` — before inventing a parallel
-  one. The primary button is an accent *outline*, never a fill.
+- **Take every colour, font, spacing and radius from a token or utility.** A hex
+  literal in a component is a review rejection — reach for a Tailwind utility
+  (`bg-card`, `text-primary`, `rounded-xl`) or, for a Nocturne ramp, an arbitrary
+  value onto its token (`bg-[var(--color-accent-800)]`).
+- **Build with the shadcn primitives** in `src/components/ui/` — `Button`,
+  `Input`, `Label`, `Dialog`, `Select`, `Tabs`, `Card`, `Badge`, `Alert`,
+  `SearchableSelect` (Popover + Command), `sonner` toasts — before inventing a
+  parallel one. A table keeps the one bespoke `.table` class inside a `Card`. The
+  default `Button` variant is an accent *outline*, never a fill. An error in a
+  modal is a **toast**, never a line that resizes the dialog.
 - **Every screen is a desktop/mobile pair.** The design presents them side by
-  side; both are in scope for every change.
-- Phosphor icons throughout. Interactive states are themed, never browser
-  defaults: `:focus-visible` is the 2px accent ring.
+  side; both are in scope for every change. The shell folds at 900px, most
+  desktop/mobile swaps at `md` (768px).
+- Phosphor icons for app content (the `Icon` component); `lucide-react` only
+  inside the shadcn primitives (chevrons, the dialog close). Interactive states
+  are themed, never browser defaults: `:focus-visible` is the 2px accent ring.
 
 ---
 

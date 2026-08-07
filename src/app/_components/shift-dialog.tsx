@@ -7,10 +7,12 @@
  * answers, the session stays open and the prompt stays up. That is deliberate:
  * throwing a cashier out mid-sale is worse than the risk it avoids.
  *
- * No script. Both answers are `<form>` submissions — one to a server action,
- * one to the sign-out route the header already posts to — so a failed hydration
- * bundle cannot leave a till stuck behind a modal it cannot dismiss.
+ * No script, on purpose — so this stays a plain server-rendered overlay rather
+ * than a Radix dialog. Both answers are `<form>` submissions (the `Button` is
+ * hookless, safe in a Server Component), so a failed hydration bundle cannot
+ * leave a till stuck behind a modal it cannot dismiss.
  */
+import { Button } from '@/components/ui/button.tsx';
 import { formatTime, initialsOf } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 import { acknowledgeShiftAction } from './shift-dialog.actions.ts';
@@ -30,53 +32,34 @@ export function ShiftDialog({ name, username, since, where }: ShiftDialogProps) 
   const who = [username, where].filter((part) => part !== null && part !== '').join(' · ');
 
   return (
-    <div className="dialog-backdrop">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[color-mix(in_srgb,var(--color-neutral-900)_50%,transparent)] p-4">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="¿Sigues en caja?"
-        className="dialog elev-lg"
-        style={{ width: 'min(480px, 100%)', gap: 'var(--space-6)', padding: 'var(--space-8)' }}
+        className="flex w-[min(480px,100%)] flex-col gap-6 rounded-xl border border-border bg-card p-8 text-card-foreground shadow-[var(--shadow-lg)]"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span
-            className="brand-mark"
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: '50%',
-              fontSize: 20,
-              background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
-            }}
-          >
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-full bg-primary/[0.12] text-xl text-primary">
             <Icon name="clock-user" />
           </span>
           <div>
-            <div className="dialog-title" style={{ fontSize: 19 }}>
+            <div className="font-heading text-[19px] font-medium leading-tight">
               ¿Sigues en caja?
             </div>
-            <span className="text-muted" style={{ fontSize: 12 }}>
+            <span className="text-xs text-muted-foreground">
               Han pasado 4 horas desde que se abrió la sesión
             </span>
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '12px 14px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-neutral-900)',
-          }}
-        >
-          <span className="avatar" style={{ width: 38, height: 38, fontSize: 14 }}>
+        <div className="flex items-center gap-3 rounded-md bg-sidebar px-3.5 py-3">
+          <span className="grid size-[38px] shrink-0 place-items-center rounded-full bg-[var(--color-accent-800)] font-heading text-sm text-[var(--color-accent-100)]">
             {initialsOf(name)}
           </span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: 15 }}>{name}</div>
-            <span className="text-muted" style={{ fontSize: 12 }}>
+          <div className="flex-1">
+            <div className="font-heading text-[15px]">{name}</div>
+            <span className="text-xs text-muted-foreground">
               {who === ''
                 ? `desde las ${formatTime(since)}`
                 : `${who} · desde las ${formatTime(since)}`}
@@ -84,21 +67,21 @@ export function ShiftDialog({ name, username, since, where }: ShiftDialogProps) 
           </div>
         </div>
 
-        <p className="dialog-body" style={{ margin: 0 }}>
+        <p className="m-0 text-sm text-foreground/85">
           Si hubo cambio de turno, cierra la sesión para que los próximos cobros queden a nombre de
           quien atiende.
         </p>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <form action="/logout" method="post" style={{ flex: 1 }}>
-            <button type="submit" className="btn btn-secondary btn-block" style={{ minHeight: 44 }}>
-              Cerrar sesión
-            </button>
+        <div className="flex gap-2">
+          <form action="/logout" method="post" className="flex-1">
+            <Button asChild variant="secondary" size="block" className="h-11">
+              <button type="submit">Cerrar sesión</button>
+            </Button>
           </form>
-          <form action={acknowledgeShiftAction} style={{ flex: 1 }}>
-            <button type="submit" className="btn btn-primary btn-block" style={{ minHeight: 44 }}>
-              Sigo yo, continuar
-            </button>
+          <form action={acknowledgeShiftAction} className="flex-1">
+            <Button asChild size="block" className="h-11">
+              <button type="submit">Sigo yo, continuar</button>
+            </Button>
           </form>
         </div>
       </div>

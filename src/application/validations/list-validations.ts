@@ -59,7 +59,7 @@ export type ListValidationsInput = {
   readonly from: number;
   readonly to: number;
   readonly environment?: EnvironmentFilter;
-  /** A reference or a payer's phone, however the customer read it out. */
+  /** A reference, a payer's phone, a cashier's name, or an amount in bolívares. */
   readonly search?: string;
   readonly cursor?: PageCursor;
 };
@@ -139,16 +139,21 @@ function toSandboxFlag(environment: EnvironmentFilter): boolean | undefined {
 }
 
 /**
- * Both searchable columns hold digits, and both are read aloud rather than
- * copied: a customer says "cero cuatro catorce…" and a cashier types the
- * reference off a receipt that may print it with spaces. So the phone is
- * matched through the domain's normalisation — '0414-3125566' and
- * '+58 414 3125566' are the same payer — and everything else is compared as
- * bare digits, which is what a partial reference is.
+ * What a company can look a payment up by: the cajero who ran it, the payer's
+ * phone, the reference, or the amount.
  *
- * A term with no digits at all matches nothing, rather than everything.
+ * The digit fields are read aloud rather than copied — a customer says "cero
+ * cuatro catorce…" and a cashier types a reference off a receipt printed with
+ * spaces — so the phone is matched through the domain's normalisation
+ * ('0414-3125566' and '+58 414 3125566' are the same payer) and reference and
+ * amount are compared as bare digits. The cajero name is the one text branch,
+ * a case-insensitive substring, and the only one that fires for a term like
+ * "maría"; a digit-less term that matches no name matches nothing else.
  */
 function matches(validation: Validation, term: string): boolean {
+  const name = foldText(term);
+  if (name !== '' && foldText(validation.cashierName ?? '').includes(name)) return true;
+
   const phone = normalisePhone(term);
   if (phone !== null && validation.payerPhone === phone) return true;
 
@@ -157,6 +162,13 @@ function matches(validation: Validation, term: string): boolean {
 
   return (
     validation.reference.replace(/\D/g, '').includes(digits) ||
-    validation.payerPhone.includes(digits)
+    validation.payerPhone.includes(digits) ||
+    // The whole-bolívar figure the panel shows — "630" finds Bs 630,00.
+    String(Math.trunc(validation.amountCents / 100)).includes(digits)
   );
+}
+
+/** Case- and accent-insensitive, so a search for "maria" finds "María". */
+function foldText(text: string): string {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 }

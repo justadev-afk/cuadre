@@ -12,23 +12,48 @@
  * that lists the accounts). This file renders whatever groups it is handed and
  * has no per-bank knowledge. Every field is controlled so a refusal keeps what
  * the merchant typed — including which environment — instead of the action
- * wiping the form the way React resets an uncontrolled one.
+ * wiping the form the way React resets an uncontrolled one. It renders inside a
+ * shadcn `Dialog` (see `banks-panel.tsx`), so its heading is a `DialogTitle` and
+ * the modal's own close button is the only X.
  */
 import { useActionState, useEffect, useState } from 'react';
 
-import type { BankCredentialGroup } from '../../../application/ports/bank-gateway.ts';
+import { Button } from '@/components/ui/button.tsx';
+import { DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog.tsx';
+import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
+import { cn } from '@/lib/utils.ts';
+import type { SupportedBank } from '../../../application/banking/list-supported-banks.ts';
+import type { BankEnvironment } from '../../../application/ports/bank-gateway.ts';
 import { formatBolivares } from '../../../domain/money.ts';
 import { Icon } from '../../_components/icon.tsx';
+import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
 import { maskAccountNumber } from '../../_lib/masks.ts';
 import { toast } from '../../_lib/toast.ts';
 import { connectBankAction, verifyBankAction } from './actions.ts';
-import { CONNECT_INITIAL, type SelectableAccountView, VERIFY_INITIAL } from './form-state.ts';
+import {
+  CONNECT_INITIAL,
+  type ConnectState,
+  type SelectableAccountView,
+  VERIFY_INITIAL,
+  type VerifyState,
+} from './form-state.ts';
+
+type VerifyBankAction = (previous: VerifyState, form: FormData) => Promise<VerifyState>;
+type ConnectBankAction = (previous: ConnectState, form: FormData) => Promise<ConnectState>;
 
 type ConnectWizardProps = {
-  displayName: string;
-  environments: readonly ('production' | 'sandbox')[];
-  credentialGroups: readonly BankCredentialGroup[];
+  /** Every bank a company can connect. One today (Banesco); the wizard is generic. */
+  banks: readonly SupportedBank[];
   onClose: () => void;
+  /** The verify/connect actions — default to the company's own; the admin panel
+   *  passes its versions, scoped to a target company. */
+  verifyAction?: VerifyBankAction;
+  connectAction?: ConnectBankAction;
+  /** When present (the admin flow), carried into both forms so the actions know
+   *  which company they are setting up. */
+  companyId?: string;
 };
 
 /** `confirmation.clientId`, `consulta.clientSecret` — one flat key per field. */
@@ -37,18 +62,36 @@ function fieldKey(groupKey: string, name: string): string {
 }
 
 export function ConnectWizard({
-  displayName,
-  environments,
-  credentialGroups,
+  banks,
   onClose,
+  verifyAction = verifyBankAction,
+  connectAction = connectBankAction,
+  companyId,
 }: ConnectWizardProps) {
-  const [verify, verifyAction, verifying] = useActionState(verifyBankAction, VERIFY_INITIAL);
+  const [verify, verifyForm, verifying] = useActionState(verifyAction, VERIFY_INITIAL);
 
-  const [environment, setEnvironment] = useState<'production' | 'sandbox'>(
-    environments[0] ?? 'sandbox',
+  // The chosen bank drives everything below it — its environments and its
+  // declared credential groups. Switching bank resets the environment and
+  // clears the fields, which belonged to the previous bank's groups.
+  const [bankId, setBankId] = useState<string>(banks[0]?.id ?? '');
+  const selectedBank = banks.find((b) => b.id === bankId) ?? banks[0];
+  const [environment, setEnvironment] = useState<BankEnvironment>(
+    banks[0]?.environments[0] ?? 'production',
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const setField = (key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value }));
+
+  const bankOptions: readonly SelectOption[] = banks.map((b) => ({
+    value: b.id,
+    label: b.displayName,
+  }));
+  const chooseBank = (id: string): void => {
+    const next = banks.find((b) => b.id === id);
+    if (next === undefined) return;
+    setBankId(next.id);
+    setEnvironment(next.environments[0] ?? 'production');
+    setValues({});
+  };
 
   // A rejected credential set shows as a toast, never as an error line in the
   // form — the modal must not resize under the fields as the message appears.
@@ -56,9 +99,13 @@ export function ConnectWizard({
     if (verify.step === 'error') toast(verify.message);
   }, [verify]);
 
+  // The picker only ever holds a supported bank; the guard is for the compiler,
+  // never rendered with an empty list (the page gates on `banks.length > 0`).
+  if (selectedBank === undefined) return null;
+
   // The verify button waits on the required (operate) group being filled — a
   // realtime check, so an empty submit is never even offered.
-  const canVerify = credentialGroups
+  const canVerify = selectedBank.credentialGroups
     .filter((group) => group.required)
     .every((group) =>
       group.fields.every((f) => (values[fieldKey(group.key, f.name)] ?? '').trim() !== ''),
@@ -71,92 +118,82 @@ export function ConnectWizard({
         verifyId={verify.verifyId}
         environment={verify.environment}
         accounts={verify.accounts}
-        displayName={displayName}
+        displayName={selectedBank.displayName}
+        connectAction={connectAction}
+        companyId={companyId}
         onClose={onClose}
       />
     );
   }
 
   return (
-    <form action={verifyAction} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ flex: 1 }}>
-          <div className="dialog-title">Conectar {displayName}</div>
-          <span className="text-muted" style={{ fontSize: 13 }}>
-            Verificamos las credenciales contra el banco antes de guardar nada.
-          </span>
-        </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon"
-          aria-label="Cerrar"
-          onClick={onClose}
-        >
-          <Icon name="x" />
-        </button>
+    <form action={verifyForm} className="flex flex-col gap-4">
+      <div>
+        <DialogTitle>Conectar {selectedBank.displayName}</DialogTitle>
+        <DialogDescription>
+          Verificamos las credenciales contra el banco antes de guardar nada.
+        </DialogDescription>
       </div>
 
-      <fieldset className="field" style={{ border: 'none', padding: 0, margin: 0 }}>
-        <legend
-          style={{
-            fontSize: 12,
-            marginBottom: 5,
-            padding: 0,
-            color: 'color-mix(in srgb, var(--color-text) 70%, transparent)',
-          }}
-        >
-          Entorno
-        </legend>
-        <div className="seg" style={{ width: '100%', marginTop: 2 }}>
-          {environments.map((env) => (
-            <label key={env} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}>
-              <input
-                type="radio"
-                name="environment"
-                value={env}
-                checked={environment === env}
-                onChange={() => setEnvironment(env)}
-                disabled={verifying}
-              />
-              <Icon name={env === 'sandbox' ? 'flask' : 'broadcast'} />
-              {env === 'production' ? 'Producción' : 'Sandbox'}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <input type="hidden" name="bank" value={bankId} />
+      {companyId !== undefined && <input type="hidden" name="companyId" value={companyId} />}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bank-select">Banco</Label>
+        <SearchableSelect
+          id="bank-select"
+          options={bankOptions}
+          value={bankId}
+          onChange={chooseBank}
+          searchPlaceholder="Buscar banco…"
+          disabled={verifying}
+        />
+      </div>
 
-      {credentialGroups.map((group) => (
-        <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs text-foreground/70">Entorno</span>
+        <input type="hidden" name="environment" value={environment} />
+        <Tabs
+          value={environment}
+          onValueChange={(value) => setEnvironment(value as BankEnvironment)}
+        >
+          <TabsList>
+            {selectedBank.environments.map((env) => (
+              <TabsTrigger key={env} value={env} disabled={verifying}>
+                <Icon name={env === 'sandbox' ? 'flask' : 'broadcast'} />
+                {env === 'production' ? 'Producción' : 'Sandbox'}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {selectedBank.credentialGroups.map((group) => (
+        <div key={group.key} className="flex flex-col gap-2.5">
           <div>
-            <h6 style={{ margin: 0, color: 'var(--color-accent)' }}>
+            <h6 className="m-0 text-primary">
               {group.label}
               {!group.required && (
-                <span className="text-muted" style={{ marginLeft: 6, fontWeight: 400 }}>
-                  · opcional
-                </span>
+                <span className="ml-1.5 font-normal text-muted-foreground">· opcional</span>
               )}
             </h6>
             {group.hint && (
-              <span className="text-muted" style={{ fontSize: 11, display: 'block', marginTop: 3 }}>
-                {group.hint}
-              </span>
+              <span className="mt-[3px] block text-[11px] text-muted-foreground">{group.hint}</span>
             )}
           </div>
 
           {group.fields.map((f) => {
             const key = fieldKey(group.key, f.name);
             return (
-              <div className="field" key={key}>
-                <label htmlFor={`cred-${key}`}>{f.label}</label>
-                <input
-                  className="input"
+              <div className="flex flex-col gap-1.5" key={key}>
+                <Label htmlFor={`cred-${key}`}>{f.label}</Label>
+                <Input
                   id={`cred-${key}`}
                   name={key}
                   type={f.secret ? 'password' : 'text'}
                   autoCapitalize="none"
                   autoComplete={f.secret ? 'new-password' : 'off'}
                   spellCheck={false}
-                  style={{ fontFamily: 'ui-monospace, monospace', fontSize: 13 }}
+                  className="font-mono text-[13px]"
                   value={values[key] ?? ''}
                   onChange={(e) => setField(key, e.target.value)}
                   required={group.required}
@@ -168,15 +205,15 @@ export function ConnectWizard({
         </div>
       ))}
 
-      <div className="dialog-actions">
-        <button type="button" className="btn btn-secondary" onClick={onClose}>
+      <DialogFooter>
+        <Button type="button" variant="secondary" onClick={onClose}>
           Cancelar
-        </button>
-        <button type="submit" className="btn btn-primary" disabled={verifying || !canVerify}>
+        </Button>
+        <Button type="submit" disabled={verifying || !canVerify}>
           <Icon name="plugs-connected" />
           {verifying ? 'Verificando…' : 'Verificar credenciales'}
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -187,15 +224,19 @@ function AccountStep({
   environment,
   accounts,
   displayName,
+  connectAction,
+  companyId,
   onClose,
 }: {
   verifyId: string;
   environment: 'production' | 'sandbox';
   accounts: readonly SelectableAccountView[];
   displayName: string;
+  connectAction: ConnectBankAction;
+  companyId?: string;
   onClose: () => void;
 }) {
-  const [connect, connectAction, connecting] = useActionState(connectBankAction, CONNECT_INITIAL);
+  const [connect, connectForm, connecting] = useActionState(connectAction, CONNECT_INITIAL);
   const [chosen, setChosen] = useState(accounts[0]?.accountId ?? '');
   const [typed, setTyped] = useState('');
 
@@ -228,28 +269,30 @@ function AccountStep({
       : 'Guardar banco';
 
   return (
-    <form action={connectAction} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <form action={connectForm} className="flex flex-col gap-4">
       <input type="hidden" name="verifyId" value={verifyId} />
+      {companyId !== undefined && <input type="hidden" name="companyId" value={companyId} />}
       {/* connect prefers a typed number when present; sending both keeps the
           picker's choice available the moment the merchant switches back. */}
       <input type="hidden" name="accountId" value={typing ? '' : chosen} />
       <input type="hidden" name="accountNumber" value={typing ? typed : ''} />
 
       <div>
-        <div className="dialog-title">¿Qué cuenta recibe los pagos?</div>
-        <span className="text-muted" style={{ fontSize: 13 }}>
+        <DialogTitle>¿Qué cuenta recibe los pagos?</DialogTitle>
+        <DialogDescription>
           {typing
             ? 'Escribe el número completo de la cuenta que recibe los pagos.'
             : `${displayName} reporta ${accounts.length} ${accounts.length === 1 ? 'cuenta' : 'cuentas'} para estas credenciales.`}
-        </span>
+        </DialogDescription>
       </div>
 
       {typing ? (
-        <div className="field">
-          <label htmlFor="manual-account">Número de cuenta (20 dígitos)</label>
-          <input
-            className={`input tnum${accountInvalid ? ' input-invalid' : ''}`}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="manual-account">Número de cuenta (20 dígitos)</Label>
+          <Input
             id="manual-account"
+            aria-invalid={accountInvalid}
+            className="font-mono tabular-nums"
             inputMode="numeric"
             autoComplete="off"
             spellCheck={false}
@@ -258,23 +301,23 @@ function AccountStep({
             value={typed}
             onChange={(e) => setTyped(maskAccountNumber(e.target.value))}
             disabled={connecting}
-            style={{ fontFamily: 'ui-monospace, monospace' }}
           />
           {hasAccounts && (
-            <button
+            <Button
               type="button"
-              className="btn btn-ghost"
-              style={{ marginTop: 8, alignSelf: 'flex-start', fontSize: 12 }}
+              variant="ghost"
+              size="sm"
+              className="mt-1 self-start"
               onClick={() => setTyping(false)}
               disabled={connecting}
             >
               <Icon name="arrow-left" />
               Volver a la lista
-            </button>
+            </Button>
           )}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {accounts.map((account) => {
             const selected = account.accountId === chosen;
             return (
@@ -283,34 +326,26 @@ function AccountStep({
                 key={account.accountId}
                 onClick={() => setChosen(account.accountId)}
                 disabled={connecting}
-                className="card elev-sm"
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: 14,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  background: 'var(--color-surface)',
-                  ...(selected ? { boxShadow: 'inset 0 0 0 1px var(--color-accent)' } : {}),
-                }}
+                className={cn(
+                  'flex cursor-pointer flex-row items-center gap-3 rounded-md bg-card p-3.5 text-left',
+                  selected
+                    ? 'shadow-[inset_0_0_0_1px_var(--color-accent)]'
+                    : 'shadow-[var(--shadow-sm)]',
+                )}
               >
                 <span
-                  style={{
-                    width: 16,
-                    height: 16,
-                    flex: 'none',
-                    borderRadius: '50%',
-                    border: `1.5px solid ${selected ? 'var(--color-accent)' : 'var(--color-divider)'}`,
-                    background: selected ? 'var(--color-accent)' : 'transparent',
-                    boxShadow: selected ? 'inset 0 0 0 4px var(--color-surface)' : 'none',
-                  }}
+                  className={cn(
+                    'size-4 flex-none rounded-full border-[1.5px]',
+                    selected
+                      ? 'border-primary bg-primary shadow-[inset_0_0_0_4px_var(--color-surface)]'
+                      : 'border-border',
+                  )}
                 />
-                <span style={{ flex: 1 }}>
-                  <span className="card-title tnum" style={{ fontSize: 15, display: 'block' }}>
+                <span className="flex-1">
+                  <span className="block font-heading text-[15px] tabular-nums">
                     {account.masked}
                   </span>
-                  <span className="text-muted" style={{ fontSize: 12 }}>
+                  <span className="text-xs text-muted-foreground">
                     {account.type ?? 'Cuenta'}
                     {account.balanceCents !== null &&
                       ` · saldo ${formatBolivares(account.balanceCents)}`}
@@ -319,43 +354,32 @@ function AccountStep({
               </button>
             );
           })}
-          <button
+          <Button
             type="button"
-            className="btn btn-ghost"
-            style={{ alignSelf: 'flex-start', fontSize: 12 }}
+            variant="ghost"
+            size="sm"
+            className="self-start"
             onClick={() => setTyping(true)}
             disabled={connecting}
           >
             La cuenta no está en la lista — escribir el número
-          </button>
+          </Button>
         </div>
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 8,
-          fontSize: 12,
-          color: 'color-mix(in srgb, var(--color-text) 55%, transparent)',
-        }}
-      >
-        <Icon name="eye" style={{ marginTop: 2 }} />
+      <div className="flex items-start gap-2 text-xs text-muted-foreground">
+        <Icon name="eye" className="mt-0.5" />
         <span>Solo leemos los movimientos del día de esta cuenta. Cuadre no mueve dinero.</span>
       </div>
 
-      <div className="dialog-actions">
-        <button type="button" className="btn btn-secondary" onClick={onClose} disabled={connecting}>
+      <DialogFooter>
+        <Button type="button" variant="secondary" onClick={onClose} disabled={connecting}>
           Cancelar
-        </button>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={connecting || (typing ? !accountComplete : chosen === '')}
-        >
+        </Button>
+        <Button type="submit" disabled={connecting || (typing ? !accountComplete : chosen === '')}>
           {saveLabel}
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </form>
   );
 }

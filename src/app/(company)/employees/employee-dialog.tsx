@@ -10,12 +10,22 @@
  *
  * Every field is controlled so a refusal keeps what was typed instead of React
  * resetting the form, and the refusal is a **toast** rather than a note in the
- * dialog — the modal must not resize under the fields the way an error line
- * pushed in would.
+ * dialog — Radix keeps the modal a fixed size, and a growing error line would
+ * jump it under the cursor.
  */
 import { useActionState, useEffect, useState } from 'react';
 
-import { ModalBackdrop } from '../../_components/modal.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog.tsx';
+import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
 import { toast } from '../../_lib/toast.ts';
 import { createEmployeeAction, updateEmployeeAction } from './actions.ts';
 import { CREATE_EMPLOYEE_INITIAL } from './form-state.ts';
@@ -54,35 +64,28 @@ export function EmployeeDialog({
   }, [state]);
 
   return (
-    <ModalBackdrop onClose={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing ? 'Editar empleado' : 'Nuevo empleado'}
-        className="dialog elev-lg"
-        style={{
-          width: 'min(420px, 96vw)',
-          gap: 14,
-          padding: 24,
-          background: 'var(--color-neutral-900)',
-        }}
-      >
-        <div>
-          <div className="dialog-title">{editing ? 'Editar empleado' : 'Nuevo empleado'}</div>
-          <span className="text-muted" style={{ fontSize: 13 }}>
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className="w-[min(420px,calc(100%-2rem))]">
+        <DialogHeader>
+          <DialogTitle>{editing ? 'Editar empleado' : 'Nuevo empleado'}</DialogTitle>
+          <DialogDescription>
             {editing
               ? 'Cambia el nombre o restablece el PIN. El usuario no cambia.'
               : 'Entra con el código de la empresa y su PIN.'}
-          </span>
-        </div>
+          </DialogDescription>
+        </DialogHeader>
 
-        <form action={action} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <form action={action} className="flex flex-col gap-3.5">
           {editing && <input type="hidden" name="userId" value={employee.id} />}
 
-          <div className="field">
-            <label htmlFor="emp-name">Nombre y apellido</label>
-            <input
-              className="input"
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="emp-name">Nombre y apellido</Label>
+            <Input
               id="emp-name"
               name="name"
               value={name}
@@ -93,13 +96,12 @@ export function EmployeeDialog({
             />
           </div>
 
-          <div className="field">
-            <label htmlFor="emp-username">Usuario</label>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="emp-username">Usuario</Label>
             {editing ? (
-              <input className="input" id="emp-username" value={employee.username} readOnly />
+              <Input id="emp-username" value={employee.username} readOnly className="opacity-70" />
             ) : (
-              <input
-                className="input"
+              <Input
                 id="emp-username"
                 name="username"
                 placeholder="maria.r"
@@ -114,10 +116,9 @@ export function EmployeeDialog({
             )}
           </div>
 
-          <div className="field">
-            <label htmlFor="emp-pin">{editing ? 'Nuevo PIN (opcional)' : 'PIN de caja'}</label>
-            <input
-              className="input"
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="emp-pin">{editing ? 'Nuevo PIN (opcional)' : 'PIN de caja'}</Label>
+            <Input
               id="emp-pin"
               name="pin"
               inputMode="numeric"
@@ -130,21 +131,16 @@ export function EmployeeDialog({
             />
           </div>
 
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-              disabled={pending}
-            >
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
               Cancelar
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={pending}>
+            </Button>
+            <Button type="submit" disabled={pending}>
               {editing ? 'Guardar' : 'Crear'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </ModalBackdrop>
+      </DialogContent>
+    </Dialog>
   );
 }

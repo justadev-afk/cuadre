@@ -10,14 +10,17 @@
  * because there are no unconfirmed rows: a row here is a confirmed payment.
  */
 
+import { Button } from '@/components/ui/button.tsx';
+import { Card } from '@/components/ui/card.tsx';
+import { Input } from '@/components/ui/input.tsx';
+import { cn } from '@/lib/utils.ts';
 import { formatBolivares } from '../../../domain/money.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
-import { ValidationCards } from '../../_components/validation-list.tsx';
+import { ValidationList } from '../../_components/validation-list.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
-import { amountDigits, formatClock } from '../../_lib/venezuela-format.ts';
 
 export const metadata = { title: 'Validaciones · Cuadre' };
 
@@ -63,21 +66,17 @@ export default async function ValidationsPage({
       title="Validaciones"
       subtitle={`Hoy · ${totals.totalCount} pagos validados · ${formatBolivares(totals.totalAmountCents)}`}
       actions={
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="seg">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-stretch overflow-hidden rounded-md border border-border">
             {ENV_TABS.map((tab) => (
               <a
                 key={tab.value}
                 href={hrefFor(tab.value, search)}
-                className="seg-opt"
-                style={
-                  tab.value === environment
-                    ? {
-                        color: 'var(--color-accent)',
-                        boxShadow: 'inset 0 0 0 1px var(--color-accent)',
-                      }
-                    : undefined
-                }
+                className={cn(
+                  'inline-flex items-center gap-1.5 border-l border-border px-3 py-[7px] text-[13px] text-foreground/70 no-underline transition-colors first:border-l-0 hover:bg-foreground/[0.06]',
+                  tab.value === environment &&
+                    'text-primary shadow-[inset_0_0_0_1px_var(--primary)] hover:bg-transparent',
+                )}
               >
                 {tab.icon && <Icon name={tab.icon} />}
                 {tab.label}
@@ -88,57 +87,37 @@ export default async function ValidationsPage({
             {environment !== 'all' && (
               <input type="hidden" name="environment" value={environment} />
             )}
-            <input
-              className="input"
+            <Input
               name="q"
               defaultValue={search ?? ''}
-              placeholder="Referencia o teléfono"
-              style={{ width: 180 }}
+              placeholder="Referencia, monto, cajero…"
+              className="w-[210px]"
             />
           </form>
         </div>
       }
     >
       {!hasBank && (
-        <div
-          className="card elev-sm"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 14,
-            padding: 16,
-            boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent)',
-            background: 'color-mix(in srgb, var(--color-accent) 8%, transparent)',
-          }}
-        >
-          <span
-            className="avatar"
-            style={{
-              width: 40,
-              height: 40,
-              background: 'var(--color-accent-800)',
-              color: 'var(--color-accent-100)',
-              fontSize: 20,
-            }}
-          >
+        <div className="flex items-center gap-3.5 rounded-md bg-primary/[0.08] p-4 ring-1 ring-inset ring-primary/35">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--color-accent-800)] text-xl text-[var(--color-accent-100)]">
             <Icon name="bank" />
           </span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: 15 }}>
-              Conecta un banco para empezar a validar
-            </div>
-            <span className="text-muted" style={{ fontSize: 12 }}>
+          <div className="flex-1">
+            <div className="font-heading text-[15px]">Conecta un banco para empezar a validar</div>
+            <span className="text-xs text-muted-foreground">
               Sin una cuenta conectada, la caja no tiene a quién preguntarle por un pago.
             </span>
           </div>
-          <a className="btn btn-primary" href="/banks" style={{ whiteSpace: 'nowrap' }}>
-            <Icon name="plus" />
-            Conectar banco
-          </a>
+          <Button asChild className="whitespace-nowrap">
+            <a href="/banks">
+              <Icon name="plus" />
+              Conectar banco
+            </a>
+          </Button>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div className="flex flex-wrap gap-3">
         <StatCard
           kicker="Cobrado hoy"
           value={formatBolivares(totals.totalAmountCents)}
@@ -153,69 +132,13 @@ export default async function ValidationsPage({
       </div>
 
       {list.items.length === 0 ? (
-        <section className="box">
-          <p
-            className="text-muted"
-            style={{ fontSize: 14, padding: '20px 0', textAlign: 'center', margin: 0 }}
-          >
+        <Card>
+          <p className="m-0 py-5 text-center text-sm text-muted-foreground">
             No hay validaciones en este filtro.
           </p>
-        </section>
+        </Card>
       ) : (
-        <>
-          <section className="box only-desktop" style={{ padding: 0, overflowX: 'auto' }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Control</th>
-                  <th>Hora</th>
-                  <th>Referencia</th>
-                  <th style={{ textAlign: 'right' }}>Monto (Bs)</th>
-                  <th>Teléfono</th>
-                  <th>Banco</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((v) => (
-                  <tr key={v.id}>
-                    <td
-                      className="tnum"
-                      style={{
-                        fontFamily: 'var(--font-heading)',
-                        color: 'var(--color-accent-300)',
-                      }}
-                    >
-                      {v.controlCode}
-                    </td>
-                    <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>
-                      {formatClock(v.trnAt)}
-                    </td>
-                    <td className="tnum">{v.reference}</td>
-                    <td
-                      className="tnum"
-                      style={{ textAlign: 'right', fontFamily: 'var(--font-heading)' }}
-                    >
-                      {amountDigits(v.amountCents)}
-                    </td>
-                    <td className="text-muted">{v.payerPhone}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      Banesco
-                      {v.isSandbox && (
-                        <span className="tag tag-outline" style={{ marginLeft: 6, fontSize: 10 }}>
-                          <Icon name="flask" style={{ marginRight: 3 }} />
-                          Sandbox
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-          <div className="only-mobile">
-            <ValidationCards items={list.items} nowSeconds={nowSeconds} />
-          </div>
-        </>
+        <ValidationList items={list.items} nowSeconds={nowSeconds} showCashier />
       )}
     </ContentLayout>
   );
@@ -223,12 +146,10 @@ export default async function ValidationsPage({
 
 function StatCard({ kicker, value, note }: { kicker: string; value: string; note: string }) {
   return (
-    <div className="card elev-sm" style={{ flex: 1, minWidth: 180, gap: 2 }}>
-      <div className="card-kicker">{kicker}</div>
-      <div style={{ fontFamily: 'var(--font-heading)', fontSize: 24 }}>{value}</div>
-      <span className="text-muted" style={{ fontSize: 12 }}>
-        {note}
-      </span>
+    <div className="flex min-w-[180px] flex-1 flex-col gap-0.5 rounded-md bg-card p-3 shadow-[var(--shadow-sm)]">
+      <div className="text-[10px] tracking-[0.1em] text-primary uppercase">{kicker}</div>
+      <div className="font-heading text-2xl">{value}</div>
+      <span className="text-xs text-muted-foreground">{note}</span>
     </div>
   );
 }

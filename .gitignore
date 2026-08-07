@@ -4,6 +4,7 @@ dist/
 next-env.d.ts
 *.tsbuildinfo
 .wrangler/
+.vinext/
 .dev.vars
 .env
 *.local

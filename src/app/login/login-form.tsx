@@ -12,10 +12,16 @@
  */
 
 import Link from 'next/link';
-import { useActionState, useEffect, useState } from 'react';
+import { type CSSProperties, useActionState, useEffect, useRef, useState } from 'react';
 
+import { Alert, AlertDescription } from '@/components/ui/alert.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import { Checkbox } from '@/components/ui/checkbox.tsx';
+import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
+import { authPanel } from '../_components/auth-shell.tsx';
 import { Brand } from '../_components/brand.tsx';
-import { FormNote } from '../_components/form-note.tsx';
 import { Icon, type IconName } from '../_components/icon.tsx';
 import { DeviceIdField } from '../_lib/device-id-field.tsx';
 import { NO_SIGN_IN_ERROR } from '../_lib/sign-in-state.ts';
@@ -45,71 +51,77 @@ type LoginFormProps = {
   readonly stats: readonly LoginStatView[];
 };
 
+/** The pitch panel's layered gradient — accent glow top-right over a dusk fade. */
+const asideBackground: CSSProperties = {
+  background:
+    'radial-gradient(120% 80% at 100% 0%, var(--color-accent-900) 0%, transparent 60%), linear-gradient(180deg, var(--color-neutral-900) 0%, var(--color-bg) 100%)',
+  boxShadow: 'inset 1px 0 0 var(--border)',
+};
+
 export function LoginForm({ next, notice, stats }: LoginFormProps) {
   const [door, setDoor] = useState<Door>('company');
 
   return (
     <>
-      <div className="auth-panel">
+      <div className={authPanel}>
         <Brand size={24} />
 
-        <div className="auth-form">
+        <div className="my-auto flex w-full max-w-[360px] flex-col gap-4">
           <div>
-            <h1 className="auth-title">Entrar</h1>
-            <p className="text-muted" style={{ fontSize: 13 }}>
+            <h1 className="font-heading text-xl font-medium leading-tight md:text-[25px]">
+              Entrar
+            </h1>
+            <p className="text-[13px] text-muted-foreground">
               {door === 'company'
                 ? 'Elige tu tipo de acceso.'
                 : 'Tu empresa te entrega el código y el PIN.'}
             </p>
           </div>
 
-          <div className="seg" style={{ width: '100%' }}>
-            <DoorTab
-              door="company"
-              current={door}
-              onPick={setDoor}
-              icon="storefront"
-              label="Empresa"
-            />
-            <DoorTab
-              door="cashier"
-              current={door}
-              onPick={setDoor}
-              icon="cash-register"
-              label="Cajero"
-            />
-          </div>
+          <Tabs value={door} onValueChange={(value) => setDoor(value as Door)}>
+            <TabsList>
+              <TabsTrigger value="company">
+                <Icon name="storefront" />
+                Empresa
+              </TabsTrigger>
+              <TabsTrigger value="cashier">
+                <Icon name="cash-register" />
+                Cajero
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-          {notice !== null && <FormNote tone={notice.tone}>{notice.text}</FormNote>}
+          {notice !== null && (
+            <Alert>
+              <Icon name={notice.tone === 'success' ? 'check-circle' : 'warning-circle'} />
+              <AlertDescription>{notice.text}</AlertDescription>
+            </Alert>
+          )}
 
           {door === 'company' ? <CompanyForm next={next} /> : <CashierForm next={next} />}
         </div>
 
-        <div className="auth-foot">
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: 'var(--color-accent)',
-              }}
-            />
+        <div className="flex items-center gap-2.5 pt-[18px] text-[11px] text-foreground/45">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-primary" />
             Banesco operativo
           </span>
-          <span style={{ marginLeft: 'auto' }}>Cuadre · v2</span>
+          <span className="ml-auto">Cuadre · v2</span>
         </div>
       </div>
 
-      <aside className="auth-aside">
-        <div className="auth-aside-rule" />
-        <p className="auth-aside-quote">
+      <aside
+        className="hidden flex-col gap-5 overflow-y-auto px-8 py-9 md:flex"
+        style={asideBackground}
+      >
+        <div className="mt-auto h-0.5 w-[34px] shrink-0 bg-primary" />
+        <p className="m-0 font-heading text-[21px] leading-[1.25]">
           {door === 'company'
             ? 'Confirma el pago móvil en el mostrador, sin abrir el estado de cuenta.'
             : 'Confirma el pago móvil antes de entregar la compra.'}
         </p>
 
-        <div className="auth-benefits">
+        <div className="flex flex-col gap-3.5">
           <Benefit
             icon="lightning"
             title="Respuesta en segundos"
@@ -127,7 +139,7 @@ export function LoginForm({ next, notice, stats }: LoginFormProps) {
           />
         </div>
 
-        <div className="auth-stats">
+        <div className="mt-auto flex gap-[22px] pt-[18px] shadow-[inset_0_1px_0_var(--border)]">
           {stats.map((stat) => (
             <Stat key={stat.label} value={stat.value} label={stat.label} />
           ))}
@@ -140,15 +152,13 @@ export function LoginForm({ next, notice, stats }: LoginFormProps) {
 /** One line of the login pitch: an accent icon, a title, a muted sentence. */
 function Benefit({ icon, title, body }: { icon: IconName; title: string; body: string }) {
   return (
-    <div className="auth-benefit">
-      <span className="auth-benefit-mark">
+    <div className="flex items-start gap-2.5">
+      <span className="grid size-[30px] shrink-0 place-items-center rounded-md bg-primary/[0.14] text-base text-primary">
         <Icon name={icon} />
       </span>
       <div>
-        <div style={{ fontFamily: 'var(--font-heading)', fontSize: 14 }}>{title}</div>
-        <span className="text-muted" style={{ fontSize: 12 }}>
-          {body}
-        </span>
+        <div className="font-heading text-sm">{title}</div>
+        <span className="text-xs text-muted-foreground">{body}</span>
       </div>
     </div>
   );
@@ -158,46 +168,9 @@ function Benefit({ icon, title, body }: { icon: IconName; title: string; body: s
 function Stat({ value, label }: { value: string; label: string }) {
   return (
     <div>
-      <div className="tnum" style={{ fontFamily: 'var(--font-heading)', fontSize: 20 }}>
-        {value}
-      </div>
-      <span className="text-muted" style={{ fontSize: 11 }}>
-        {label}
-      </span>
+      <div className="font-heading text-xl tabular-nums">{value}</div>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
     </div>
-  );
-}
-
-/**
- * One tab: a real radio inside the label, which is what
- * `.seg-opt:has(input:checked)` paints and what lets the pair be walked with
- * the arrow keys.
- */
-function DoorTab({
-  door,
-  current,
-  onPick,
-  icon,
-  label,
-}: {
-  door: Door;
-  current: Door;
-  onPick: (door: Door) => void;
-  icon: 'storefront' | 'cash-register';
-  label: string;
-}) {
-  return (
-    <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}>
-      <input
-        type="radio"
-        name="door"
-        value={door}
-        checked={current === door}
-        onChange={() => onPick(door)}
-      />
-      <Icon name={icon} />
-      {label}
-    </label>
   );
 }
 
@@ -211,85 +184,92 @@ function CompanyForm({ next }: { next: string | null }) {
   const [password, setPassword] = useState('');
   const [reveal, setReveal] = useState(false);
   const [remember, setRemember] = useState(true);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  // On a refusal, clear only the password and put the cursor back on the email:
+  // the email is usually right and the password is what gets re-typed, so this
+  // saves re-selecting the field. Fires once per refused submission.
+  useEffect(() => {
+    if (state.error !== null) {
+      setPassword('');
+      emailRef.current?.focus();
+    }
+  }, [state]);
 
   return (
-    <form action={action}>
+    <form action={action} className="flex flex-col gap-3">
       {next !== null && <input type="hidden" name="next" value={next} />}
       <DeviceIdField />
 
-      <div className="auth-fields">
-        <div className="field">
-          <label htmlFor="company-email">Correo</label>
-          <input
-            className="input"
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="company-email">Correo</Label>
+          <Input
+            ref={emailRef}
             id="company-email"
             name="email"
             type="email"
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
+            className="h-10"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
           />
         </div>
-        <div className="field">
-          <label htmlFor="company-password">Contraseña</label>
-          <div style={{ position: 'relative' }}>
-            <input
-              className="input"
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="company-password">Contraseña</Label>
+          <div className="relative">
+            <Input
               id="company-password"
               name="password"
               type={reveal ? 'text' : 'password'}
               autoComplete="current-password"
-              style={{ paddingRight: 40 }}
+              className="h-10 pr-10"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
             />
-            <button
+            <Button
               type="button"
-              className="btn btn-ghost btn-icon"
+              variant="ghost"
+              size="icon"
               aria-label={reveal ? 'Ocultar la contraseña' : 'Mostrar la contraseña'}
               onClick={() => setReveal((value) => !value)}
-              style={{ position: 'absolute', right: 2, top: '50%', transform: 'translateY(-50%)' }}
+              className="absolute top-1/2 right-1 size-8 -translate-y-1/2"
             >
               <Icon name="eye" />
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginTop: 4,
-        }}
-      >
-        <label className="radio">
-          <input
-            type="checkbox"
+      <div className="mt-1 flex items-center justify-between gap-3">
+        <Label className="cursor-pointer text-sm text-foreground">
+          <Checkbox
             name="remember"
             checked={remember}
-            onChange={(event) => setRemember(event.target.checked)}
+            onCheckedChange={(value) => setRemember(value === true)}
           />
-          <span className="dot" />
           Mantener sesión
-        </label>
-        <Link href="/forgot-password" style={{ fontSize: 13 }}>
+        </Label>
+        <Link href="/forgot-password" className="text-[13px]">
           ¿Olvidaste tu contraseña?
         </Link>
       </div>
 
-      {state.error !== null && <FormNote tone="error">{state.error}</FormNote>}
+      {state.error !== null && (
+        <Alert>
+          <Icon name="warning-circle" />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
 
-      <button type="submit" className="btn btn-primary btn-block" disabled={pending}>
+      <Button type="submit" size="block" className="mt-0.5 h-11" disabled={pending}>
         Entrar
         <Icon name="arrow-right" />
-      </button>
+      </Button>
     </form>
   );
 }
@@ -302,6 +282,16 @@ function CashierForm({ next }: { next: string | null }) {
   // rather than clearing them under the error. The PIN never leaves client state.
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
+  const usernameRef = useRef<HTMLInputElement>(null);
+
+  // A refused sign-in clears only the PIN and returns the cursor to the usuario,
+  // the same courtesy the merchant form does with the email.
+  useEffect(() => {
+    if (state.error !== null) {
+      setPin('');
+      usernameRef.current?.focus();
+    }
+  }, [state]);
 
   // Read after mount, never during render: the server has no localStorage, and
   // a first render that differs between the two is a hydration mismatch.
@@ -324,18 +314,17 @@ function CashierForm({ next }: { next: string | null }) {
   };
 
   return (
-    <form action={action}>
+    <form action={action} className="flex flex-col gap-3">
       {next !== null && <input type="hidden" name="next" value={next} />}
       <DeviceIdField />
 
-      <div className="auth-fields">
-        <div className="field">
-          <label htmlFor="cashier-slug">Código de empresa</label>
-          <input
-            className="input"
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="cashier-slug">Código de empresa</Label>
+          <Input
             id="cashier-slug"
             name="companySlug"
-            style={{ letterSpacing: '.06em' }}
+            className="h-10 tracking-[0.06em]"
             value={slug}
             onChange={(event) => changeSlug(event.target.value)}
             autoComplete="organization"
@@ -344,25 +333,25 @@ function CashierForm({ next }: { next: string | null }) {
             required
           />
         </div>
-        <div className="auth-pair">
-          <div className="field">
-            <label htmlFor="cashier-username">Usuario</label>
-            <input
-              className="input"
+        <div className="grid grid-cols-[1.4fr_1fr] gap-3 max-md:grid-cols-1">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="cashier-username">Usuario</Label>
+            <Input
+              ref={usernameRef}
               id="cashier-username"
               name="username"
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
+              className="h-10"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               required
             />
           </div>
-          <div className="field">
-            <label htmlFor="cashier-pin">PIN</label>
-            <input
-              className="input"
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="cashier-pin">PIN</Label>
+            <Input
               id="cashier-pin"
               name="pin"
               type="password"
@@ -370,6 +359,7 @@ function CashierForm({ next }: { next: string | null }) {
               inputMode="numeric"
               autoComplete="off"
               maxLength={6}
+              className="h-10"
               value={pin}
               onChange={(event) => setPin(event.target.value)}
               required
@@ -378,27 +368,22 @@ function CashierForm({ next }: { next: string | null }) {
         </div>
       </div>
 
-      <label className="radio" style={{ marginTop: 16 }}>
-        <input
-          type="checkbox"
-          checked={remember}
-          onChange={(event) => changeRemember(event.target.checked)}
-        />
-        <span className="dot" />
+      <Label className="mt-1 cursor-pointer text-sm text-foreground">
+        <Checkbox checked={remember} onCheckedChange={(value) => changeRemember(value === true)} />
         Recordar el código en esta caja
-      </label>
+      </Label>
 
-      {state.error !== null && <FormNote tone="error">{state.error}</FormNote>}
+      {state.error !== null && (
+        <Alert>
+          <Icon name="warning-circle" />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
 
-      <button
-        type="submit"
-        className="btn btn-primary btn-block"
-        disabled={pending}
-        style={{ marginTop: 20, minHeight: 40 }}
-      >
+      <Button type="submit" size="block" className="mt-2 h-11" disabled={pending}>
         Entrar a caja
         <Icon name="arrow-right" />
-      </button>
+      </Button>
     </form>
   );
 }

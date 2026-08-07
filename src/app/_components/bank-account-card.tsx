@@ -6,6 +6,10 @@
  * dashed edge, so a till operator can tell at a glance whether the money on
  * screen is real — the same distinction the validation rows carry.
  */
+import type { ReactNode } from 'react';
+
+import { Badge } from '@/components/ui/badge.tsx';
+import { cn } from '@/lib/utils.ts';
 import { formatDate } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 
@@ -16,66 +20,58 @@ type BankAccountCardProps = {
   accountLast4: string;
   accountType: string | null;
   verifiedAt: number | null;
+  /** Right-edge slot for the company's one lever — the deactivate control. */
+  action?: ReactNode;
 };
 
 const BANK_NAMES: Record<string, string> = { banesco: 'Banesco' };
 
 export function BankAccountCard(props: BankAccountCardProps) {
-  const { bank, environment, status, accountLast4, verifiedAt } = props;
+  const { bank, environment, status, accountLast4, verifiedAt, action } = props;
   const isSandbox = environment === 'sandbox';
   const name = BANK_NAMES[bank] ?? bank;
 
   return (
     <div
-      className="card elev-sm"
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-        padding: 14,
-        ...(isSandbox ? { border: '1px dashed var(--color-accent-700)' } : {}),
-      }}
+      className={cn(
+        'flex flex-row items-center gap-3.5 rounded-md bg-card p-3.5 shadow-[var(--shadow-sm)]',
+        isSandbox && 'border border-dashed border-[var(--color-accent-700)]',
+      )}
     >
       <span
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          display: 'grid',
-          placeItems: 'center',
-          fontSize: 18,
-          background: isSandbox ? 'var(--color-neutral-900)' : 'var(--color-accent-800)',
-          color: isSandbox ? 'var(--color-accent)' : 'var(--color-accent-100)',
-        }}
+        className={cn(
+          'grid size-9 place-items-center rounded-md text-lg',
+          isSandbox
+            ? 'bg-sidebar text-primary'
+            : 'bg-[var(--color-accent-800)] text-[var(--color-accent-100)]',
+        )}
       >
         <Icon name={isSandbox ? 'flask' : 'bank'} />
       </span>
 
-      <div style={{ flex: 1 }}>
-        <div
-          className="card-title"
-          style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 6 }}
-        >
+      <div className="flex-1">
+        <div className="flex items-center gap-1.5 font-heading text-[15px]">
           {name}
           {isSandbox && (
-            <span className="tag tag-outline" style={{ fontSize: 10 }}>
+            <Badge variant="outline" className="text-[10px]">
               Sandbox
-            </span>
+            </Badge>
           )}
         </div>
-        <span className="text-muted tnum" style={{ fontSize: 12 }}>
+        <span className="text-xs tabular-nums text-muted-foreground">
           {environment === 'production' ? 'Producción' : 'Pruebas'} · 1340 ···· ···· {accountLast4}
           {verifiedAt !== null && ` · verificado ${formatDate(verifiedAt)}`}
         </span>
       </div>
 
       {status === 'active' ? (
-        <span className="tag tag-accent">Activo</span>
+        <Badge variant="accent">Activo</Badge>
       ) : status === 'needs_reverify' ? (
-        <span className="tag tag-neutral">Por re-verificar</span>
+        <Badge variant="neutral">Por re-verificar</Badge>
       ) : (
-        <span className="tag tag-neutral">Retirado</span>
+        <Badge variant="neutral">Retirado</Badge>
       )}
+      {action}
     </div>
   );
 }

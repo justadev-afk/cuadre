@@ -7,6 +7,7 @@
  * neutral and the icon for a shield — the platform team's own login is not the
  * merchant's product, and looking slightly different is the point.
  */
+import { cn } from '@/lib/utils.ts';
 import { Icon } from './icon.tsx';
 
 type BrandProps = {
@@ -20,27 +21,22 @@ type BrandProps = {
 
 export function Brand({ size = 24, internal = false, markOnly = false }: BrandProps) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+    <span className="inline-flex items-center gap-2.5">
       <span
-        className="brand-mark"
-        style={{
-          width: size,
-          height: size,
-          fontSize: Math.round(size * 0.58),
-          ...(internal
-            ? { borderColor: 'var(--color-neutral-500)', color: 'var(--color-neutral-300)' }
-            : {}),
-        }}
+        className={cn(
+          'grid place-items-center rounded-[7px] border',
+          internal
+            ? 'border-[var(--color-neutral-500)] text-[var(--color-neutral-300)]'
+            : 'border-primary text-primary',
+        )}
+        style={{ width: size, height: size, fontSize: Math.round(size * 0.58) }}
       >
         <Icon name={internal ? 'shield-check' : 'check-square-offset'} />
       </span>
       {!markOnly && (
         <span
-          style={{
-            fontFamily: 'var(--font-heading)',
-            fontSize: Math.round(size * 0.71),
-            letterSpacing: '-0.01em',
-          }}
+          className="font-heading tracking-[-0.01em]"
+          style={{ fontSize: Math.round(size * 0.71) }}
         >
           Cuadre
         </span>

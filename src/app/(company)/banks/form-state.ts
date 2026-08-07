@@ -38,3 +38,11 @@ export type ConnectState =
   | { readonly step: 'done' };
 
 export const CONNECT_INITIAL: ConnectState = { step: 'idle' };
+
+/** The deactivate confirm dialog's action state. */
+export type RemoveBankState = { readonly ok: boolean; readonly error: string | null };
+export const REMOVE_BANK_INITIAL: RemoveBankState = { ok: false, error: null };
+
+/** The "cambiar credenciales" modal's action state (company and admin share it). */
+export type ChangeCredentialsState = { readonly ok: boolean; readonly error: string | null };
+export const CHANGE_CREDENTIALS_INITIAL: ChangeCredentialsState = { ok: false, error: null };

@@ -6,30 +6,32 @@
  * data lands. The design fixes those numbers; they are constants here rather
  * than props with defaults, because a caller that picks its own height is how
  * the layout starts shifting again.
+ *
+ * The blink is Nocturne's `sk` keyframe (a fast 0.85s pulse) applied as a
+ * utility, so the whole page does not appear to load top-to-bottom.
  */
 
 /** A table row in the design is 38px tall; a list card, 52px. */
 export const SKELETON_ROW_HEIGHT = 38;
 export const SKELETON_CARD_HEIGHT = 52;
 
+const SK = 'animate-[sk_0.85s_ease-in-out_infinite]';
+
 export function SkeletonLine({ width = '100%', height = 11 }: { width?: string; height?: number }) {
-  return <div className="sk" style={{ width, height }} />;
+  return (
+    <div className={`${SK} rounded-sm bg-[var(--color-neutral-800)]`} style={{ width, height }} />
+  );
 }
 
 export function SkeletonCards({ count = 3, height = SKELETON_CARD_HEIGHT }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="flex flex-col gap-2">
       {Array.from({ length: count }, (_, i) => (
         <div
           // biome-ignore lint/suspicious/noArrayIndexKey: a placeholder's only identity is its position; the list never reorders, it is replaced wholesale.
           key={i}
-          className="sk"
-          style={{
-            height,
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-surface)',
-            boxShadow: 'var(--shadow-sm)',
-          }}
+          className={`${SK} rounded-md bg-card shadow-[var(--shadow-sm)]`}
+          style={{ height }}
         />
       ))}
     </div>
@@ -77,11 +79,8 @@ export function SkeletonTable({
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: repeating column widths — position is the identity.
               key={`${column}-${i}`}
-              className="sk"
-              style={{
-                height: 11,
-                width: `${[100, 70, 60, 80, 66][i % 5]}%`,
-              }}
+              className={`${SK} rounded-sm bg-[var(--color-neutral-800)]`}
+              style={{ height: 11, width: `${[100, 70, 60, 80, 66][i % 5]}%` }}
             />
           ))}
         </div>
@@ -92,5 +91,10 @@ export function SkeletonTable({
 
 /** "Consultando a Banesco" — the one the cashier watches. */
 export function BankSpinner({ size = 60 }: { size?: number }) {
-  return <div className="spinner" style={{ width: size, height: size }} />;
+  return (
+    <div
+      className="animate-[spin_1s_linear_infinite] rounded-full border-2 border-[var(--color-neutral-800)] border-t-primary"
+      style={{ width: size, height: size }}
+    />
+  );
 }

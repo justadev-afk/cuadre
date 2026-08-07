@@ -78,6 +78,26 @@ export function formatDayClock(epochSeconds: number, nowSeconds: number): string
   return `${pad(day)}/${pad(month)} ${formatClock(epochSeconds)}`;
 }
 
+/**
+ * 'hace 3 minutos', 'hace 2 horas', or the exact date once it is older than a
+ * day. The counter uses it for "ya fue cobrado": when a payment was charged
+ * reads fastest as elapsed time, and is reconciled against a date only once it
+ * stops being recent.
+ */
+export function formatRelativeTime(epochSeconds: number, nowSeconds: number): string {
+  const diff = Math.max(0, nowSeconds - epochSeconds);
+  if (diff < 60) return 'hace un momento';
+  if (diff < 3600) {
+    const minutes = Math.floor(diff / 60);
+    return `hace ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`;
+  }
+  if (diff < SECONDS_PER_DAY) {
+    const hours = Math.round(diff / 3600);
+    return `hace ${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+  }
+  return formatDateTime(epochSeconds);
+}
+
 /** '1.240,00' — the digits alone, under a column already headed 'Monto (Bs)'. */
 export function amountDigits(cents: number): string {
   return formatBolivares(cents).replace(/^Bs\s*/, '');

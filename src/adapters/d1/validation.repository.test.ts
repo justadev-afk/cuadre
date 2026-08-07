@@ -61,6 +61,8 @@ describe('toValidation', () => {
       searchMode: 'exact_reference',
       idempotencyKey: 'idem-1',
       createdAt: 1_770_000_060,
+      // Populated only by the list queries' LEFT JOIN; null on a bare row.
+      cashierName: null,
     });
   });
 
@@ -218,7 +220,7 @@ describe('listByCompany', () => {
       cursor: { createdAt: 1_770_000_060, id: 'val-1' },
     });
 
-    expect(fake.calls[0]?.sql).toContain('created_at < ? OR (created_at = ? AND id < ?)');
+    expect(fake.calls[0]?.sql).toContain('v.created_at < ? OR (v.created_at = ? AND v.id < ?)');
     expect(fake.calls[0]?.args).toEqual([
       'la-espiga',
       1,

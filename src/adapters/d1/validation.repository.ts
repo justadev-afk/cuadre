@@ -44,6 +44,12 @@ export type Validation = {
   readonly idempotencyKey: string;
   /** When the counter confirmed it. */
   readonly createdAt: number;
+  /**
+   * The cashier's display name, from a LEFT JOIN on `users`. Only the list
+   * queries populate it; the insert and idempotency paths never join, so it is
+   * null there — hence optional.
+   */
+  readonly cashierName?: string | null;
 };
 
 /**
@@ -100,6 +106,16 @@ export interface ValidationRepository {
   listByCashier(query: CashierListQuery): Promise<ValidationPage>;
   /** Real money only — sandbox is excluded, always. */
   dailyTotals(query: DailyTotalsQuery): Promise<readonly DailyTotal[]>;
+  /**
+   * The existing charge for a reference on one of these accounts, if any — the
+   * counter's "already cobrado?" check, run before the bank is ever called.
+   * Carries the cashier's name (the LEFT JOIN), so the till can say who charged
+   * it and when.
+   */
+  findChargedPayment(
+    bankAccountIds: readonly string[],
+    reference: string,
+  ): Promise<Validation | null>;
 }
 
 export type DailyTotalsQuery = {
@@ -126,6 +142,12 @@ const COLUMNS = `id, company_id, cashier_id, bank_account_id, bank, is_sandbox,
                  source_bank_id, trn_at, latency_ms, search_mode,
                  idempotency_key, created_at`;
 
+/** The list columns, aliased for the LEFT JOIN that carries the cashier's name. */
+const LIST_COLUMNS = `v.id, v.company_id, v.cashier_id, v.bank_account_id, v.bank,
+                 v.is_sandbox, v.control_code, v.reference, v.amount_cents, v.currency,
+                 v.payer_phone, v.source_bank_id, v.trn_at, v.latency_ms, v.search_mode,
+                 v.idempotency_key, v.created_at, u.name AS cashier_name`;
+
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
@@ -139,6 +161,28 @@ export class D1ValidationRepository implements ValidationRepository {
     const row = await this.db
       .prepare(`SELECT ${COLUMNS} FROM validations WHERE idempotency_key = ?`)
       .bind(key)
+      .first<D1Row>();
+    return row === null ? null : toValidation(row);
+  }
+
+  async findChargedPayment(
+    bankAccountIds: readonly string[],
+    reference: string,
+  ): Promise<Validation | null> {
+    if (bankAccountIds.length === 0) return null;
+    // Exact reference match on the (bank_account_id, reference) unique columns —
+    // an exact hit is unambiguously the same payment, so this never refuses a
+    // genuine new charge. A bank that pads the reference differently just misses
+    // here and the authoritative INSERT below still catches the duplicate.
+    const placeholders = bankAccountIds.map(() => '?').join(', ');
+    const row = await this.db
+      .prepare(
+        `SELECT ${LIST_COLUMNS} FROM validations v
+           LEFT JOIN users u ON u.id = v.cashier_id
+          WHERE v.reference = ? AND v.bank_account_id IN (${placeholders})
+          LIMIT 1`,
+      )
+      .bind(reference, ...bankAccountIds)
       .first<D1Row>();
     return row === null ? null : toValidation(row);
   }
@@ -229,26 +273,28 @@ export class D1ValidationRepository implements ValidationRepository {
     query: ValidationListQuery | CashierListQuery,
   ): Promise<ValidationPage> {
     const limit = clamp(query.limit);
-    const conditions = [`${ownerColumn} = ?`, 'created_at >= ?', 'created_at <= ?'];
+    const conditions = [`v.${ownerColumn} = ?`, 'v.created_at >= ?', 'v.created_at <= ?'];
     const args: unknown[] = [ownerId, query.from, query.to];
 
     if (query.isSandbox !== undefined) {
-      conditions.push('is_sandbox = ?');
+      conditions.push('v.is_sandbox = ?');
       args.push(query.isSandbox ? 1 : 0);
     }
 
     if (query.cursor !== undefined) {
-      conditions.push('(created_at < ? OR (created_at = ? AND id < ?))');
+      conditions.push('(v.created_at < ? OR (v.created_at = ? AND v.id < ?))');
       args.push(query.cursor.createdAt, query.cursor.createdAt, query.cursor.id);
     }
 
-    // One row past the page, so "is there a next page?" costs no second query
-    // and never claims one that turns out to be empty.
+    // LEFT JOIN, not INNER: a validation whose cashier was later removed still
+    // lists (the name reads null, the row keeps resolving). One row past the
+    // page, so "is there a next page?" costs no second query.
     const result = await this.db
       .prepare(
-        `SELECT ${COLUMNS} FROM validations
+        `SELECT ${LIST_COLUMNS} FROM validations v
+           LEFT JOIN users u ON u.id = v.cashier_id
           WHERE ${conditions.join(' AND ')}
-          ORDER BY created_at DESC, id DESC
+          ORDER BY v.created_at DESC, v.id DESC
           LIMIT ?`,
       )
       .bind(...args, limit + 1)
@@ -323,6 +369,8 @@ export function toValidation(row: D1Row): Validation {
     searchMode: toSearchMode(optionalText(row, 'search_mode')),
     idempotencyKey: text(row, 'idempotency_key'),
     createdAt: integer(row, 'created_at'),
+    // Present only on list rows (the LEFT JOIN); absent → null on other paths.
+    cashierName: optionalText(row, 'cashier_name'),
   };
 }
 

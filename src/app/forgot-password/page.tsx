@@ -14,37 +14,26 @@ export const metadata = { title: 'Recuperar acceso · Cuadre' };
 export default function ForgotPasswordPage() {
   return (
     <AuthShell>
-      <Link
-        href="/login"
-        style={{
-          fontSize: 13,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          marginBottom: 'auto',
-        }}
-      >
+      <Link href="/login" className="mb-auto inline-flex items-center gap-1.5 text-[13px]">
         <Icon name="arrow-left" />
         Volver
       </Link>
 
-      <h3 style={{ margin: '0 0 6px' }}>Recuperar acceso</h3>
-      <p className="text-muted" style={{ fontSize: 13, marginBottom: 18 }}>
+      <h3 className="m-0 mb-1.5 font-heading text-[25px] font-medium">Recuperar acceso</h3>
+      <p className="mb-[18px] text-[13px] text-muted-foreground">
         Te enviamos un enlace para crear una contraseña nueva.
       </p>
 
       <ForgotForm />
 
-      <div className="card elev-sm" style={{ marginTop: 24, gap: 6 }}>
-        <div className="card-kicker">Cajeros</div>
-        <p className="card-body" style={{ margin: 0 }}>
+      <div className="mt-6 flex flex-col gap-1.5 rounded-md bg-card p-3.5 shadow-[var(--shadow-sm)]">
+        <div className="text-[10px] tracking-[0.1em] text-primary uppercase">Cajeros</div>
+        <p className="m-0 text-[13px] opacity-80">
           El PIN de caja lo restablece tu empresa desde su panel de empleados.
         </p>
       </div>
 
-      <p className="text-muted" style={{ fontSize: 12, marginTop: 'auto' }}>
-        Soporte · soporte@cuadre.ve
-      </p>
+      <p className="mt-auto text-xs text-muted-foreground">Soporte · soporte@cuadre.ve</p>
     </AuthShell>
   );
 }

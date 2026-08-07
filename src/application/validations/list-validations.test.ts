@@ -141,6 +141,28 @@ describe('list validations', () => {
     }
   });
 
+  it('finds a payment by the cajero who ran it, case- and accent-folded', async () => {
+    const { validations } = fakeValidations([
+      validation(0, { cashierName: 'María Rodríguez' }),
+      validation(1, { cashierName: 'Julio Sánchez' }),
+    ]);
+    const listValidations = makeListValidations({ validations });
+
+    const page = await listValidations({ ...RANGE, search: 'maria' });
+    expect(page.items.map((item) => item.id)).toEqual([validation(0).id]);
+  });
+
+  it('finds a payment by its amount in whole bolívares', async () => {
+    const { validations } = fakeValidations([
+      validation(0, { amountCents: 63_000 }),
+      validation(1, { amountCents: 12_400 }),
+    ]);
+    const listValidations = makeListValidations({ validations });
+
+    const page = await listValidations({ ...RANGE, search: '630' });
+    expect(page.items.map((item) => item.id)).toEqual([validation(0).id]);
+  });
+
   it('matches nothing for a term with no digits in it', async () => {
     const rows = Array.from({ length: 5 }, (_, index) => validation(index));
     const { validations } = fakeValidations(rows);

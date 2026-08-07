@@ -12,6 +12,10 @@
  */
 import { useState } from 'react';
 
+import { Badge } from '@/components/ui/badge.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import { Card } from '@/components/ui/card.tsx';
+import { cn } from '@/lib/utils.ts';
 import type { Employee } from '../../../application/employees/employee.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
@@ -44,24 +48,20 @@ export function EmployeesView({
       title="Empleados"
       subtitle={`${employees.length} ${employees.length === 1 ? 'usuario' : 'usuarios'} · ${cashiers.length} con acceso a caja`}
       actions={
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => setDialog({ mode: 'create' })}
-        >
+        <Button onClick={() => setDialog({ mode: 'create' })}>
           <Icon name="plus" />
           Nuevo empleado
-        </button>
+        </Button>
       }
     >
       {employees.length === 0 ? (
-        <section className="box">
-          <p className="text-muted" style={{ fontSize: 14, textAlign: 'center', margin: '12px 0' }}>
+        <Card>
+          <p className="my-3 text-center text-sm text-muted-foreground">
             Todavía no has creado empleados.
           </p>
-        </section>
+        </Card>
       ) : (
-        <section className="box" style={{ padding: 0, overflowX: 'auto' }}>
+        <Card className="overflow-x-auto p-0">
           <table className="table">
             <thead>
               <tr>
@@ -92,31 +92,32 @@ export function EmployeesView({
                         : undefined
                     }
                     tabIndex={isCashier ? 0 : undefined}
-                    style={isCashier ? { cursor: 'pointer' } : undefined}
+                    className={cn(isCashier && 'cursor-pointer')}
                   >
-                    <td style={{ fontFamily: 'var(--font-heading)' }}>{e.name}</td>
-                    <td className="text-muted">{e.username ?? e.email}</td>
+                    <td className="font-heading">{e.name}</td>
+                    <td className="text-muted-foreground">{e.username ?? e.email}</td>
                     <td>
-                      <span className={isCashier ? 'tag tag-accent' : 'tag tag-neutral'}>
+                      <Badge variant={isCashier ? 'accent' : 'neutral'}>
                         {isCashier ? 'Cajero' : 'Empresa'}
-                      </span>
+                      </Badge>
                     </td>
-                    <td className="text-muted">
+                    <td className="text-muted-foreground">
                       {e.lastLoginAt === null ? 'Nunca' : formatDayClock(e.lastLoginAt, nowSeconds)}
                     </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <td className="text-right whitespace-nowrap">
                       {isCashier && (
-                        <form action={deleteEmployeeAction} style={{ display: 'inline' }}>
+                        <form action={deleteEmployeeAction} className="inline">
                           <input type="hidden" name="userId" value={e.id} />
-                          <button
+                          <Button
                             type="submit"
-                            className="btn btn-ghost"
+                            variant="ghost"
+                            size="icon"
                             aria-label={`Eliminar a ${e.name}`}
-                            style={{ fontSize: 13, color: 'var(--color-neutral-400)' }}
+                            className="text-muted-foreground hover:text-destructive"
                             onClick={(event) => event.stopPropagation()}
                           >
                             <Icon name="trash" />
-                          </button>
+                          </Button>
                         </form>
                       )}
                     </td>
@@ -125,7 +126,7 @@ export function EmployeesView({
               })}
             </tbody>
           </table>
-        </section>
+        </Card>
       )}
 
       {dialog !== null && (

@@ -1,14 +1,26 @@
 'use client';
 
 /**
- * A searchable dropdown — a trigger that reads like an `.input`, opening a
+ * A searchable dropdown — a trigger that reads like an `Input`, opening a
  * popover with a filter box and a scrollable list. Used for the bank emisor at
  * the counter, where a plain `<select>` of every Venezuelan bank is a scroll,
- * not a choice. The caller owns the value; remembering the last pick (localStorage)
- * lives with the caller too, so this stays a pure controlled input.
+ * not a choice. Built on Radix Popover + cmdk (Command): the caller owns the
+ * value; remembering the last pick (localStorage) lives with the caller too, so
+ * this stays a pure controlled input.
  */
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Check } from 'lucide-react';
+import { useState } from 'react';
 
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command.tsx';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx';
+import { cn } from '@/lib/utils.ts';
 import { Icon } from './icon.tsx';
 
 export type SelectOption = {
@@ -28,7 +40,7 @@ type SearchableSelectProps = {
   disabled?: boolean;
 };
 
-/** Diacritic- and case-insensitive contains, so "merida" finds "Mérida". */
+/** Diacritic- and case-insensitive, so "merida" finds "Mérida". */
 function fold(text: string): string {
   return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
@@ -42,126 +54,58 @@ export function SearchableSelect({
   searchPlaceholder = 'Buscar…',
   disabled = false,
 }: SearchableSelectProps) {
-  const listId = useId();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [active, setActive] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-
   const selected = options.find((option) => option.value === value) ?? null;
 
-  const filtered = useMemo(() => {
-    const needle = fold(query.trim());
-    if (needle === '') return options;
-    return options.filter(
-      (option) => fold(option.label).includes(needle) || fold(option.hint ?? '').includes(needle),
-    );
-  }, [options, query]);
-
-  // Opening focuses the filter and resets the highlight to the top of the list.
-  useEffect(() => {
-    if (!open) return;
-    setQuery('');
-    setActive(0);
-    const raf = requestAnimationFrame(() => searchRef.current?.focus());
-    return () => cancelAnimationFrame(raf);
-  }, [open]);
-
-  // A click anywhere outside closes it — the popover is not a modal.
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
-    }
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
-
-  function choose(next: string): void {
-    onChange(next);
-    setOpen(false);
-  }
-
-  function onSearchKeyDown(event: React.KeyboardEvent): void {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setActive((current) => Math.min(current + 1, filtered.length - 1));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setActive((current) => Math.max(current - 1, 0));
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      const pick = filtered[active];
-      if (pick) choose(pick.value);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      setOpen(false);
-    }
-  }
-
   return (
-    <div className="combo" ref={rootRef}>
-      <button
-        type="button"
-        id={id}
-        className="input combo-trigger"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className={selected ? undefined : 'combo-placeholder'}>
-          {selected ? selected.label : placeholder}
-        </span>
-        <Icon name="caret-down" className="combo-caret" />
-      </button>
-
-      {open && (
-        <div className="combo-pop">
-          <div className="combo-search">
-            <Icon name="magnifying-glass" />
-            <input
-              ref={searchRef}
-              className="combo-search-input"
-              value={query}
-              placeholder={searchPlaceholder}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-              }}
-              onKeyDown={onSearchKeyDown}
-            />
-          </div>
-          <div className="combo-list" id={listId} role="listbox">
-            {filtered.length === 0 ? (
-              <div className="combo-empty">Sin resultados</div>
-            ) : (
-              filtered.map((option, index) => (
-                <button
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          id={id}
+          disabled={disabled}
+          aria-expanded={open}
+          className="flex h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-card px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:border-foreground/45 disabled:cursor-default disabled:opacity-55 data-[state=open]:border-primary"
+        >
+          <span className={cn('truncate', !selected && 'text-muted-foreground/70')}>
+            {selected ? selected.label : placeholder}
+          </span>
+          <Icon name="caret-down" className="shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+        <Command
+          // Diacritic-folding contains, over the label and the Sudeban code.
+          filter={(itemValue, search) => (fold(itemValue).includes(fold(search)) ? 1 : 0)}
+        >
+          <CommandInput placeholder={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>Sin resultados</CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
                   key={option.value}
-                  type="button"
-                  className="combo-opt"
-                  role="option"
+                  value={`${option.label} ${option.hint ?? ''}`}
+                  onSelect={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
                   aria-selected={option.value === value}
-                  data-active={index === active ? '' : undefined}
-                  onPointerEnter={() => setActive(index)}
-                  onClick={() => choose(option.value)}
+                  className={cn(option.value === value && 'text-primary')}
                 >
-                  {option.hint ? <span className="combo-opt-hint">{option.hint}</span> : null}
-                  <span className="combo-opt-label">{option.label}</span>
-                  {option.value === value ? (
-                    <Icon name="check" className="combo-opt-check" />
+                  {option.hint ? (
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {option.hint}
+                    </span>
                   ) : null}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+                  <span className="flex-1 truncate">{option.label}</span>
+                  {option.value === value ? <Check className="ml-auto size-4 shrink-0" /> : null}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

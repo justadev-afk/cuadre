@@ -6,7 +6,11 @@
  */
 import { useActionState } from 'react';
 
-import { FormNote } from '../../_components/form-note.tsx';
+import { Alert, AlertDescription } from '@/components/ui/alert.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
+import { Icon } from '../../_components/icon.tsx';
 import { resetPasswordAction } from './actions.ts';
 import { RESET_INITIAL } from './form-state.ts';
 
@@ -14,45 +18,45 @@ export function ResetForm({ token }: { token: string }) {
   const [state, action, pending] = useActionState(resetPasswordAction, RESET_INITIAL);
 
   return (
-    <form action={action}>
+    <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="token" value={token} />
 
-      <div className="auth-fields">
-        <div className="field">
-          <label htmlFor="reset-password">Nueva contraseña</label>
-          <input
-            className="input"
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="reset-password">Nueva contraseña</Label>
+          <Input
             id="reset-password"
             name="password"
             type="password"
             autoComplete="new-password"
             placeholder="Mínimo 8 caracteres"
+            className="h-10"
             required
           />
         </div>
-        <div className="field">
-          <label htmlFor="reset-confirm">Repite la contraseña</label>
-          <input
-            className="input"
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="reset-confirm">Repite la contraseña</Label>
+          <Input
             id="reset-confirm"
             name="confirm"
             type="password"
             autoComplete="new-password"
+            className="h-10"
             required
           />
         </div>
       </div>
 
-      {state.error !== null && <FormNote tone="error">{state.error}</FormNote>}
+      {state.error !== null && (
+        <Alert>
+          <Icon name="warning-circle" />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
 
-      <button
-        type="submit"
-        className="btn btn-primary btn-block"
-        disabled={pending}
-        style={{ marginTop: 18, minHeight: 40 }}
-      >
+      <Button type="submit" size="block" className="mt-1 h-10" disabled={pending}>
         Guardar contraseña
-      </button>
+      </Button>
     </form>
   );
 }

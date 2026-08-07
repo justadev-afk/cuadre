@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
-import { Toaster } from './_components/toaster.tsx';
+import { Toaster } from '../components/ui/sonner.tsx';
 import './globals.css';
 
 export const metadata: Metadata = {

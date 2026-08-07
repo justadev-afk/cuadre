@@ -62,6 +62,7 @@ export default async function CheckoutPage() {
     isSandbox: v.isSandbox,
     latencyMs: v.latencyMs,
     sourceBankId: v.sourceBankId,
+    bankAccountId: v.bankAccountId,
   }));
 
   if (accountViews.length === 0) return <NoBankAccount />;

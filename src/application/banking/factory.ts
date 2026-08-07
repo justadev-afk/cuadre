@@ -15,6 +15,10 @@ import type { BankAccountRepository } from '../../adapters/d1/bank-account.repos
 import type { Clock } from '../../shared/clock.ts';
 import type { IdGen } from '../../shared/id.ts';
 import type { BankGateway, BankId } from '../ports/bank-gateway.ts';
+import {
+  type ChangeBankCredentials,
+  makeChangeBankCredentials,
+} from './change-bank-credentials.ts';
 import { type ConnectBankAccount, makeConnectBankAccount } from './connect-bank-account.ts';
 import { type ListBankAccounts, makeListBankAccounts } from './list-bank-accounts.ts';
 import { type ListSupportedBanks, makeListSupportedBanks } from './list-supported-banks.ts';
@@ -47,6 +51,7 @@ export type BankingUseCases = {
   readonly listBankAccounts: ListBankAccounts;
   readonly removeBankAccount: RemoveBankAccount;
   readonly reverifyBankAccount: ReverifyBankAccount;
+  readonly changeBankCredentials: ChangeBankCredentials;
 };
 
 export function makeBankingUseCases(deps: BankingDeps): BankingUseCases {
@@ -57,5 +62,6 @@ export function makeBankingUseCases(deps: BankingDeps): BankingUseCases {
     listBankAccounts: makeListBankAccounts(deps),
     removeBankAccount: makeRemoveBankAccount(deps),
     reverifyBankAccount: makeReverifyBankAccount(deps),
+    changeBankCredentials: makeChangeBankCredentials(deps),
   };
 }

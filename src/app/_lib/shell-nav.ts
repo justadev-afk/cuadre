@@ -33,7 +33,10 @@ export type ShellModel = {
 const ADMIN_GROUPS: readonly ShellNavGroup[] = [
   {
     label: 'Plataforma',
-    items: [{ href: '/admin/companies', label: 'Empresas', icon: 'buildings' }],
+    items: [
+      { href: '/admin/overview', label: 'Resumen', icon: 'broadcast' },
+      { href: '/admin/companies', label: 'Empresas', icon: 'buildings' },
+    ],
   },
 ];
 

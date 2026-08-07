@@ -52,11 +52,14 @@ export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
         createdAt: validation.createdAt,
         isSandbox: validation.isSandbox,
         latencyMs: validation.latencyMs,
+        bankAccountId: validation.bankAccountId,
       },
     };
   }
 
   if (value.kind === 'rejected') return { status: 'rejected', reason: value.reason };
-  if (value.kind === 'already_charged') return { status: 'already_charged' };
+  if (value.kind === 'already_charged') {
+    return { status: 'already_charged', by: value.by, at: value.at };
+  }
   return { status: 'not_found' };
 }

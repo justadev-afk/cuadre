@@ -8,7 +8,103 @@
  * Take every color, font, spacing and radius from a variable. A hex literal in
  * a component is a review rejection: retuning the look must be an edit here.
  */
+/* Font first — every @import rule must sit at the top, ahead of Tailwind's. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* The `dark:` variant, kept so shadcn primitives copied verbatim still parse.
+   The app has no `.dark` class — it is dark at the root — so `dark:` never
+   fires and the base utilities (already dark, below) are what paint. */
+@custom-variant dark (&:is(.dark *));
+
+/* shadcn's semantic tokens, in Nocturne's colours. Bare names on purpose:
+   `@theme inline` (below) reads them to build `bg-background`/`bg-primary`/…
+   without ever emitting a `--color-*` property, so Nocturne's own `--color-*`
+   palette in the next `:root` is left untouched for the legacy classes still
+   in this file. Retuning a role is still one edit — here. */
+:root {
+  --radius: 0.625rem;
+
+  --background: #161826; /* color-bg */
+  --foreground: #e9e9ed; /* color-text */
+  --card: #232532; /* color-surface */
+  --card-foreground: #e9e9ed;
+  --popover: #232532;
+  --popover-foreground: #e9e9ed;
+  --primary: #9184d9; /* color-accent — the brand purple */
+  --primary-foreground: #161826;
+  --secondary: #292b31; /* neutral-900 */
+  --secondary-foreground: #e9e9ed;
+  --muted: #292b31;
+  --muted-foreground: #b2b6ca; /* neutral-400 — readable muted, not a whisper */
+  --accent: #2b2741; /* accent-900 — the subtle interactive surface */
+  --accent-foreground: #efeefb;
+  --destructive: #e0695f; /* color-danger */
+  --destructive-foreground: #161826;
+  --border: color-mix(in srgb, #e9e9ed 16%, transparent); /* color-divider */
+  --input: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --ring: #9184d9;
+
+  --sidebar: #292b31;
+  --sidebar-foreground: #e9e9ed;
+  --sidebar-primary: #9184d9;
+  --sidebar-primary-foreground: #161826;
+  --sidebar-accent: #2b2741;
+  --sidebar-accent-foreground: #efeefb;
+  --sidebar-border: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --sidebar-ring: #9184d9;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-heading: 'Inter', system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* shadcn's one base rule: default every border to the divider token, the same
+   hairline Nocturne draws by hand. Elements only show it when they carry a
+   border width, and the legacy components still set their own colour after. */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--border);
+  }
+}
 
 :root {
   /* The whole product is dark. Declaring it means the browser paints its own
@@ -86,15 +182,21 @@
   --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+/* Nocturne's base element styles, wrapped in `@layer base` so Tailwind
+   utilities win over them. An unlayered `h1 { font-size: 42px }` beats a
+   `text-[21px]` utility (unlayered always outranks layered, whatever the
+   specificity), which would leave every migrated heading at the wrong size.
+   Legacy screens set no utility on these elements, so they still read here. */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 
-body {
-  margin: 0;
-  background: var(--color-bg);
+  body {
+    margin: 0;
+    background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-body);
   font-size: 15px;
@@ -147,7 +249,7 @@ figcaption {
   color: color-mix(in srgb, var(--color-text) 55%, transparent);
 }
 
-.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.text-muted { color: color-mix(in srgb, var(--color-text) 72%, transparent); }
 
 :focus { outline: none; }
 :focus-visible {
@@ -155,1480 +257,90 @@ figcaption {
   outline-offset: 2px;
 }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
-
-/* — rules —
-   Freestanding rules fade to transparent at both ends over 48px; box outlines,
-   in-control separators and short accent marks stay solid. */
-.hr {
-  height: 1px;
-  border: 0;
-  margin: var(--space-4) 0;
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--color-divider) 48px,
-    var(--color-divider) calc(100% - 48px),
-    transparent
-  );
 }
 
-/* — buttons — the primary is an accent outline, never a fill — */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  text-decoration: none;
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 14px;
-  line-height: 1.2;
-  color: var(--color-text);
-  background: transparent;
-  border: 1px solid transparent;
-  padding: var(--space-2) calc(var(--space-3) * 1.2);
-  border-radius: var(--radius-md);
-}
-.btn svg { display: block; }
-.btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.btn-primary {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-}
-.btn-primary:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
-.btn-primary:active { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
-.btn-secondary { border-color: var(--color-divider); }
-.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
-.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
-.btn-ghost {
-  color: var(--color-accent);
-  padding-inline: var(--space-1);
-}
-.btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
-.btn-ghost:active { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
-.btn-icon {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-}
-.btn-block {
-  width: 100%;
-  margin-top: var(--space-2);
-}
-
-/* — forms — native elements, no script — */
-.field > label {
-  display: block;
-  font-size: 12px;
-  margin-bottom: 5px;
-  color: color-mix(in srgb, var(--color-text) 70%, transparent);
-}
-.input {
-  width: 100%;
-  min-height: 36px;
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--color-text);
-  caret-color: var(--color-accent);
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-}
-.input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
-.input:focus-visible {
-  border-color: var(--color-accent);
-  outline-offset: 0;
-}
-textarea.input {
-  min-height: 90px;
-  resize: vertical;
-}
-select.input { appearance: none; }
-
-.radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 14px;
-}
-.radio input,
-.seg-opt input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-.radio .dot {
-  width: 16px;
-  height: 16px;
-  flex: none;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-divider);
-}
-.radio:hover .dot { border-color: var(--color-accent); }
-.radio input:checked + .dot {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-  box-shadow: inset 0 0 0 4px var(--color-bg);
-}
-.radio input:focus-visible + .dot {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.seg {
-  display: inline-flex;
-  overflow: hidden;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-}
-.seg-opt {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.seg-opt + .seg-opt { border-left: 1px solid var(--color-divider); }
-.seg-opt:has(input:checked) {
-  color: var(--color-accent);
-  box-shadow: inset 0 0 0 1px var(--color-accent);
-}
-.seg-opt:not(:has(input:checked)):hover {
-  background: color-mix(in srgb, var(--color-text) 7%, transparent);
-}
-.seg-opt:has(input:focus-visible) {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-
-/* — cards — */
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-.card-kicker {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-}
-.card-title {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 17px;
-  line-height: 1.2;
-}
-.card-body {
-  margin: 0;
-  font-size: 13px;
-  opacity: 0.8;
-  flex: 1;
-}
-.card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 50%, transparent);
-}
-.elev-sm { box-shadow: var(--shadow-sm); }
-.elev-md { box-shadow: var(--shadow-md); }
-.elev-lg { box-shadow: var(--shadow-lg); }
-
-/* — tags — */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  padding: 3px 10px;
-  border-radius: calc(var(--radius-md) * 0.75);
-}
-.tag-accent {
-  background: var(--color-accent-800);
-  color: var(--color-accent-100);
-}
-.tag-accent-2 {
-  background: var(--color-accent-2-800);
-  color: var(--color-accent-2-100);
-}
-.tag-neutral {
-  background: var(--color-neutral-800);
-  color: var(--color-neutral-100);
-}
-.tag-outline {
-  border: 1px solid var(--color-accent);
-  color: var(--color-accent);
-}
-
-/* — navigation — */
-.nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: none;
-}
-.nav-brand {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 18px;
-  margin-right: auto;
-}
-.nav a {
-  color: inherit;
-  text-decoration: none;
-  font-size: 14px;
-}
-.nav a:hover,
-.nav a[aria-current='page'] {
-  color: var(--color-accent);
-}
-
-/* — tables — row rules are row-level strips, so the end-fade spans the row
-     rather than each cell — */
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.table th {
-  text-align: left;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 60%, transparent);
-  padding: 11px 14px;
-  border-bottom: 1px solid transparent;
-}
-.table td {
-  padding: 13px 14px;
-  border-bottom: 1px solid transparent;
-}
-/* A comfortable gutter on the outer edges, so cells never touch the box border
-   and the row underline fades in from the same inset. */
-.table th:first-child,
-.table td:first-child {
-  padding-left: 20px;
-}
-.table th:last-child,
-.table td:last-child {
-  padding-right: 20px;
-}
-.table thead tr {
-  background: linear-gradient(
-      to right,
-      transparent,
-      var(--color-divider) 20px,
-      var(--color-divider) calc(100% - 20px),
-      transparent
-    )
-    no-repeat bottom / 100% 1px;
-}
-.table tbody tr {
-  background: linear-gradient(
-      to right,
-      transparent,
-      color-mix(in srgb, var(--color-text) 8%, transparent) 20px,
-      color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px),
-      transparent
-    )
-    no-repeat bottom / 100% 1px;
-}
-.table tbody tr:hover {
-  background:
-    linear-gradient(
-        color-mix(in srgb, var(--color-text) 4%, transparent),
-        color-mix(in srgb, var(--color-text) 4%, transparent)
-      )
-      no-repeat 0 0 / 100% 100%,
-    linear-gradient(
+/* ══ the one legacy component class the app still uses ═════════════════════
+   `.table` in `@layer components` so a `text-right` utility on a <th> wins —
+   an unlayered rule outranks any utility, whatever the specificity. Row rules
+   are row-level strips: the end-fade spans the whole row, not each cell. */
+@layer components {
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .table th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-text) 60%, transparent);
+    padding: 11px 14px;
+    border-bottom: 1px solid transparent;
+  }
+  .table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid transparent;
+  }
+  .table th:first-child,
+  .table td:first-child {
+    padding-left: 20px;
+  }
+  .table th:last-child,
+  .table td:last-child {
+    padding-right: 20px;
+  }
+  .table thead tr {
+    background: linear-gradient(
         to right,
         transparent,
-        color-mix(in srgb, var(--color-text) 8%, transparent) 48px,
-        color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 48px),
+        var(--color-divider) 20px,
+        var(--color-divider) calc(100% - 20px),
         transparent
       )
       no-repeat bottom / 100% 1px;
+  }
+  .table tbody tr {
+    background: linear-gradient(
+        to right,
+        transparent,
+        color-mix(in srgb, var(--color-text) 8%, transparent) 20px,
+        color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px),
+        transparent
+      )
+      no-repeat bottom / 100% 1px;
+  }
+  .table tbody tr:hover {
+    background:
+      linear-gradient(
+          color-mix(in srgb, var(--color-text) 4%, transparent),
+          color-mix(in srgb, var(--color-text) 4%, transparent)
+        )
+        no-repeat 0 0 / 100% 100%,
+      linear-gradient(
+          to right,
+          transparent,
+          color-mix(in srgb, var(--color-text) 8%, transparent) 48px,
+          color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 48px),
+          transparent
+        )
+        no-repeat bottom / 100% 1px;
+  }
 }
 
-/* — dialog — */
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-items: center;
-  padding: var(--space-4);
-  background: color-mix(in srgb, var(--color-neutral-900) 50%, transparent);
-}
-.dialog {
-  width: min(440px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  /* Explicit, not inherited: a native <dialog> in the top layer carries the
-     UA's `color: CanvasText`, which wins over inheriting from body. Set it so
-     the card's text is the design token whatever the OS theme is. */
-  color: var(--color-text);
-  box-shadow: var(--shadow-lg);
-}
-.dialog-title {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 20px;
-}
-.dialog-body {
-  font-size: 14px;
-  opacity: 0.85;
-}
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-/* ══ app layer ═══════════════════════════════════════════════════════════
-   Beyond the design system: the two animations the screens use, and the
-   repeated patterns the design doc wrote inline on every instance. Naming
-   them here is what keeps a component file free of magic numbers. */
-
+/* The two keyframes the skeletons animate via `animate-[sk_…]`/`animate-[spin_…]`. */
 @keyframes sk {
   0%,
-  100% { opacity: 0.35; }
-  50% { opacity: 0.7; }
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* A skeleton block. Height and width come from the caller, because the whole
-   point is that it matches the real content it stands in for. */
-.sk {
-  border-radius: var(--radius-sm);
-  background: var(--color-neutral-800);
-  animation: sk 0.85s ease-in-out infinite;
-}
-
-.spinner {
-  border-radius: 50%;
-  border: 2px solid var(--color-neutral-800);
-  border-top-color: var(--color-accent);
-  animation: spin 1s linear infinite;
-}
-
-/* Digits that must line up in a column, or be read back over the phone. */
-.tnum {
-  font-variant-numeric: tabular-nums;
-}
-
-/* The brand mark: an accent-outlined square holding the check icon. */
-.brand-mark {
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  border: 1px solid var(--color-accent);
-  color: var(--color-accent);
-}
-
-/* The circular avatar used for a person in a row or a dialog. */
-.avatar {
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--color-accent-800);
-  color: var(--color-accent-100);
-  font-family: var(--font-heading);
-  flex: none;
-}
-
-/* The application header. The design draws two versions of every screen; this
-   is the one element that has to be both at once, so it is the only place with
-   a breakpoint in it. Above 768px: links inline, who-is-signed-in on the right.
-   Below: a native <details> menu, no script. */
-.app-nav {
-  box-shadow: inset 0 -1px 0 var(--color-divider);
-  padding: var(--space-3) var(--space-6);
-}
-.app-nav-links {
-  display: flex;
-  gap: 20px;
-  margin-right: 20px;
-}
-.app-nav-links a {
-  color: inherit;
-  font-size: 14px;
-}
-.app-nav-links a:hover,
-.app-nav-links a[aria-current='page'] {
-  color: var(--color-accent);
-}
-.app-nav-who {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-}
-.app-nav-logout {
-  display: inline-flex;
-  margin-left: 2px;
-}
-.app-nav-menu {
-  display: none;
-  position: relative;
-}
-/* The disclosure triangle is replaced by the icon button inside the summary. */
-.app-nav-menu > summary {
-  list-style: none;
-}
-.app-nav-menu > summary::-webkit-details-marker {
-  display: none;
-}
-.app-nav-menu-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + var(--space-2));
-  z-index: 40;
-  min-width: 200px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-.app-nav-menu-panel a {
-  color: inherit;
-  font-size: 14px;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-}
-.app-nav-menu-panel a:hover {
-  color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-}
-
-@media (max-width: 768px) {
-  .app-nav {
-    padding: var(--space-3) var(--space-4);
-  }
-  .app-nav-links {
-    display: none;
-  }
-  .app-nav-who .tag {
-    display: none;
-  }
-  .app-nav-logout {
-    display: none;
-  }
-  .app-nav-menu {
-    display: block;
-  }
-}
-
-/* The desktop/mobile split the design draws as two separate frames. A table
-   reads well on a wide screen and terribly on a phone, so the same rows render
-   as a table above 768px and as cards below it. */
-.only-mobile {
-  display: none;
-}
-@media (max-width: 768px) {
-  .only-desktop {
-    display: none;
-  }
-  .only-mobile {
-    display: block;
-  }
-}
-
-/* Screen-reader-only, for labels a sighted user reads from context. */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* — the authentication screens (01–04) —
-   One shell behind /login, /admin/login, /forgot-password and /reset-password.
-   The design draws each as a desktop/mobile pair: a two-column split with the
-   quote panel on the right, and a single column on a phone with that panel
-   dropped. That is one breakpoint shared by four routes, so it lives here
-   rather than as the same style prop written out four times. */
-.auth {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 32px 24px;
-  background: var(--color-bg);
-}
-/* The centred card the design frames the login in: a max viewport, centred on
-   both axes once the screen is larger, carrying its own border and shadow. */
-.auth-card {
-  width: min(940px, 100%);
-  height: min(600px, calc(100dvh - 64px));
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  overflow: hidden;
-}
-/* Screens 03/04 (the admin door, the password screens) are the same card with
-   no quote panel — one centred column. */
-.auth-solo .auth-panel {
-  width: min(480px, 100%);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-}
-.auth-panel {
-  display: flex;
-  flex-direction: column;
-  padding: 36px 44px 28px;
-  min-width: 0;
-  overflow-y: auto;
-}
-/* The form block sits in the vertical middle — brand above, footer below — the
-   way the design frames it. Its own auto margins split the free space. */
-.auth-form {
-  margin: auto 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  max-width: 360px;
-}
-.auth-form .input {
-  min-height: 40px;
-}
-.auth-form .btn-block {
-  min-height: 42px;
-  margin-top: 2px;
-}
-.auth-aside {
-  background:
-    radial-gradient(120% 80% at 100% 0%, var(--color-accent-900) 0%, transparent 60%),
-    linear-gradient(180deg, var(--color-neutral-900) 0%, var(--color-bg) 100%);
-  padding: 36px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  box-shadow: inset 1px 0 0 var(--color-divider);
-  overflow-y: auto;
-}
-.auth-aside-rule {
-  width: 34px;
-  height: 2px;
-  flex: none;
-  /* Pushes the pitch block down so it and the stats sit balanced in the panel. */
-  margin-top: auto;
-  background: var(--color-accent);
-}
-.auth-benefits {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.auth-benefit {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-}
-.auth-benefit-mark {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-  color: var(--color-accent);
-  font-size: 16px;
-}
-.auth-stats {
-  display: flex;
-  gap: 22px;
-  margin-top: auto;
-  padding-top: 18px;
-  box-shadow: inset 0 1px 0 var(--color-divider);
-}
-.auth-aside-quote {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: 21px;
-  line-height: 1.25;
-}
-/* The footer along the bottom of the panel: bank status, legal links, version. */
-.auth-foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-top: 18px;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 45%, transparent);
-}
-.auth-foot a {
-  font-size: 11px;
-}
-.auth-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-/* The screen's heading. 25px on a desktop, 20px on a phone — the design's h3
-   and h4 — from one element, because a page has one first-level heading. */
-.auth-title {
-  font-size: 25px;
-  margin: 0 0 4px;
-}
-/* Usuario and PIN share a row on the desktop cashier form. */
-.auth-pair {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 12px;
-}
-
-@media (max-width: 768px) {
-  /* On a phone the card fills the screen and the quote panel drops. */
-  .auth {
-    padding: 0;
-  }
-  .auth-card {
-    width: 100%;
-    height: 100dvh;
-    grid-template-columns: minmax(0, 1fr);
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .auth-solo .auth-panel {
-    width: 100%;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .auth-aside {
-    display: none;
-  }
-  .auth-panel {
-    padding: 28px 22px;
-  }
-  .auth-title {
-    font-size: 20px;
-  }
-  .auth-pair {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  /* A 44px target is the counter's minimum: this is used one-handed. */
-  .auth-panel .btn-block {
-    min-height: 44px;
-  }
-}
-
-/* — an inline note under a form: a refused sign-in, a sent reset link —
-   Nocturne has no red. The ramps are accent plus neutrals on purpose, so the
-   icon carries the difference between a refusal and a confirmation while the
-   surface stays the same tinted block in both. */
-.form-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: var(--space-3) 0 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
-}
-.form-note > i {
-  margin-top: 2px;
-  color: var(--color-accent);
-}
-
-/* ══ v2 app shell ═══════════════════════════════════════════════════════════
-   A left sidebar and a content column, shared by every signed-in role — the
-   same frame for admin, company and cashier, only the content changes. The
-   design draws all of this inline; naming it here is what keeps a layout file
-   free of the same forty style props repeated on every screen. Every value is
-   a Nocturne token. Dividers are inset hairlines, never borders — the design's
-   one structural idiom. */
-
-.shell {
-  display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
-  min-height: 100dvh;
-}
-.shell-sidebar {
-  position: sticky;
-  top: 0;
-  height: 100dvh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 16px 12px;
-  background: var(--color-neutral-900);
-  box-shadow: inset -1px 0 0 var(--color-divider);
-}
-.shell-content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.side-brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 6px;
-  color: inherit;
-  text-decoration: none;
-}
-/* The company switcher: an outlined row of initials + name over its code. */
-.side-switcher {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 9px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  color: inherit;
-  text-decoration: none;
-}
-.side-switcher-mark {
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  background: var(--color-neutral-800);
-  color: var(--color-neutral-200);
-  font-family: var(--font-heading);
-  font-size: 10px;
-}
-
-.side-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.side-group-label {
-  padding: 0 8px 6px;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 40%, transparent);
-}
-.side-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 9px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  color: inherit;
-  text-decoration: none;
-}
-.side-nav-item:hover {
-  background: color-mix(in srgb, var(--color-text) 7%, transparent);
-}
-.side-nav-item[aria-current='page'] {
-  color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-}
-.side-nav-count {
-  margin-left: auto;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.side-nav-item[aria-current='page'] .side-nav-count {
-  color: inherit;
-}
-
-.side-foot {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.side-user {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 4px;
-}
-.side-user-out {
-  display: inline-flex;
-  color: color-mix(in srgb, var(--color-text) 50%, transparent);
-}
-.side-user-out:hover {
-  color: var(--color-accent);
-}
-
-/* The content column's own top bar: a breadcrumb, actions on the right. */
-.shell-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
-  box-shadow: inset 0 -1px 0 var(--color-divider);
-}
-.crumb {
-  font-size: 12px;
-}
-.crumb-sep {
-  font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 40%, transparent);
-}
-
-/* The page body inside the shell. 20px gutters, as every v2 screen uses. */
-.shell-body {
-  padding: 20px;
-  min-width: 0;
-}
-
-/* Underline tabs — an accent 2px rule riding the section divider. Not .seg. */
-.tabs {
-  display: flex;
-  gap: 2px;
-  padding: 0 20px;
-  box-shadow: inset 0 -1px 0 var(--color-divider);
-  overflow-x: auto;
-}
-.tab {
-  padding: 9px 12px;
-  font-size: 13px;
-  white-space: nowrap;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-  text-decoration: none;
-}
-.tab[aria-current='page'] {
-  color: var(--color-accent);
-  box-shadow: inset 0 -2px 0 var(--color-accent);
-}
-
-/* Indicator cards: a kicker, a big tabular number, a muted note. */
-.stat-card {
-  flex: 1;
-  min-width: 150px;
-  gap: 2px;
-}
-.stat-num {
-  font-family: var(--font-heading);
-  font-size: 23px;
-}
-
-/* The 6-digit control code, the product's one hero number. */
-.control-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 14px;
-  border-radius: var(--radius-md);
-  border: 1px dashed var(--color-accent-700);
-  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
-}
-.control-hero-num {
-  font-family: var(--font-heading);
-  font-size: 28px;
-  letter-spacing: 0.14em;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-accent);
-}
-
-/* Mobile: the sidebar folds away behind a top bar and a bottom tab bar. */
-.shell-topbar {
-  display: none;
-}
-.shell-mobilebar {
-  display: none;
-}
-@media (max-width: 900px) {
-  .shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .shell-sidebar {
-    display: none;
-  }
-  .shell-topbar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 13px 16px;
-    background: var(--color-neutral-900);
-    box-shadow: inset 0 -1px 0 var(--color-divider);
-  }
-  .shell-mobilebar {
-    position: sticky;
-    bottom: 0;
-    z-index: 30;
-    display: flex;
-    gap: 4px;
-    padding: 8px 16px 12px;
-    background: var(--color-neutral-900);
-    box-shadow: inset 0 1px 0 var(--color-divider);
-  }
-  .shell-mobilebar a {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    padding: 6px 0;
-    font-size: 10px;
-    text-decoration: none;
-    color: color-mix(in srgb, var(--color-text) 55%, transparent);
-  }
-  .shell-mobilebar a[aria-current='page'] {
-    color: var(--color-accent);
-  }
-  .shell-mobilebar i {
-    font-size: 19px;
-  }
-  .shell-body {
-    padding: 16px;
-  }
-}
-
-/* ══ the counter — v2 screen 11, a two-pane till ═══════════════════════════ */
-.till {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  max-width: 1040px;
-  margin-inline: auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
-}
-.till-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 24px 28px;
-}
-.till-turno {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 22px;
-  background: var(--color-neutral-900);
-  box-shadow: inset 1px 0 0 var(--color-divider);
-}
-.till-turno-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.till-recent {
-  display: flex;
-  flex-direction: column;
-}
-/* A row is a button — tapping it re-opens that charge read-only. It keeps the
-   hairline underline of the old static row and reads like plain text until
-   hovered, when it lifts a touch. */
-.till-recent-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 6px;
-  margin-inline: -6px;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  background: linear-gradient(
-      to right,
-      transparent,
-      color-mix(in srgb, var(--color-text) 8%, transparent) 20px,
-      color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px),
-      transparent
-    )
-    no-repeat bottom / 100% 1px;
-}
-.till-recent-row:hover {
-  background-color: color-mix(in srgb, var(--color-text) 6%, transparent);
-}
-
-.cx-kicker {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.cx-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-/* The hero reference field: big, centred, the one number the cashier reads. */
-.cx-reference {
-  min-height: 66px;
-  font-size: 30px;
-  text-align: center;
-  letter-spacing: 0.06em;
-}
-.cx-bank-select {
-  cursor: pointer;
-}
-/* Amount, entered like a POS terminal: a fixed 'Bs', right-aligned digits. */
-.cx-amount {
-  display: flex;
-  align-items: center;
-  min-height: 52px;
-  padding: 0 12px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider);
-}
-.cx-amount:focus-within {
-  border-color: var(--color-accent);
-}
-.cx-amount-currency {
-  margin-right: 8px;
-  font-family: var(--font-heading);
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.cx-amount-input {
-  flex: 1;
-  min-height: auto;
-  padding: 0;
-  border: none;
-  background: transparent;
-  text-align: right;
-  font-family: var(--font-heading);
-  font-size: 22px;
-}
-.cx-amount-input:hover,
-.cx-amount-input:focus-visible {
-  border: none;
-  outline: none;
-}
-.cx-submit {
-  min-height: 50px;
-  font-size: 16px;
-  margin-top: 2px;
-}
-.cx-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: auto 0 0;
-  font-size: 12px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.cx-note > i {
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.cx-problem {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-accent-300);
-}
-
-/* The bank's answer — a centred card, screens 12/17/26. */
-.cx-result {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: min(560px, 100%);
-  margin: 28px auto;
-  padding: 26px 28px;
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-md);
-}
-.cx-waiting {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  text-align: center;
-}
-.cx-verdict {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.cx-verdict-column {
-  flex-direction: column;
-  text-align: center;
-}
-.cx-verdict-body {
-  font-size: 13px;
-  max-width: 42ch;
-}
-.cx-mark {
-  width: 52px;
-  height: 52px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  font-size: 24px;
-}
-.cx-mark-ok {
-  border: 1px solid var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-  color: var(--color-accent);
-}
-.cx-mark-quiet {
-  border: 1px solid var(--color-neutral-500);
-  background: color-mix(in srgb, var(--color-text) 7%, transparent);
-  color: var(--color-neutral-300);
-}
-.cx-details {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  font-size: 13px;
-}
-.cx-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.cx-actions {
-  display: flex;
-  gap: 10px;
-}
-.cx-actions > .btn {
-  flex: 1;
-}
-
-@media (max-width: 900px) {
-  .till {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .till-turno {
-    box-shadow: inset 0 1px 0 var(--color-divider);
-  }
-  .cx-reference {
-    min-height: 58px;
-    font-size: 26px;
-  }
-}
-
-/* ══ the content frame every screen shares ═════════════════════════════════
-   Navigating between screens must never resize the column, so every screen's
-   body sits in this one frame — same max-width, same gutter, title always
-   left-aligned in the same place. The body is one or more bordered `.box`
-   sections; sections are separated by boxes, never by changing the width. An
-   optional right `aside` (the counter's "mi turno") turns it into two columns
-   with the header staying over the main column. */
-.content {
-  width: 100%;
-  max-width: 1040px;
-  /* Left-aligned, not centred: the content hugs the sidebar with one gutter,
-     the same on every screen, rather than floating in the middle of the width. */
-  margin-inline: 0;
-  padding: 26px 28px 44px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    'head'
-    'body';
-  align-content: start;
-  gap: 18px 24px;
-}
-.content-with-aside {
-  /* Wide enough that "Cobrado" holds bolívares into the millions on one line. */
-  grid-template-columns: minmax(0, 1fr) 360px;
-  grid-template-areas:
-    'head  asidehead'
-    'body  aside';
-  align-items: start;
-}
-.content-head {
-  grid-area: head;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-/* The aside's own title, sat in its own header row so it lines up level with
-   the main title — "Mi turno" beside "Validar pago móvil", not floating lower. */
-.content-aside-head {
-  grid-area: asidehead;
-}
-.content-aside-title {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: 21px;
-  font-weight: var(--font-heading-weight);
-  letter-spacing: -0.01em;
-}
-.content-title {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: 21px;
-  font-weight: var(--font-heading-weight);
-  letter-spacing: -0.01em;
-}
-.content-sub {
-  margin: 3px 0 0;
-  font-size: 13px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.content-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-.content-body {
-  grid-area: body;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-.content-aside {
-  grid-area: aside;
-  align-self: stretch;
-}
-
-/* The standard section: a bordered card at our standard radius. Every screen
-   groups related content into these. */
-.box {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px 22px;
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider);
-}
-.box-lg {
-  padding: 26px 28px;
-}
-.box-quiet {
-  background: var(--color-neutral-900);
-}
-
-@media (max-width: 900px) {
-  .content {
-    padding: 18px 16px 28px;
-  }
-  .content-with-aside {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'head'
-      'body'
-      'aside';
-  }
-}
-
-/* `.page` and `.panel` are the pre-frame names, kept as aliases while screens
-   migrate to `.content`/`.box`. New screens use the frame above. */
-.page {
-  width: 100%;
-  max-width: 1040px;
-  margin-inline: auto;
-  padding: 26px 28px 40px;
-}
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-/* ══ searchable dropdown (combobox) ════════════════════════════════════════
-   A trigger that reads like an `.input`, a popover with a filter box and a
-   scrollable list. The counter's bank emisor uses it — every Venezuelan bank
-   in one place without a mile of native <select>. */
-.combo {
-  position: relative;
-}
-.combo-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  cursor: pointer;
-  text-align: left;
-}
-.combo-trigger:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-.combo-placeholder {
-  color: color-mix(in srgb, var(--color-text) 45%, transparent);
-}
-.combo-caret {
-  flex: none;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.combo-pop {
-  position: absolute;
-  z-index: 40;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  max-height: 288px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-md);
-  overflow: hidden;
-}
-.combo-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-  box-shadow: inset 0 -1px 0 var(--color-divider);
-}
-.combo-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  color: var(--color-text);
-  font: inherit;
-  font-size: 14px;
-  caret-color: var(--color-accent);
-}
-.combo-search-input:focus-visible {
-  outline: none;
-}
-.combo-list {
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  overflow-y: auto;
-}
-.combo-opt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 9px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-.combo-opt[data-active] {
-  background: color-mix(in srgb, var(--color-text) 8%, transparent);
-}
-.combo-opt[aria-selected='true'] {
-  color: var(--color-accent);
-}
-.combo-opt-hint {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-  font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 50%, transparent);
-}
-.combo-opt[aria-selected='true'] .combo-opt-hint {
-  color: inherit;
-}
-.combo-opt-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.combo-opt-check {
-  flex: none;
-}
-.combo-empty {
-  padding: 14px 10px;
-  text-align: center;
-  font-size: 12px;
-  color: color-mix(in srgb, var(--color-text) 50%, transparent);
-}
-
-/* ══ toasts — a fixed overlay, so a failed action never resizes a dialog ════ */
-.toaster {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(380px, calc(100vw - 40px));
-}
-.toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 11px 12px 11px 14px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-md);
-  font-size: 13px;
-  animation: toast-in 0.16s ease-out;
-}
-.toast > i {
-  margin-top: 2px;
-}
-.toast-error {
-  box-shadow:
-    var(--shadow-md),
-    inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 55%, transparent);
-}
-.toast-error > i {
-  color: var(--color-danger);
-}
-.toast-success > i {
-  color: var(--color-accent);
-}
-.toast-info > i {
-  color: var(--color-accent);
-}
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
   to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: rotate(360deg);
   }
-}
-
-/* An input the live validation has flagged. Nocturne has no red in its ramps;
-   this one danger token is the deliberate exception, for error states only. */
-.input-invalid,
-.input-invalid:hover,
-.input-invalid:focus-visible {
-  border-color: var(--color-danger);
 }

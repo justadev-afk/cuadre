@@ -80,6 +80,12 @@ type BankAccountReader = {
 
 type ValidationWriter = {
   findByIdempotencyKey(key: string): Promise<Validation | null>;
+  /** The pre-flight "already cobrado?" — a charge for this reference on one of
+   *  these accounts, carrying the cashier's name. Answered before the bank. */
+  findChargedPayment(
+    bankAccountIds: readonly string[],
+    reference: string,
+  ): Promise<Validation | null>;
   insert(input: NewValidation): Promise<InsertResult>;
 };
 
@@ -134,8 +140,8 @@ export type ValidatePaymentOutcome =
   | { readonly kind: 'not_found' }
   /** The bank reports it, and it is not the payment that was claimed. */
   | { readonly kind: 'rejected'; readonly reason: RejectionReason }
-  /** Another cashier charged this exact payment first. */
-  | { readonly kind: 'already_charged' };
+  /** Another cashier charged this exact payment first — with who and when. */
+  | { readonly kind: 'already_charged'; readonly by: string | null; readonly at: number };
 
 export type ValidatePaymentFailure =
   | 'no_bank_account'
@@ -230,6 +236,34 @@ export function makeValidatePayment({
         amountCents: point.amountCents ?? 0,
       });
     };
+
+    // ── already charged? the pre-flight check ─────────────────────────────
+    // Before a single bank call: if this reference is already a charge on one
+    // of these accounts, answer now. Re-scanning a cobrado payment must not
+    // spend a bank round trip at the counter to be told what the table already
+    // knows — and the answer carries who charged it and when.
+    const existingCharge = await validations.findChargedPayment(
+      candidates.map((a) => a.id),
+      claim.reference,
+    );
+    if (existingCharge !== null) {
+      const account =
+        candidates.find((a) => a.id === existingCharge.bankAccountId) ?? candidates[0];
+      record(account, {
+        outcome: 'already_charged',
+        strategy: 'none',
+        amountCents: existingCharge.amountCents,
+      });
+      logger.warn('payment_already_charged', {
+        companyId: input.companyId,
+        reference: maskReference(claim.reference),
+      });
+      return outcome({
+        kind: 'already_charged',
+        by: existingCharge.cashierName ?? null,
+        at: existingCharge.createdAt,
+      });
+    }
 
     // Walk the accounts until one reports the movement. A payment lands in a
     // single receiving account, so at most one answers with a movement and the
@@ -392,7 +426,15 @@ export function makeValidatePayment({
           bank: account.bank,
           reference: maskReference(row.reference),
         });
-        return outcome({ kind: 'already_charged' });
+        // The pre-check missed it — the bank padded the reference differently,
+        // or a second cashier committed in the same instant. Read who charged
+        // it on the bank's canonical reference so the counter can still say so.
+        const charged = await validations.findChargedPayment([account.id], row.reference);
+        return outcome({
+          kind: 'already_charged',
+          by: charged?.cashierName ?? null,
+          at: charged?.createdAt ?? clock.nowSeconds(),
+        });
       }
 
       // The same submission arriving twice, close enough together that the

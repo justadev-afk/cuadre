@@ -133,6 +133,17 @@ function fakeValidations(seed: readonly Validation[] = []) {
       return rows.find((row) => row.idempotencyKey === key) ?? null;
     },
 
+    async findChargedPayment(
+      bankAccountIds: readonly string[],
+      reference: string,
+    ): Promise<Validation | null> {
+      return (
+        rows.find(
+          (row) => row.reference === reference && bankAccountIds.includes(row.bankAccountId),
+        ) ?? null
+      );
+    },
+
     async insert(input: NewValidation): Promise<InsertResult> {
       inserts.push(input);
 
@@ -391,16 +402,57 @@ describe('validate payment', () => {
     expect(validations.rows).toHaveLength(0);
   });
 
-  it('reports a payment another cashier already charged, and does not retry', async () => {
+  it('answers already-charged before the bank when the typed reference matches', async () => {
     const { validatePayment, validations, points } = await harness({
-      // Same account and reference, a different submission.
-      seed: [storedValidation({ idempotencyKey: 'idem-0', controlCode: '999999' })],
+      // Stored with the same unpadded reference the cashier types, so the
+      // pre-flight check finds it and no bank is ever asked.
+      seed: [
+        storedValidation({
+          idempotencyKey: 'idem-0',
+          controlCode: '999999',
+          reference: '123456789',
+          cashierName: 'María Rodríguez',
+          createdAt: NOW - 120,
+        }),
+      ],
       script: { payment: ok(found()) },
     });
 
     const result = await validatePayment(INPUT);
 
-    expect(result).toEqual({ ok: true, value: { kind: 'already_charged' } });
+    expect(result).toEqual({
+      ok: true,
+      value: { kind: 'already_charged', by: 'María Rodríguez', at: NOW - 120 },
+    });
+    // The pre-check short-circuited: nothing was inserted (had it fallen through
+    // to the bank, the unpadded seed would not have matched the insert and a
+    // second row would exist).
+    expect(validations.inserts).toHaveLength(0);
+    expect(validations.rows).toHaveLength(1);
+    expect(points[0]).toMatchObject({ outcome: 'already_charged', amountCents: 124_000 });
+  });
+
+  it('names who charged a payment the bank padded past the pre-check, at the insert', async () => {
+    const { validatePayment, validations, points } = await harness({
+      // The stored reference carries the bank's padding, so the typed reference
+      // misses the pre-check and the unique index catches it at the insert —
+      // which still reads back who charged it.
+      seed: [
+        storedValidation({
+          idempotencyKey: 'idem-0',
+          controlCode: '999999',
+          cashierName: 'María Rodríguez',
+        }),
+      ],
+      script: { payment: ok(found()) },
+    });
+
+    const result = await validatePayment(INPUT);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { kind: 'already_charged', by: 'María Rodríguez', at: NOW - 60 },
+    });
     expect(validations.inserts).toHaveLength(1);
     expect(validations.rows).toHaveLength(1);
     expect(points[0]).toMatchObject({ outcome: 'already_charged', amountCents: 124_000 });

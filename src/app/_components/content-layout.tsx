@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { cn } from '@/lib/utils.ts';
+
 /**
  * The one frame every screen's content sits in, so navigating between screens
  * never resizes the column and every title lands in the same place.
@@ -12,10 +14,11 @@ import type { ReactNode } from 'react';
  *   │ └──────────────────────────┘ │            │
  *   └───────────────────────────────────────────┘
  *
- * The title is left-aligned; the body is one or more `.box` sections (bordered,
- * standard radius); the right `aside` is optional — the counter uses it for
- * "mi turno", most screens leave it out. Nothing here is screen-specific: it is
- * the shared skeleton, `children` is the only part that changes.
+ * The title is left-aligned; the body is one or more `Card` sections; the right
+ * `aside` is optional — the counter uses it for "mi turno", most screens leave
+ * it out. It is a two-row grid: the header row (main title, aside title) over
+ * the body row (content, aside), so the two titles sit level. Below 900px the
+ * aside drops under the body and its title is hidden.
  */
 type ContentLayoutProps = {
   title: ReactNode;
@@ -30,6 +33,8 @@ type ContentLayoutProps = {
   children: ReactNode;
 };
 
+const heading = 'm-0 font-heading text-[21px] font-medium leading-tight tracking-[-0.01em]';
+
 export function ContentLayout({
   title,
   subtitle,
@@ -39,24 +44,31 @@ export function ContentLayout({
   children,
 }: ContentLayoutProps) {
   return (
-    <main className={aside ? 'content content-with-aside' : 'content'}>
-      <header className="content-head">
-        <div className="content-heading">
-          <h1 className="content-title">{title}</h1>
-          {subtitle ? <p className="content-sub">{subtitle}</p> : null}
+    <main
+      className={cn(
+        'grid w-full max-w-[1040px] content-start gap-x-6 gap-y-[18px] px-7 pt-[26px] pb-11 max-[899px]:px-4 max-[899px]:pt-[18px] max-[899px]:pb-7',
+        aside && 'items-start min-[900px]:grid-cols-[minmax(0,1fr)_360px]',
+      )}
+    >
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className={heading}>{title}</h1>
+          {subtitle ? (
+            <p className="mt-[3px] text-[13px] text-muted-foreground">{subtitle}</p>
+          ) : null}
         </div>
-        {actions ? <div className="content-actions">{actions}</div> : null}
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </header>
 
       {aside ? (
-        <div className="content-aside-head">
-          <h2 className="content-aside-title">{asideTitle}</h2>
+        <div className="max-[899px]:hidden">
+          <h2 className={heading}>{asideTitle}</h2>
         </div>
       ) : null}
 
-      <div className="content-body">{children}</div>
+      <div className="flex min-w-0 flex-col gap-4">{children}</div>
 
-      {aside ? <aside className="content-aside">{aside}</aside> : null}
+      {aside ? <aside className="self-stretch">{aside}</aside> : null}
     </main>
   );
 }

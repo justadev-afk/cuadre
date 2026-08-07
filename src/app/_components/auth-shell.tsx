@@ -7,16 +7,25 @@
  * the tab that switches the form also switches the sentence in the quote and
  * the two therefore have to be rendered by the same component.
  *
- * The breakpoint that drops the quote on a phone lives in `globals.css`
- * (`.auth*`), not here.
+ * The desktop/mobile split lives in the utility classes here: a phone drops the
+ * card chrome and the quote panel; a wide screen frames the login as a centred
+ * card with the pitch on the right.
  */
 import type { ReactNode } from 'react';
 
-/** One centred 520px column, full height. */
+/** The panel padding shared by the split's left column and the solo column. */
+export const authPanel =
+  'flex min-w-0 flex-col overflow-y-auto px-[22px] py-7 md:px-11 md:pt-9 md:pb-7';
+
+/** One centred 480px column, full height on a phone, a framed card above it. */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <main className="auth auth-solo">
-      <div className="auth-panel">{children}</div>
+    <main className="grid min-h-dvh place-items-center bg-background md:p-8">
+      <div
+        className={`${authPanel} max-md:min-h-dvh w-full max-md:w-full md:w-[min(480px,100%)] md:rounded-xl md:shadow-[var(--shadow-md)]`}
+      >
+        {children}
+      </div>
     </main>
   );
 }
@@ -25,8 +34,10 @@ export function AuthShell({ children }: { children: ReactNode }) {
  *  panel and the aside, in that order. */
 export function AuthSplit({ children }: { children: ReactNode }) {
   return (
-    <main className="auth">
-      <div className="auth-card">{children}</div>
+    <main className="grid min-h-dvh place-items-center bg-background md:p-8">
+      <div className="grid h-dvh w-full grid-cols-1 overflow-hidden md:h-[min(600px,calc(100dvh-64px))] md:w-[min(940px,100%)] md:grid-cols-[minmax(0,1fr)_400px] md:rounded-xl md:shadow-[var(--shadow-md)]">
+        {children}
+      </div>
     </main>
   );
 }
@@ -35,8 +46,8 @@ export function AuthSplit({ children }: { children: ReactNode }) {
 export function AuthQuote({ children }: { children: string }) {
   return (
     <>
-      <div className="auth-aside-rule" />
-      <p className="auth-aside-quote">{children}</p>
+      <div className="mt-auto h-0.5 w-[34px] shrink-0 bg-primary" />
+      <p className="m-0 font-heading text-[21px] leading-[1.25]">{children}</p>
     </>
   );
 }

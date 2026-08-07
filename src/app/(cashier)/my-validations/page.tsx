@@ -6,8 +6,9 @@
  * scoped to this cashier's id and this company's id — a cashier sees their own
  * work and nothing of the till beside them.
  */
+import { cn } from '@/lib/utils.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
-import { NoValidations, ValidationCards } from '../../_components/validation-list.tsx';
+import { NoValidations, ValidationList } from '../../_components/validation-list.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
@@ -47,22 +48,16 @@ export default async function MyValidationsPage({
       title="Mis validaciones"
       subtitle={`${list.items.length} ${list.items.length === 1 ? 'pago' : 'pagos'} en este rango`}
     >
-      <div className="seg" style={{ width: '100%' }}>
+      <div className="inline-flex w-full items-stretch overflow-hidden rounded-md border border-border">
         {RANGE_TABS.map((tab) => (
           <a
             key={tab.range}
             href={`/my-validations?range=${tab.range}`}
-            className="seg-opt"
-            style={{
-              flex: 1,
-              justifyContent: 'center',
-              ...(tab.range === range
-                ? {
-                    color: 'var(--color-accent)',
-                    boxShadow: 'inset 0 0 0 1px var(--color-accent)',
-                  }
-                : {}),
-            }}
+            className={cn(
+              'inline-flex flex-1 items-center justify-center gap-1.5 border-l border-border px-3 py-[7px] text-[13px] text-foreground/70 no-underline transition-colors first:border-l-0 hover:bg-foreground/[0.06]',
+              tab.range === range &&
+                'text-primary shadow-[inset_0_0_0_1px_var(--primary)] hover:bg-transparent',
+            )}
           >
             {tab.label}
           </a>
@@ -72,7 +67,7 @@ export default async function MyValidationsPage({
       {list.items.length === 0 ? (
         <NoValidations cta={{ href: '/checkout', label: 'Validar un pago' }} />
       ) : (
-        <ValidationCards items={list.items} nowSeconds={nowSeconds} />
+        <ValidationList items={list.items} nowSeconds={nowSeconds} />
       )}
     </ContentLayout>
   );

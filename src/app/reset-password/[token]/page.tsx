@@ -19,8 +19,8 @@ export default async function ResetPasswordPage({
 
   return (
     <AuthShell>
-      <h3 style={{ margin: '0 0 6px' }}>Crea una contraseña nueva</h3>
-      <p className="text-muted" style={{ fontSize: 13, marginBottom: 18 }}>
+      <h3 className="m-0 mb-1.5 font-heading text-[25px] font-medium">Crea una contraseña nueva</h3>
+      <p className="mb-[18px] text-[13px] text-muted-foreground">
         Escríbela dos veces. Al guardarla, cerramos cualquier sesión abierta de tu cuenta.
       </p>
 
