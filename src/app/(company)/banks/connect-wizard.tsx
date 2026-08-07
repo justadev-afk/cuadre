@@ -32,6 +32,7 @@ import { SearchableSelect, type SelectOption } from '../../_components/searchabl
 import { maskAccountNumber } from '../../_lib/masks.ts';
 import { toast } from '../../_lib/toast.ts';
 import { connectBankAction, verifyBankAction } from './actions.ts';
+import { ConnectingOverlay } from './connecting-overlay.tsx';
 import {
   CONNECT_INITIAL,
   type ConnectState,
@@ -170,6 +171,15 @@ export function ConnectWizard({
 
   return (
     <form action={verifyForm} className="flex flex-col gap-4">
+      <ConnectingOverlay
+        active={verifying}
+        title={`Conectando con ${selectedBank.displayName}`}
+        steps={[
+          `Autenticando con ${selectedBank.displayName}`,
+          'Verificando las credenciales',
+          'Consultando tus cuentas',
+        ]}
+      />
       <div>
         <DialogTitle>Conectar {selectedBank.displayName}</DialogTitle>
         <DialogDescription>
@@ -296,6 +306,11 @@ function AccountStep({
 
   return (
     <form action={connectForm} className="flex flex-col gap-4">
+      <ConnectingOverlay
+        active={connecting}
+        title="Guardando la cuenta"
+        steps={['Sellando las credenciales', 'Guardando la cuenta', 'Casi listo']}
+      />
       <input type="hidden" name="verifyId" value={verifyId} />
       {companyId !== undefined && <input type="hidden" name="companyId" value={companyId} />}
       {/* connect prefers a typed number when present; sending both keeps the
