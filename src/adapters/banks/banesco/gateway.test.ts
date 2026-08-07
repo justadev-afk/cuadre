@@ -217,14 +217,20 @@ describe('findPayment', () => {
     expect(await gateway.findPayment(session, QUERY)).toEqual({ ok: true, value: null });
   });
 
-  it('ignores a credit that landed on somebody else’s account', async () => {
-    // The tail search is asked without an account, so the account is what has
-    // to be checked on the way back.
+  it('matches the merchant’s payment whatever account it settled on', async () => {
+    // The Confirmación search is scoped to the merchant by its credentials, so a
+    // credit it returns for this reference is theirs even when it landed on an
+    // account other than the one connected — a pago móvil settles on whatever
+    // account its receiving phone maps to. The account is not a filter, and the
+    // request never carried one.
     const other = detail({ accountId: '1340************9999' });
-    stubBank([rows(other), rows(other)]);
+    stubBank([rows(other)]);
     const { gateway, session } = await authenticated();
 
-    expect(await gateway.findPayment(session, QUERY)).toEqual({ ok: true, value: null });
+    expect(await gateway.findPayment(session, QUERY)).toMatchObject({
+      ok: true,
+      value: { strategy: 'exact_reference', movement: { isCredit: true } },
+    });
   });
 
   it('ignores a credit with a different reference', async () => {
@@ -293,13 +299,12 @@ describe('regression: the confirmed QA pago móvil (ref 12346090431)', () => {
     });
   });
 
-  it('refuses it against a different receiving account (…5306, the prod incident)', async () => {
-    // Creds correct, but the account connected (…5306) is not the one the
-    // payment entered (…5394). Approving would be approving money that landed
-    // elsewhere — so both search routes return the movement and both get
-    // filtered out on the way back. This is exactly why …5306 saw "todavía no
-    // aparece" while the payment plainly existed.
-    stubBank([rows(QaDetail), rows(QaDetail)]);
+  it('validates it even when the counter is on a different account (…5306, the prod fix)', async () => {
+    // The exact prod incident, now fixed. Creds correct, payment on …5394, the
+    // counter connected to …5306. The Confirmación is scoped to the merchant by
+    // its credentials, so the payment is theirs and validates whatever account
+    // it entered — this is precisely why …5306 used to see "todavía no aparece".
+    stubBank([rows(QaDetail)]);
     const { gateway, session } = await authenticated();
 
     const found = await gateway.findPayment(session, {
@@ -307,7 +312,13 @@ describe('regression: the confirmed QA pago móvil (ref 12346090431)', () => {
       accountId: '01340804108041005306',
     });
 
-    expect(found).toEqual({ ok: true, value: null });
+    expect(found).toMatchObject({
+      ok: true,
+      value: {
+        strategy: 'exact_reference',
+        movement: { reference: '12346090431', amountCents: 63_000, isCredit: true },
+      },
+    });
   });
 });
 

@@ -29,7 +29,6 @@ import { BanescoAccountsClient } from './accounts.client.ts';
 import { type BanescoConfirmationCall, BanescoConfirmationClient } from './confirmation.client.ts';
 import { BANESCO_ID, hasProductionEndpoints } from './endpoints.ts';
 import { type BanescoDevice, serverDevice } from './envelope.ts';
-import { lastFour } from './normalise.ts';
 import { BanescoOauthClient } from './oauth.client.ts';
 
 /** Below this a shared suffix is a coincidence, not the same reference. */
@@ -240,27 +239,27 @@ export class BanescoGateway implements BankGateway {
 /**
  * Which of the bank's rows is the payment being validated.
  *
- * Both searches can return more than one row, and the tail search is asked
- * without an account at all — so the account is checked here, on the way out.
- * Debits are dropped: money leaving the merchant's account is never a payment
- * received, whatever its reference says.
+ * Matched by reference and credit direction only. The Confirmación search is
+ * already scoped to the merchant by the credentials that made it, so every row
+ * it returns is *this* merchant's money — which of their accounts it settled on
+ * is not a reason to refuse it. A pago móvil lands on whatever account its
+ * receiving phone maps to, not necessarily the one connected at the counter, and
+ * rejecting on that mismatch is exactly what made a real payment read as
+ * "todavía no aparece". Amount and currency are the domain's job in
+ * `matchPayment`; the account is deliberately not a filter here. Debits are
+ * dropped: money leaving is never a payment received.
  */
 function select(movements: readonly BankMovement[], query: FindPaymentQuery): BankMovement | null {
-  const wanted = lastFour(query.accountId);
   const candidates = movements.filter(
-    (movement) =>
-      movement.isCredit &&
-      sameReference(movement.reference, query.reference) &&
-      sameAccount(movement.accountMasked, wanted),
+    (movement) => movement.isCredit && sameReference(movement.reference, query.reference),
   );
 
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
 
-  // Two credits with the same reference on one account should not exist. If the
-  // bank ever reports it, the most recent is the one the customer just made —
-  // and the count is logged, because it is the kind of thing that turns out to
-  // matter later.
+  // More than one credit under the same reference: take the most recent — the
+  // one the customer just made — and log the count, because it should not happen
+  // and is the kind of thing that turns out to matter later.
   logger.warn('banesco_ambiguous_match', {
     count: candidates.length,
     reference: maskReference(query.reference),
@@ -278,14 +277,4 @@ function sameReference(candidate: string, reference: string): boolean {
   const shorter = found.length < asked.length ? found : asked;
   if (shorter.length < MIN_MATCHABLE_DIGITS) return false;
   return found.endsWith(asked) || asked.endsWith(found);
-}
-
-/** The bank masks the account it answers with, so only the last four compare. */
-function sameAccount(masked: string, wantedLastFour: string): boolean {
-  const found = lastFour(masked);
-  // Nothing to compare is not a mismatch: the reference and the credit
-  // direction already carry the match, and refusing here would reject a real
-  // payment because the bank masked one field harder than usual.
-  if (found === '' || wantedLastFour === '') return true;
-  return found === wantedLastFour;
 }
