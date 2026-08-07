@@ -56,6 +56,11 @@ ENVIRONMENT = "production"
 APP_BASE_URL = "https://cuadre.jsansossio.com"
 MAIL_FROM = "no-responder@jsansossio.com"
 SUPPORT_EMAIL = "soporte@jsansossio.com"
+# Account that hosts the Worker — not a secret. Half of the observability
+# read-path config; the other half is the ANALYTICS_SQL_TOKEN secret, set with
+# `wrangler secret put` (an API token with "Account Analytics: Read"). With both
+# present, /admin/observability queries the cuadre_attempts dataset.
+CF_ACCOUNT_ID = "aba2362a5663a685f5c5fa0d87008fe5"
 
 [[d1_databases]]
 binding = "DB"
