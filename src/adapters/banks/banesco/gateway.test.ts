@@ -259,6 +259,58 @@ describe('findPayment', () => {
   });
 });
 
+/**
+ * The live QA payment, pinned as a regression. Ref 12346090431 → CR Bs 630, on
+ * DOÑA AURORA's account ending 5394, was validated end to end against Banesco QA
+ * (control code 582422). These replay the RECORDED response shape — never the
+ * live bank (§11) — so a change to the envelope parse, the cents/direction
+ * normalisation, or the account filter that would have broken that sale fails
+ * here instead of at a counter.
+ */
+describe('regression: the confirmed QA pago móvil (ref 12346090431)', () => {
+  const QaDetail = detail({
+    referenceNumber: '12346090431',
+    amount: '630.00',
+    accountId: '1340************5394',
+    trnType: 'CR',
+  });
+  // The full receiving account the payment landed on — last four 5394.
+  const QaQuery = { ...QUERY, reference: '12346090431', accountId: '01340804108041005394' };
+
+  it('validates it: exact reference, Bs 630 as 63 000 cents, a credit', async () => {
+    const sent = stubBank([rows(QaDetail)]);
+    const { gateway, session } = await authenticated();
+
+    const found = await gateway.findPayment(session, QaQuery);
+
+    expect(paymentCalls(sent)).toHaveLength(1);
+    expect(found).toMatchObject({
+      ok: true,
+      value: {
+        strategy: 'exact_reference',
+        movement: { reference: '12346090431', amountCents: 63_000, isCredit: true },
+      },
+    });
+  });
+
+  it('refuses it against a different receiving account (…5306, the prod incident)', async () => {
+    // Creds correct, but the account connected (…5306) is not the one the
+    // payment entered (…5394). Approving would be approving money that landed
+    // elsewhere — so both search routes return the movement and both get
+    // filtered out on the way back. This is exactly why …5306 saw "todavía no
+    // aparece" while the payment plainly existed.
+    stubBank([rows(QaDetail), rows(QaDetail)]);
+    const { gateway, session } = await authenticated();
+
+    const found = await gateway.findPayment(session, {
+      ...QaQuery,
+      accountId: '01340804108041005306',
+    });
+
+    expect(found).toEqual({ ok: true, value: null });
+  });
+});
+
 describe('listAccounts', () => {
   it('maps the bank’s products', async () => {
     stubBank([], accountsReply('200', [{ accountId: '0134************8514', accountType: 'DDA' }]));
