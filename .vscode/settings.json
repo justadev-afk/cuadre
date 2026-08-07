@@ -1,0 +1,9 @@
+{
+  // The runner in this repo is vitest (`bun run test` → `vitest run`), and the
+  // adapter tests stub `fetch` with `vi.stubGlobal`. Bun's built-in runner
+  // ships a partial `vi` shim that has no `stubGlobal`/`unstubAllGlobals`, so
+  // the "Run Test" lens from oven.bun-vscode — which shells out to
+  // `bun test <file> --test-name-pattern …` — throws on every one of them.
+  // Turn that explorer off and let vitest.explorer own the gutter instead.
+  "bun.test.enable": false
+}
