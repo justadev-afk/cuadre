@@ -1,0 +1,457 @@
+/**
+ * The counter. A cashier types a reference; we ask the bank whether that
+ * payment landed; only the bank's answer approves it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ *  Everything in the input is a claim. The only evidence in this file is the
+ *  movement the bank returned, and every value that lands in `validations`
+ *  comes from that movement — the reference, the amount, the currency, the
+ *  instant. What was typed is used to *ask the question*, never to answer it.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Four things happen in a fixed order, and the order is the design:
+ *
+ *  1. **Idempotency first.** A retried submission returns the same validation
+ *     and the same control code without the bank being asked again. A cashier
+ *     on a bad connection tapping "confirmar" twice must not produce two
+ *     questions, two answers, or two receipts.
+ *  2. **The account, then the secrets.** The company's active account for the
+ *     environment decides which bank is asked and with whose credentials —
+ *     unsealed here, used for one call, never logged and never returned.
+ *  3. **The verdict is the domain's.** `matchPayment` compares the movement
+ *     against the claim. `ok(null)` from the gateway is *not_found* — "todavía
+ *     no aparece", an answer with a *Reintentar* next to it — and a rejection
+ *     writes no row at all.
+ *  4. **The row is the charge.** Approved payments are inserted with a control
+ *     code, and the three unique indexes decide the rest: another cashier who
+ *     already charged this reference wins, and our own control-code collision
+ *     is redrawn.
+ *
+ * An attempt that finds nothing leaves no row anywhere, so the single metrics
+ * data point recorded per attempt is the only trace it leaves at all — the
+ * "todavía no aparece" rate is measurable there or nowhere.
+ */
+import type { BankAccount } from '../../adapters/d1/bank-account.repository.ts';
+import type {
+  InsertResult,
+  NewValidation,
+  Validation,
+} from '../../adapters/d1/validation.repository.ts';
+import type {
+  AttemptOutcome,
+  SearchStrategy,
+  ValidationAttempt,
+} from '../../adapters/metrics/attempt.metrics.ts';
+import { CONTROL_CODE_MAX_ATTEMPTS, generateControlCode } from '../../domain/control-code.ts';
+import { matchPayment, type RejectionReason } from '../../domain/payment-match.ts';
+import { normalisePhone } from '../../domain/phone.ts';
+import { findBank } from '../../domain/sudeban.ts';
+import { type Clock, venezuelaDate } from '../../shared/clock.ts';
+import { unseal } from '../../shared/crypto.ts';
+import { AppError, forbidden } from '../../shared/errors.ts';
+import type { IdGen } from '../../shared/id.ts';
+import { logger, maskReference } from '../../shared/logger.ts';
+import { err, ok, type Result } from '../../shared/result.ts';
+import { type AccountCredentials, credentialsByUsage } from '../banking/account-credentials.ts';
+import type { BankEnvironment, BankFailure, BankGateway, BankId } from '../ports/bank-gateway.ts';
+
+/**
+ * The ports, declared here and structurally.
+ *
+ * Each is the slice of a collaborator this one use case consumes, so the
+ * dependency is a shape rather than a class: the D1 repositories and
+ * `BankRegistry` satisfy them, and a test satisfies them with an object literal
+ * — which is why nothing in `validate-payment.test.ts` mocks one of our modules.
+ * The row types are imported because they are the shared vocabulary; the
+ * classes that produce them are not.
+ */
+type BankAccountReader = {
+  findActiveForCompany(
+    companyId: string,
+    environment: BankEnvironment,
+  ): Promise<BankAccount | null>;
+};
+
+type ValidationWriter = {
+  findByIdempotencyKey(key: string): Promise<Validation | null>;
+  insert(input: NewValidation): Promise<InsertResult>;
+};
+
+type BankAccess = {
+  get(bank: BankId): BankGateway;
+};
+
+type AttemptRecorder = {
+  record(attempt: ValidationAttempt): void;
+};
+
+export type ValidatePaymentDeps = {
+  readonly accounts: BankAccountReader;
+  readonly validations: ValidationWriter;
+  readonly banks: BankAccess;
+  readonly metrics: AttemptRecorder;
+  readonly clock: Clock;
+  readonly ids: IdGen;
+  /** The AES-GCM master key, as a dependency. Never read from `env` in here. */
+  readonly credsKey: string;
+};
+
+export type ValidatePaymentInput = {
+  readonly companyId: string;
+  readonly cashierId: string;
+  /** The cashier's session, forwarded so the bank's support can correlate. */
+  readonly sessionId: string;
+  readonly reference: string;
+  readonly payerPhone: string;
+  /** Sudeban code of the payer's bank, four digits. */
+  readonly sourceBankId: string;
+  readonly amountCents: number;
+  /** One per submission. A retry of the same submission reuses it. */
+  readonly idempotencyKey: string;
+  /** Which of the company's accounts answers. Production unless asked. */
+  readonly environment?: BankEnvironment;
+};
+
+/**
+ * Every one of these is a `Result` *success*: they are all answers the counter
+ * knows how to show. Only a bank that would not answer at all is a failure.
+ */
+export type ValidatePaymentOutcome =
+  | { readonly kind: 'confirmed'; readonly validation: Validation }
+  /** The bank does not report this payment yet. *Reintentar* / *Verificar datos*. */
+  | { readonly kind: 'not_found' }
+  /** The bank reports it, and it is not the payment that was claimed. */
+  | { readonly kind: 'rejected'; readonly reason: RejectionReason }
+  /** Another cashier charged this exact payment first. */
+  | { readonly kind: 'already_charged' };
+
+export type ValidatePaymentFailure =
+  | 'no_bank_account'
+  | 'invalid_input'
+  | 'rejected_credentials'
+  | 'maintenance'
+  | 'unavailable'
+  | 'timeout';
+
+export type ValidatePayment = (
+  input: ValidatePaymentInput,
+) => Promise<Result<ValidatePaymentOutcome, ValidatePaymentFailure>>;
+
+/** What the request means once the domain has read it. */
+type Claim = {
+  readonly reference: string;
+  /** Canonical `584143125566`, whatever the customer read out. */
+  readonly payerPhone: string;
+  readonly sourceBankId: string;
+  readonly amountCents: number;
+  readonly idempotencyKey: string;
+};
+
+export function makeValidatePayment({
+  accounts,
+  validations,
+  banks,
+  metrics,
+  clock,
+  ids,
+  credsKey,
+}: ValidatePaymentDeps): ValidatePayment {
+  return async (input) => {
+    // Latency is measured from here rather than from the bank call: what the
+    // dashboard has to answer is how long the cashier waited.
+    const startedMs = clock.nowMillis();
+
+    const read = readClaim(input);
+    if (!read.ok) return read;
+    const claim = read.value;
+
+    // ── 1. idempotency ────────────────────────────────────────────────────
+    const replay = await validations.findByIdempotencyKey(claim.idempotencyKey);
+    if (replay !== null) {
+      // The key is unique across the whole table, so a row under someone else's
+      // company means the key was not minted by this caller.
+      if (replay.companyId !== input.companyId) {
+        throw forbidden('idempotency key belongs to another company');
+      }
+      // No metric: the attempt this replays was already counted, and counting
+      // it again would inflate both the confirmed count and the amount in a
+      // dataset whose entire job is a ratio.
+      return outcome({ kind: 'confirmed', validation: replay });
+    }
+
+    // ── 2. the account, then the secrets ──────────────────────────────────
+    const environment = input.environment ?? 'production';
+    const account = await accounts.findActiveForCompany(input.companyId, environment);
+    if (account === null) {
+      // Deliberately unrecorded: the metrics point is keyed by bank and
+      // environment, and there is no bank in this story to attribute it to.
+      logger.warn('validation_no_bank_account', { companyId: input.companyId, environment });
+      return err('no_bank_account');
+    }
+
+    const record = (point: {
+      outcome: AttemptOutcome;
+      strategy: SearchStrategy;
+      bankStatus?: string | null;
+      /** Only ever the bank's own figure, and only when a movement matched. */
+      amountCents?: number;
+    }): void => {
+      metrics.record({
+        companyId: input.companyId,
+        bank: account.bank,
+        environment: account.environment,
+        searchStrategy: point.strategy,
+        outcome: point.outcome,
+        bankStatus: point.bankStatus ?? null,
+        latencyMs: clock.nowMillis() - startedMs,
+        amountCents: point.amountCents ?? 0,
+      });
+    };
+
+    const secrets = await openAccount(credsKey, account);
+    const gateway = banks.get(account.bank);
+
+    // The counter runs on the operate pair — Banesco's Confirmación. The gateway
+    // says which key that is; the other pairs, if any, only listed accounts at
+    // onboarding and have no business here.
+    const operate = credentialsByUsage(gateway.credentialGroups, secrets.credentials, 'operate');
+    if (operate === null) {
+      throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
+    }
+
+    const session = await gateway.authenticate(account.environment, operate);
+    if (!session.ok) {
+      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: session.error });
+      return err(toCounterFailure(session.error));
+    }
+
+    const found = await gateway.findPayment(session.value, {
+      accountId: secrets.accountNumber,
+      reference: claim.reference,
+      payerPhone: claim.payerPhone,
+      sourceBankId: claim.sourceBankId,
+      onDate: venezuelaDate(clock.nowSeconds()),
+      sessionId: input.sessionId,
+    });
+    if (!found.ok) {
+      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: found.error });
+      return err(toCounterFailure(found.error));
+    }
+
+    // ── 3. the verdict ────────────────────────────────────────────────────
+    const payment = found.value;
+    if (payment === null) {
+      record({ outcome: 'not_found', strategy: 'none' });
+      logger.info('payment_not_found', {
+        companyId: input.companyId,
+        bank: account.bank,
+        reference: maskReference(claim.reference),
+      });
+      return outcome({ kind: 'not_found' });
+    }
+
+    const verdict = matchPayment({
+      movement: payment.movement,
+      expected: { reference: claim.reference, amountCents: claim.amountCents },
+      now: clock.nowSeconds(),
+    });
+
+    if (verdict.kind !== 'approved') {
+      // `matchPayment` only answers 'not_found' for a null movement, which the
+      // guard above already returned, so anything here is a rejection — but the
+      // union is honoured rather than asserted away.
+      const reason = verdict.kind === 'rejected' ? verdict.reason : null;
+      // The outcome column carries "not confirmed" and the strategy carries
+      // "yet a movement was found", which is how a rejection stays visible in
+      // the dataset without inventing a code the schema does not have:
+      // `outcome = 'not_found' AND search_strategy <> 'none'` is exactly the
+      // set of attempts where the bank had a movement and it did not match.
+      record({ outcome: 'not_found', strategy: payment.strategy, bankStatus: reason });
+      logger.info('payment_rejected', {
+        companyId: input.companyId,
+        bank: account.bank,
+        reason,
+        reference: maskReference(claim.reference),
+      });
+      return outcome(reason === null ? { kind: 'not_found' } : { kind: 'rejected', reason });
+    }
+
+    // ── 4. the row ────────────────────────────────────────────────────────
+    const movement = payment.movement;
+    const row = {
+      // Minted once: a control-code collision redraws the code, not the row.
+      id: ids.uuid(),
+      companyId: input.companyId,
+      cashierId: input.cashierId,
+      bankAccountId: account.id,
+      bank: account.bank,
+      // Copied from the account, never joined back. Delete the sandbox account
+      // tomorrow and this row still knows it was a test.
+      isSandbox: account.environment === 'sandbox',
+      // The bank's reference, not the one that was typed. `matchPayment`
+      // tolerates a difference in leading zeros — a customer reads '123456' off
+      // a receipt another bank printed as '0000123456' — so storing what was
+      // typed would let two spellings of one payment past
+      // `ux_validations_payment`, which is the entire anti-double-charge
+      // mechanism.
+      reference: movement.reference,
+      // Equal to the claim by the verdict above; taken from the movement
+      // because the movement is the evidence and the claim never was.
+      amountCents: movement.amountCents,
+      currency: movement.currency.trim().toUpperCase(),
+      payerPhone: claim.payerPhone,
+      // The bank knows who paid it better than the picker does: a customer who
+      // chose the wrong bank on the screen still made the payment the bank
+      // reports.
+      sourceBankId: movement.sourceBankId ?? claim.sourceBankId,
+      trnAt: movement.occurredAt,
+      searchMode: payment.strategy,
+      idempotencyKey: claim.idempotencyKey,
+      createdAt: clock.nowSeconds(),
+    };
+
+    for (let draw = 1; draw <= CONTROL_CODE_MAX_ATTEMPTS; draw++) {
+      const written = await validations.insert({
+        ...row,
+        controlCode: generateControlCode(ids),
+        latencyMs: clock.nowMillis() - startedMs,
+      });
+
+      if (written.outcome === 'inserted') {
+        record({
+          outcome: 'confirmed',
+          strategy: payment.strategy,
+          amountCents: movement.amountCents,
+        });
+        logger.info('payment_confirmed', {
+          companyId: input.companyId,
+          bank: account.bank,
+          isSandbox: row.isSandbox,
+          controlCode: written.validation.controlCode,
+          reference: maskReference(row.reference),
+        });
+        return outcome({ kind: 'confirmed', validation: written.validation });
+      }
+
+      // Another cashier charged this payment first. There is nothing to retry:
+      // the index refused the payment, not the code.
+      if (written.outcome === 'duplicate_payment') {
+        record({
+          outcome: 'already_charged',
+          strategy: payment.strategy,
+          amountCents: movement.amountCents,
+        });
+        logger.warn('payment_already_charged', {
+          companyId: input.companyId,
+          bank: account.bank,
+          reference: maskReference(row.reference),
+        });
+        return outcome({ kind: 'already_charged' });
+      }
+
+      // The same submission arriving twice, close enough together that the
+      // first one had not committed when we looked. It is the same answer as an
+      // idempotent replay and it is not counted twice either.
+      if (written.outcome === 'idempotent_replay') {
+        const existing = await validations.findByIdempotencyKey(claim.idempotencyKey);
+        if (existing === null) {
+          throw new AppError('internal', 'idempotency index refused a row that does not exist');
+        }
+        return outcome({ kind: 'confirmed', validation: existing });
+      }
+
+      logger.warn('control_code_collision', { companyId: input.companyId, draw });
+    }
+
+    // Our own six digits lost three draws in one company. The bank confirmed a
+    // payment we could not write down, which is an alert and not a message for
+    // the customer — and the 500 in Workers Logs is its trace, because the
+    // metrics vocabulary has no code for "the code space is too small".
+    throw new AppError(
+      'internal',
+      `control code collided ${CONTROL_CODE_MAX_ATTEMPTS} times for ${input.companyId}`,
+    );
+  };
+}
+
+/** Nothing in here is a failure; the counter has a screen for each of them. */
+function outcome(
+  value: ValidatePaymentOutcome,
+): Result<ValidatePaymentOutcome, ValidatePaymentFailure> {
+  return ok(value);
+}
+
+/**
+ * Reads the claim through the domain before a single byte reaches the bank.
+ *
+ * Not defensive duplication of the HTTP layer's parsing: these are the rules
+ * that make the question askable at all. A phone that is not a Venezuelan
+ * mobile has no pago móvil wallet behind it, a Sudeban code that is not in the
+ * table joins against nothing in `validations.source_bank_id`, and a
+ * non-positive amount is refused by the schema's own CHECK — asking the bank
+ * any of those questions spends a round trip to be told no.
+ */
+function readClaim(input: ValidatePaymentInput): Result<Claim, 'invalid_input'> {
+  const reference = input.reference.trim();
+  const idempotencyKey = input.idempotencyKey.trim();
+  const payerPhone = normalisePhone(input.payerPhone);
+
+  if (reference === '' || idempotencyKey === '' || payerPhone === null) return err('invalid_input');
+  if (findBank(input.sourceBankId) === null) return err('invalid_input');
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
+    return err('invalid_input');
+  }
+
+  return ok({
+    reference,
+    payerPhone,
+    sourceBankId: input.sourceBankId,
+    amountCents: input.amountCents,
+    idempotencyKey,
+  });
+}
+
+/**
+ * The credentials and the account number, in the clear for the length of one
+ * bank call.
+ *
+ * A row that will not open is not a decision the cashier can help with: the key
+ * rotated without the row being re-sealed, or the bytes were tampered with.
+ * Either way the account is unusable and someone has to be told, which is what
+ * an `AppError` is for.
+ */
+async function openAccount(
+  credsKey: string,
+  account: BankAccount,
+): Promise<{ credentials: AccountCredentials; accountNumber: string }> {
+  try {
+    const [credentials, accountNumber] = await Promise.all([
+      unseal<AccountCredentials>(credsKey, account.credentials),
+      unseal<string>(credsKey, account.accountNumber),
+    ]);
+    return { credentials, accountNumber };
+  } catch {
+    throw new AppError('internal', `bank account ${account.id} could not be unsealed`);
+  }
+}
+
+/**
+ * A bank's failure as the counter must state it.
+ *
+ * `no_accounts` and `rate_limited` are onboarding-shaped answers arriving in
+ * front of a customer, where the only true thing to say is that the bank did
+ * not answer. `rejected_credentials` keeps its own code: it is the merchant's
+ * to fix in the panel, and hiding it as "unavailable" would have them waiting
+ * for a bank that is working fine.
+ */
+function toCounterFailure(failure: BankFailure): ValidatePaymentFailure {
+  switch (failure) {
+    case 'maintenance':
+    case 'timeout':
+    case 'rejected_credentials':
+    case 'invalid_input':
+      return failure;
+    default:
+      return 'unavailable';
+  }
+}

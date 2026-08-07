@@ -1,0 +1,103 @@
+# The Worker target.
+#
+# **One environment, and it is production.** There is no staging Worker, no
+# staging database and no staging namespace: a second copy of everything costs
+# real resources to keep a small team honest, and `wrangler dev` (which
+# emulates D1 and KV on disk) already covers what staging would have caught.
+#
+# The bank's own sandbox is *not* a deployment concern. It is selected per bank
+# account, by the `environment` column — a company can hold a production and a
+# sandbox account connected at the same time, and every validation copies the
+# flag onto its own row. A second Worker would not buy that separation; it
+# would only split the history in two.
+#
+# `main` is a custom entry rather than vinext's own `vinext/server/fetch-handler`,
+# because the queue consumer has to live in the same Worker as the pages: it
+# retries bank calls that hit maintenance and sends password-reset mail off the
+# request path, and both need the same bindings. vinext still resolves the App
+# Router behind `virtual:vinext-worker-entry`, so the pages are unaffected.
+
+name = "cuadre"
+main = "./worker/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# One public origin, on `jsansossio.com` until the final domain is bought.
+#
+# It was `cuadre.julio.com.ve` first. Cloudflare accepted the custom domain and
+# reported the trigger deployed, but never wrote the DNS record — fifteen
+# minutes later the authoritative nameservers still answered NXDOMAIN for the
+# subdomain while the zone apex resolved fine. `.com.ve` delegations are slow
+# to settle, and `jsansossio.com` is a zone on the same account that already
+# serves another Worker, so it is the known-good address to build against.
+#
+# Whatever the host is, it must match `APP_BASE_URL` below: that value is the
+# base of every password-reset link and the scope of the session cookie.
+# Changing one without the other breaks sign-in in a way that only shows up in
+# somebody's inbox.
+workers_dev = false
+preview_urls = false
+
+routes = [{ pattern = "cuadre.jsansossio.com", custom_domain = true }]
+
+[assets]
+directory = "dist/client"
+not_found_handling = "none"
+binding = "ASSETS"
+
+[observability]
+enabled = true
+
+# `.dev.vars` overrides these for `wrangler dev`, which is how the local run
+# gets ENVIRONMENT=development and a localhost APP_BASE_URL without a second
+# environment block.
+[vars]
+ENVIRONMENT = "production"
+APP_BASE_URL = "https://cuadre.jsansossio.com"
+MAIL_FROM = "no-responder@jsansossio.com"
+SUPPORT_EMAIL = "soporte@jsansossio.com"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cuadre"
+database_id = "2dde42e0-5646-44f5-b39e-a463dd27a8b6"
+migrations_dir = "migrations"
+
+# Three namespaces with three lifetimes, on purpose. SESSIONS is written on
+# every request (the sliding TTL) and also holds the rate-limit counters;
+# TOKENS holds bank OAuth tokens that expire on the bank's clock;
+# VINEXT_KV_CACHE is the framework's own data cache and must not share a
+# keyspace with either.
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "7cb3c2d04ff041c39993d340303060ca"
+
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "1f26fb1f2dd64f95919138219f7d213e"
+
+[[kv_namespaces]]
+binding = "VINEXT_KV_CACHE"
+id = "1b57093d3dc847e086f0d4f3c28e2d8f"
+
+# Deferred work only: password-reset mail, and bank calls that hit maintenance
+# (VRN04) and earn a backoff. Nothing on the checkout path — validating a
+# payment is synchronous or it is nothing.
+[[queues.producers]]
+binding = "JOBS"
+queue = "cuadre-jobs"
+
+[[queues.consumers]]
+queue = "cuadre-jobs"
+max_retries = 5
+max_batch_size = 10
+
+[[send_email]]
+name = "EMAIL"
+
+# One data point per validation attempt, found or not. This is the only trace a
+# failed attempt leaves: `validations` stores confirmed payments only, so the
+# "todavía no aparece" rate is measurable here or nowhere.
+[[analytics_engine_datasets]]
+binding = "METRICS"
+dataset = "cuadre_attempts"

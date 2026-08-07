@@ -1,0 +1,44 @@
+{
+  "name": "cuadre",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vinext dev",
+    "build": "vinext build",
+    "start": "vinext start",
+    "deploy": "vinext build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check .",
+    "fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "bun run typecheck && bun run check && bun run test",
+    "migrate:local": "wrangler d1 migrations apply cuadre --local",
+    "migrate:remote": "wrangler d1 migrations apply cuadre --remote",
+    "seed:admin": "bun run scripts/seed-admin.ts",
+    "seed:remote": "wrangler d1 execute cuadre --remote --file=seeds/0001_bootstrap.sql -y"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-server-dom-webpack": "^19.2.0",
+    "vinext": "1.0.0-beta.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
+    "@cloudflare/vite-plugin": "^1.17.0",
+    "@cloudflare/workers-types": "^5.20260804.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vinext/cloudflare": "1.0.0-beta.4",
+    "@vitejs/plugin-react": "^5.1.0",
+    "@vitejs/plugin-rsc": "^0.5.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.119.0"
+  }
+}

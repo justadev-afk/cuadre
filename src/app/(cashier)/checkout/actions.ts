@@ -1,0 +1,55 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+
+import { container, currentSession } from '../../_lib/current-session.ts';
+import type { ChargeInput, ChargeOutcome } from './charge-types.ts';
+
+export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
+  const resolved = await currentSession();
+  if (resolved === null) redirect('/login');
+
+  const { session } = resolved;
+  if (session.role !== 'cashier' || session.companyId === null) redirect('/');
+
+  const outcome = await container().validations.validatePayment({
+    companyId: session.companyId,
+    cashierId: session.userId,
+    sessionId: resolved.sessionId,
+    reference: input.reference,
+    payerPhone: input.payerPhone,
+    sourceBankId: input.sourceBankId,
+    amountCents: input.amountCents,
+    idempotencyKey: input.idempotencyKey,
+    // Narrowed rather than trusted: the field is typed, and a typed field is
+    // still whatever arrived over the wire.
+    environment: input.environment === 'sandbox' ? 'sandbox' : 'production',
+  });
+
+  if (!outcome.ok) return { status: 'failed', failure: outcome.error };
+
+  const value = outcome.value;
+  if (value.kind === 'confirmed') {
+    const { validation } = value;
+    // The rail beside the form lists this till's last charges; it has one more
+    // row now, and the row is the receipt the cashier may be asked for next.
+    revalidatePath('/checkout');
+    return {
+      status: 'confirmed',
+      charge: {
+        controlCode: validation.controlCode,
+        reference: validation.reference,
+        amountCents: validation.amountCents,
+        payerPhone: validation.payerPhone,
+        createdAt: validation.createdAt,
+        isSandbox: validation.isSandbox,
+        latencyMs: validation.latencyMs,
+      },
+    };
+  }
+
+  if (value.kind === 'rejected') return { status: 'rejected', reason: value.reason };
+  if (value.kind === 'already_charged') return { status: 'already_charged' };
+  return { status: 'not_found' };
+}
