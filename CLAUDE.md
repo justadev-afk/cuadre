@@ -53,6 +53,11 @@ build is green. Commit locally when asked; publishing is always a separate,
 explicit request. (This rule overrides any earlier instruction to deploy/push at
 the end of a task.)
 
+**Work on `main`; never create a branch** unless the maintainer asks for one in
+that turn. This repo is trunk-based: commit straight to `main`. A stray feature
+branch is friction nobody asked for, so the default "branch first" habit does
+not apply here.
+
 **When you *are* asked to deploy, use `bun run deploy`, never a bare `wrangler
 deploy`.** The Cloudflare Vite plugin compiles `wrangler.toml` into
 `dist/server/wrangler.json` at build time, and *that* generated file is what
