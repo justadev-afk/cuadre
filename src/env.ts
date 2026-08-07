@@ -43,6 +43,21 @@ export const WorkerVars = z.object({
    * changes independently of the code that sends it.
    */
   BANK_EGRESS_IP: z.string().min(7),
+
+  /**
+   * Reading the attempt telemetry back. The `METRICS` binding only *writes* to
+   * the `cuadre_attempts` dataset; querying it is the Analytics Engine SQL API,
+   * an HTTP endpoint that wants a Cloudflare account id in its URL and an API
+   * token with "Account Analytics Read" in its `Authorization` header.
+   *
+   * Both are **optional** on purpose. The token is a `wrangler secret` the
+   * maintainer provisions and there is no local emulation of the SQL API, so a
+   * build without them must still run — the admin observability panel degrades
+   * to "no configurado" rather than failing every request. The account id is
+   * not a secret; the token is, and so never appears in `wrangler.toml`.
+   */
+  CF_ACCOUNT_ID: z.string().min(1).optional(),
+  ANALYTICS_SQL_TOKEN: z.string().min(1).optional(),
 });
 
 export type WorkerVars = z.infer<typeof WorkerVars>;

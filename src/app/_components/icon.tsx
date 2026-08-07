@@ -43,6 +43,7 @@ export type IconName =
   | 'plugs-connected'
   | 'plus'
   | 'printer'
+  | 'pulse'
   | 'receipt'
   | 'seal-check'
   | 'shield-check'

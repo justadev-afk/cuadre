@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import { formatBolivares } from '../../../../domain/money.ts';
+import { AttemptInsightsPanel } from '../../../_components/attempt-insights-panel.tsx';
 import { BankAccountCard } from '../../../_components/bank-account-card.tsx';
 import { ContentLayout } from '../../../_components/content-layout.tsx';
 import { Icon } from '../../../_components/icon.tsx';
@@ -40,11 +41,12 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const banks = container().banking.listSupportedBanks();
 
   const now = Math.floor(Date.now() / 1000);
-  const [employees, today, month, recent] = await Promise.all([
+  const [employees, today, month, recent, insights] = await Promise.all([
     container().employees.listEmployees({ companyId: slug }),
     container().validations.dailyTotals({ companyId: slug, days: 1 }),
     container().validations.dailyTotals({ companyId: slug, days: 30 }),
     container().validations.listValidations({ companyId: slug, from: 0, to: now }),
+    container().observability.attemptInsights({ days: 30, companyId: slug }),
   ]);
 
   const cashiers = employees.filter((e) => e.role === 'cashier');
@@ -207,6 +209,11 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         <span className="mt-1 block text-xs text-muted-foreground">
           El alta del banco la hace la empresa desde su propio panel de Bancos.
         </span>
+      </div>
+
+      <div>
+        <h6 className="mb-2 text-primary">Observabilidad</h6>
+        <AttemptInsightsPanel view={insights} scope="company" />
       </div>
 
       <div>

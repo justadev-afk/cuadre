@@ -10,6 +10,7 @@
  * named key rather than as `undefined.prepare` three layers down.
  */
 
+import { CloudflareAttemptInsights } from './adapters/analytics/attempt-insights.ts';
 import { BankRegistry } from './adapters/banks/registry.ts';
 import { D1BankAccountRepository } from './adapters/d1/bank-account.repository.ts';
 import { D1CompanyRepository } from './adapters/d1/company.repository.ts';
@@ -27,6 +28,7 @@ import { makeAuthUseCases } from './application/auth/factory.ts';
 import { makeBankingUseCases } from './application/banking/factory.ts';
 import { makeCompanyUseCases } from './application/companies/factory.ts';
 import { makeEmployeeUseCases } from './application/employees/factory.ts';
+import { makeObservabilityUseCases } from './application/observability/factory.ts';
 import { makeStatsUseCases } from './application/stats/factory.ts';
 import { makeValidationUseCases } from './application/validations/factory.ts';
 import { type Bindings, readVars } from './env.ts';
@@ -69,6 +71,18 @@ export function buildContainer(rawEnv: Bindings) {
   const limiter = new KvRateLimiter(rawEnv.SESSIONS, clock);
   const verifications = new KvVerificationStore(rawEnv.TOKENS);
   const metrics = new AnalyticsEngineAttemptMetrics(rawEnv.METRICS);
+
+  // Reading that same dataset back is the SQL API, which needs an account id and
+  // a token this environment may not carry. Absent either, the source is `null`
+  // and the observability panel says "no configurado" instead of failing.
+  const attemptInsights =
+    vars.CF_ACCOUNT_ID && vars.ANALYTICS_SQL_TOKEN
+      ? new CloudflareAttemptInsights({
+          accountId: vars.CF_ACCOUNT_ID,
+          apiToken: vars.ANALYTICS_SQL_TOKEN,
+          userAgent: BANK_USER_AGENT,
+        })
+      : null;
 
   // The gateway caches its own OAuth tokens straight into this namespace
   // (`BanescoOauthClient` does its own get/put with a TTL), so the binding is
@@ -125,6 +139,9 @@ export function buildContainer(rawEnv: Bindings) {
       clock,
       ids,
     }),
+    // Reading the attempt telemetry back for the admin panel. Degrades to an
+    // "unconfigured" view when the SQL API token is absent (see above).
+    observability: makeObservabilityUseCases({ source: attemptInsights }),
     // The login pitch's figures, computed from D1 and cached in KV for a minute
     // so an anonymous /login is a single KV read rather than a scan.
     stats: makeStatsUseCases({

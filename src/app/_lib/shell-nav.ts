@@ -36,6 +36,7 @@ const ADMIN_GROUPS: readonly ShellNavGroup[] = [
     items: [
       { href: '/admin/overview', label: 'Resumen', icon: 'broadcast' },
       { href: '/admin/companies', label: 'Empresas', icon: 'buildings' },
+      { href: '/admin/observability', label: 'Observabilidad', icon: 'pulse' },
     ],
   },
 ];
