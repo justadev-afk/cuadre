@@ -344,3 +344,30 @@ figcaption {
     transform: rotate(360deg);
   }
 }
+
+/* ── Thermal receipt printing ──────────────────────────────────────────────
+   The receipt sits off-screen in the DOM (only one is mounted at a time, inside
+   the open modal) and only becomes visible when the page prints. Printing hides
+   every other element's ink and drops the ticket to the top-left of the sheet,
+   so `window.print()` yields exactly the 80mm receipt and nothing of the app. */
+.receipt-print-root {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .receipt-print-root,
+  .receipt-print-root * {
+    visibility: visible !important;
+  }
+  .receipt-print-root {
+    position: absolute !important;
+    left: 0;
+    top: 0;
+    width: 80mm;
+  }
+}

@@ -25,6 +25,7 @@ import {
   formatDayClock,
 } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
+import { PrintReceiptButton, ThermalReceipt } from './thermal-receipt.tsx';
 
 const BANK_NAMES: Record<string, string> = { banesco: 'Banesco' };
 
@@ -32,11 +33,14 @@ export function ValidationList({
   items,
   nowSeconds,
   showCashier = false,
+  merchantName,
 }: {
   items: readonly Validation[];
   nowSeconds: number;
   /** The company panel shows who validated each payment; a cashier's own does not. */
   showCashier?: boolean;
+  /** Printed at the top of a re-opened receipt, under "CUADRE". */
+  merchantName?: string;
 }) {
   const [viewing, setViewing] = useState<Validation | null>(null);
 
@@ -135,7 +139,11 @@ export function ValidationList({
       </div>
 
       {viewing !== null && (
-        <ValidationDetailModal validation={viewing} onClose={() => setViewing(null)} />
+        <ValidationDetailModal
+          validation={viewing}
+          merchantName={merchantName}
+          onClose={() => setViewing(null)}
+        />
       )}
     </>
   );
@@ -144,9 +152,11 @@ export function ValidationList({
 /** The receipt for one validation — the same shape the counter shows on confirm. */
 function ValidationDetailModal({
   validation,
+  merchantName,
   onClose,
 }: {
   validation: Validation;
+  merchantName?: string;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -209,9 +219,26 @@ function ValidationDetailModal({
           <DetailRow label="Fecha" value={formatDateTime(validation.trnAt)} />
         </div>
 
-        <Button size="block" className="h-10" onClick={onClose}>
-          Cerrar
-        </Button>
+        <div className="flex gap-2">
+          <PrintReceiptButton className="h-10 flex-1" />
+          <Button className="h-10 flex-1" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+
+        <ThermalReceipt
+          data={{
+            merchantName,
+            controlCode: validation.controlCode,
+            reference: validation.reference,
+            amountCents: validation.amountCents,
+            payerPhone: validation.payerPhone,
+            bankName: BANK_NAMES[validation.bank] ?? validation.bank,
+            cashierName: validation.cashierName,
+            atSeconds: validation.trnAt,
+            isSandbox: validation.isSandbox,
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

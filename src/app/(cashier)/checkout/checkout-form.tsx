@@ -33,6 +33,11 @@ import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
 import { BankSpinner } from '../../_components/skeleton.tsx';
+import {
+  PrintReceiptButton,
+  type ReceiptData,
+  ThermalReceipt,
+} from '../../_components/thermal-receipt.tsx';
 import { maskCurrency } from '../../_lib/masks.ts';
 import {
   formatClock,
@@ -42,6 +47,19 @@ import {
 } from '../../_lib/venezuela-format.ts';
 import { chargeAction } from './actions.ts';
 import type { ChargeOutcome, ConfirmedCharge } from './charge-types.ts';
+
+/** A confirmed charge as the thermal receipt states it. */
+function chargeReceipt(charge: ConfirmedCharge, bankName?: string): ReceiptData {
+  return {
+    controlCode: charge.controlCode,
+    reference: charge.reference,
+    amountCents: charge.amountCents,
+    payerPhone: charge.payerPhone,
+    bankName,
+    atSeconds: charge.createdAt,
+    isSandbox: charge.isSandbox,
+  };
+}
 
 /** One row of the "mi turno" list — a full charge, so a click can re-open it. */
 export type RecentCharge = ConfirmedCharge & {
@@ -647,6 +665,8 @@ function ConfirmedContent({
           Nuevo cobro
         </Button>
       </div>
+
+      <ThermalReceipt data={chargeReceipt(charge)} />
     </>
   );
 }
@@ -759,9 +779,14 @@ function ValidatedModal({
         />
         <ChargeRows charge={charge} accountLabel={accountLabel(accounts, charge.bankAccountId)} />
 
-        <Button size="block" className="h-10" onClick={onClose}>
-          Cerrar
-        </Button>
+        <div className="flex gap-2">
+          <PrintReceiptButton className="h-10 flex-1" />
+          <Button className="h-10 flex-1" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+
+        <ThermalReceipt data={chargeReceipt(charge, bankName)} />
       </DialogContent>
     </Dialog>
   );
