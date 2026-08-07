@@ -14,10 +14,9 @@
 import Link from 'next/link';
 import { useActionState, useEffect, useState } from 'react';
 
-import { AuthQuote } from '../_components/auth-shell.tsx';
 import { Brand } from '../_components/brand.tsx';
 import { FormNote } from '../_components/form-note.tsx';
-import { Icon } from '../_components/icon.tsx';
+import { Icon, type IconName } from '../_components/icon.tsx';
 import { NO_SIGN_IN_ERROR } from '../_lib/sign-in-state.ts';
 import { signInCashierAction, signInCompanyAction } from './actions.ts';
 
@@ -80,13 +79,69 @@ export function LoginForm({ next, notice }: LoginFormProps) {
       </div>
 
       <aside className="auth-aside">
-        <AuthQuote>
+        <div className="auth-aside-rule" />
+        <p className="auth-aside-quote">
           {door === 'company'
-            ? 'Cobra por pago móvil y confirma en el mostrador, sin revisar el estado de cuenta.'
+            ? 'Cobra, valida y entrega. Sin llamar al banco ni revisar el estado de cuenta.'
             : 'Confirma el pago móvil antes de entregar la compra.'}
-        </AuthQuote>
+        </p>
+
+        <div className="auth-benefits">
+          <Benefit
+            icon="lightning"
+            title="Confirmas en segundos"
+            body="El banco responde mientras el cliente sigue en el mostrador."
+          />
+          <Benefit
+            icon="users-three"
+            title="Cada caja, su código"
+            body="Cajeros con PIN; el dueño ve todo desde su panel."
+          />
+          <Benefit
+            icon="seal-check"
+            title="Solo lo que el banco confirma"
+            body="Ningún cobro se aprueba desde la pantalla."
+          />
+        </div>
+
+        <div className="auth-stats">
+          <Stat value="128" label="comercios" />
+          <Stat value="9.412" label="pagos hoy" />
+          <Stat value="2,4 s" label="respuesta" />
+        </div>
       </aside>
     </>
+  );
+}
+
+/** One line of the login pitch: an accent icon, a title, a muted sentence. */
+function Benefit({ icon, title, body }: { icon: IconName; title: string; body: string }) {
+  return (
+    <div className="auth-benefit">
+      <span className="auth-benefit-mark">
+        <Icon name={icon} />
+      </span>
+      <div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontSize: 14 }}>{title}</div>
+        <span className="text-muted" style={{ fontSize: 12 }}>
+          {body}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** One figure in the bottom stat row. */
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <div>
+      <div className="tnum" style={{ fontFamily: 'var(--font-heading)', fontSize: 20 }}>
+        {value}
+      </div>
+      <span className="text-muted" style={{ fontSize: 11 }}>
+        {label}
+      </span>
+    </div>
   );
 }
 
