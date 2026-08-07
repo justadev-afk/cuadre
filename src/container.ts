@@ -16,6 +16,7 @@ import { D1CompanyRepository } from './adapters/d1/company.repository.ts';
 import { D1PasswordResetRepository } from './adapters/d1/password-reset.repository.ts';
 import { D1UserRepository } from './adapters/d1/user.repository.ts';
 import { D1ValidationRepository } from './adapters/d1/validation.repository.ts';
+import { KvActiveSessionStore } from './adapters/kv/active-session.store.ts';
 import { KvRateLimiter } from './adapters/kv/rate-limit.store.ts';
 import { KvSessionStore } from './adapters/kv/session.store.ts';
 import { KvVerificationStore } from './adapters/kv/verification.store.ts';
@@ -59,6 +60,9 @@ export function buildContainer(rawEnv: Bindings) {
   const resets = new D1PasswordResetRepository(rawEnv.DB);
 
   const sessions = new KvSessionStore(rawEnv.SESSIONS, clock);
+  // The one-active-session pointer shares the SESSIONS namespace: it is written
+  // on sign-in and read on resolve, alongside the record it points at.
+  const activeSessions = new KvActiveSessionStore(rawEnv.SESSIONS);
   const limiter = new KvRateLimiter(rawEnv.SESSIONS, clock);
   const verifications = new KvVerificationStore(rawEnv.TOKENS);
   const metrics = new AnalyticsEngineAttemptMetrics(rawEnv.METRICS);
@@ -89,6 +93,7 @@ export function buildContainer(rawEnv: Bindings) {
       companies,
       resets,
       sessions,
+      activeSessions,
       limiter,
       passwords,
       jobs,

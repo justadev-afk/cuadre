@@ -18,8 +18,9 @@ import { AdminLoginForm } from './admin-login-form.tsx';
 export const metadata = { title: 'Administración · Cuadre' };
 
 export default async function AdminLoginPage() {
-  const resolved = await currentSession();
-  if (resolved !== null) redirect(landingFor(resolved.session.role));
+  const resolution = await currentSession();
+  if (resolution.kind === 'superseded') redirect('/session-ended');
+  if (resolution.kind === 'active') redirect(landingFor(resolution.active.session.role));
 
   return (
     <AuthShell>

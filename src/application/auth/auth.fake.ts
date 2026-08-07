@@ -10,7 +10,7 @@
  * port is missing, and these exist precisely because none is.
  */
 import type { Result } from '../../shared/result.ts';
-import type { SessionRecord, StoredSession } from '../session.ts';
+import type { ActiveSessionPointer, SessionRecord, StoredSession } from '../session.ts';
 import type { AuthenticatingUser, RateLimitPolicy } from './sign-in.ts';
 
 // ── sessions ───────────────────────────────────────────────────────────────
@@ -62,6 +62,36 @@ export function makeFakeSessions(seed: Record<string, StoredSession> = {}): Fake
         const doomed = [...records.entries()].filter(([, r]) => r.userId === userId);
         for (const [id] of doomed) records.delete(id);
         return doomed.length;
+      },
+    },
+  };
+}
+
+// ── the one-active-session pointer ─────────────────────────────────────────
+
+export type FakeActiveSessions = {
+  readonly activeSessions: {
+    setActive(userId: string, pointer: ActiveSessionPointer): Promise<void>;
+    getActive(userId: string): Promise<ActiveSessionPointer | null>;
+  };
+  /** Keyed by user id, so a test can plant or read the pointer directly. */
+  readonly pointers: Map<string, ActiveSessionPointer>;
+};
+
+export function makeFakeActiveSessions(
+  seed: Record<string, ActiveSessionPointer> = {},
+): FakeActiveSessions {
+  const pointers = new Map<string, ActiveSessionPointer>(Object.entries(seed));
+
+  return {
+    pointers,
+    activeSessions: {
+      async setActive(userId, pointer) {
+        pointers.set(userId, pointer);
+      },
+
+      async getActive(userId) {
+        return pointers.get(userId) ?? null;
       },
     },
   };

@@ -11,6 +11,7 @@
 import { redirect } from 'next/navigation';
 
 import { container } from '../../_lib/current-session.ts';
+import { DEVICE_ID_FIELD } from '../../_lib/device-id.ts';
 import { secretField, textField } from '../../_lib/inputs.ts';
 import { landingFor } from '../../_lib/landing.ts';
 import { callerIpHash } from '../../_lib/request-context.ts';
@@ -31,6 +32,7 @@ export async function signInAdminAction(
     email,
     password,
     ipHash: await callerIpHash(),
+    deviceId: textField(form, DEVICE_ID_FIELD),
   });
   if (!result.ok) return { error: signInMessage('admin', result.error) };
 

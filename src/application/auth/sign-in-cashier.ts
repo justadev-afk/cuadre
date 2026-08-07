@@ -18,6 +18,7 @@ import type { Clock } from '../../shared/clock.ts';
 import type { IdGen } from '../../shared/id.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import {
+  type ActiveSessionWriter,
   type AuthenticatingUser,
   type CompanyStatusReader,
   type LastLoginWriter,
@@ -40,6 +41,8 @@ export type SignInCashierInput = {
   readonly pin: string;
   /** `hashIp()` output. The use case never sees an address. */
   readonly ipHash: string;
+  /** The persistent browser id, off a hidden form field. See `PasswordSignInInput`. */
+  readonly deviceId: string;
 };
 
 export type SignInCashierDeps = {
@@ -51,6 +54,7 @@ export type SignInCashierDeps = {
   } & LastLoginWriter;
   readonly companies: CompanyStatusReader;
   readonly sessions: SessionWriter;
+  readonly activeSessions: ActiveSessionWriter;
   readonly limiter: LoginRateLimiter;
   readonly passwords: PasswordVerifier;
   readonly clock: Clock;
@@ -111,6 +115,6 @@ export function makeSignInCashier(deps: SignInCashierDeps): SignInCashier {
 
     await deps.limiter.reset(PIN_SCOPE, attemptKey, PIN_ATTEMPTS);
 
-    return ok(await openSession(deps, user, 'cashier', input.ipHash));
+    return ok(await openSession(deps, user, 'cashier', input.ipHash, input.deviceId));
   };
 }

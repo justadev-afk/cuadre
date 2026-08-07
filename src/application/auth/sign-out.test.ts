@@ -14,6 +14,7 @@ const STORED: StoredSession = {
   createdAt: 1_770_000_000,
   shiftAckAt: 1_770_000_000,
   ipHash: 'b1946ac92492d2347c6235b4d2611184',
+  deviceId: 'device-till',
 };
 
 describe('signOut', () => {

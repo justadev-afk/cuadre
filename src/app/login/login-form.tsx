@@ -17,6 +17,7 @@ import { useActionState, useEffect, useState } from 'react';
 import { Brand } from '../_components/brand.tsx';
 import { FormNote } from '../_components/form-note.tsx';
 import { Icon, type IconName } from '../_components/icon.tsx';
+import { DeviceIdField } from '../_lib/device-id-field.tsx';
 import { NO_SIGN_IN_ERROR } from '../_lib/sign-in-state.ts';
 import { signInCashierAction, signInCompanyAction } from './actions.ts';
 
@@ -184,6 +185,7 @@ function CompanyForm({ next }: { next: string | null }) {
   return (
     <form action={action}>
       {next !== null && <input type="hidden" name="next" value={next} />}
+      <DeviceIdField />
 
       <div className="auth-fields">
         <div className="field">
@@ -279,6 +281,7 @@ function CashierForm({ next }: { next: string | null }) {
   return (
     <form action={action}>
       {next !== null && <input type="hidden" name="next" value={next} />}
+      <DeviceIdField />
 
       <div className="auth-fields">
         <div className="field">

@@ -6,6 +6,7 @@ import {
   ADMIN_USER,
   COMPANY_USER,
   fakeHashOf,
+  makeFakeActiveSessions,
   makeFakeCompanies,
   makeFakeLimiter,
   makeFakePasswords,
@@ -18,11 +19,13 @@ import { makeSignInCompany, type SignInCompanyDeps } from './sign-in-company.ts'
 const NOW = 1_770_000_000;
 const PASSWORD = 'correct horse';
 const IP_HASH = 'b1946ac92492d2347c6235b4d2611184';
+const DEVICE_ID = 'device-web';
 
 function setUp(overrides: { companyStatus?: string } = {}) {
   const users = makeFakeUsers([COMPANY_USER, ADMIN_USER]);
   const companies = makeFakeCompanies({ 'la-espiga': overrides.companyStatus ?? 'active' });
   const sessions = makeFakeSessions();
+  const activeSessions = makeFakeActiveSessions();
   const limiter = makeFakeLimiter();
   const passwords = makeFakePasswords();
 
@@ -30,13 +33,14 @@ function setUp(overrides: { companyStatus?: string } = {}) {
     users: users.users,
     companies: companies.companies,
     sessions: sessions.sessions,
+    activeSessions: activeSessions.activeSessions,
     limiter: limiter.limiter,
     passwords: passwords.passwords,
     clock: fixedClock(NOW),
     ids: fakeIdGen({ tokens: ['sess-first', 'sess-second'] }),
   };
 
-  return { deps, users, companies, sessions, limiter, passwords };
+  return { deps, users, companies, sessions, activeSessions, limiter, passwords };
 }
 
 describe('a good password', () => {
@@ -47,6 +51,7 @@ describe('a good password', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result.ok).toBe(true);
@@ -62,8 +67,28 @@ describe('a good password', () => {
       createdAt: NOW,
       shiftAckAt: NOW,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
     expect(sessions.records.get('sess-first')).toEqual(result.value.session);
+  });
+
+  it('makes this the user one active session', async () => {
+    const { deps, activeSessions } = setUp();
+
+    await makeSignInCompany(deps)({
+      email: 'ana@laespiga.com',
+      password: PASSWORD,
+      ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
+    });
+
+    // The pointer names the freshly minted session and the device that opened
+    // it, so a later request on another device can find itself superseded.
+    expect(activeSessions.pointers.get('user-company')).toEqual({
+      sessionId: 'sess-first',
+      deviceId: DEVICE_ID,
+      at: NOW,
+    });
   });
 
   it('starts the four-hour shift counter at the moment of signing in', async () => {
@@ -73,6 +98,7 @@ describe('a good password', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     // Signing in *is* the first acknowledgement: whoever just typed the
@@ -84,7 +110,12 @@ describe('a good password', () => {
   it('mints a new session id every time and never reuses one', async () => {
     const { deps, sessions } = setUp();
     const signIn = makeSignInCompany(deps);
-    const input = { email: 'ana@laespiga.com', password: PASSWORD, ipHash: IP_HASH };
+    const input = {
+      email: 'ana@laespiga.com',
+      password: PASSWORD,
+      ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
+    };
 
     const first = await signIn(input);
     const second = await signIn(input);
@@ -101,6 +132,7 @@ describe('a good password', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(users.lastLogins).toEqual([{ id: 'user-company', at: NOW }]);
@@ -113,6 +145,7 @@ describe('a good password', () => {
       email: '  Ana@LaEspiga.com ',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result.ok).toBe(true);
@@ -126,6 +159,7 @@ describe('a good password', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(limiter.resets).toEqual([{ scope: LOGIN_BY_EMAIL_SCOPE, key: 'ana@laespiga.com' }]);
@@ -138,6 +172,7 @@ describe('a good password', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(limiter.resets.some((reset) => reset.scope === LOGIN_BY_IP_SCOPE)).toBe(false);
@@ -152,6 +187,7 @@ describe('a refusal', () => {
       email: 'ana@laespiga.com',
       password: 'not it',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'invalid_credentials' });
@@ -165,6 +201,7 @@ describe('a refusal', () => {
       email: 'nobody@nowhere.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'invalid_credentials' });
@@ -177,6 +214,7 @@ describe('a refusal', () => {
       email: 'nobody@nowhere.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     // This is the whole defence: without it the absent-account answer comes
@@ -189,8 +227,18 @@ describe('a refusal', () => {
     const { deps, passwords } = setUp();
     const signIn = makeSignInCompany(deps);
 
-    await signIn({ email: 'ana@laespiga.com', password: 'wrong', ipHash: IP_HASH });
-    await signIn({ email: 'ghost@nowhere.com', password: 'wrong', ipHash: IP_HASH });
+    await signIn({
+      email: 'ana@laespiga.com',
+      password: 'wrong',
+      ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
+    });
+    await signIn({
+      email: 'ghost@nowhere.com',
+      password: 'wrong',
+      ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
+    });
 
     expect(passwords.verified).toHaveLength(2);
     expect(passwords.verified[0]?.storedHash).toBe(fakeHashOf(PASSWORD));
@@ -204,6 +252,7 @@ describe('a refusal', () => {
       email: 'julio@cuadre.ve',
       password: 'platform pass',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     // Correct password, wrong form. Answering anything else would enumerate
@@ -219,6 +268,7 @@ describe('a refusal', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'account_disabled' });
@@ -231,6 +281,7 @@ describe('a refusal', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'company_suspended' });
@@ -244,6 +295,7 @@ describe('a refusal', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'company_suspended' });
@@ -256,6 +308,7 @@ describe('a refusal', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(sessions.records.size).toBe(0);
@@ -272,6 +325,7 @@ describe('the rate limits', () => {
       email: 'ana@laespiga.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'rate_limited' });
@@ -286,6 +340,7 @@ describe('the rate limits', () => {
       email: 'ghost@nowhere.com',
       password: PASSWORD,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     // Keyed by the address, not by the user it resolves to: an address nobody
@@ -305,6 +360,7 @@ describe('the rate limits', () => {
       email: 'ANA@laespiga.com',
       password: 'wrong',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(limiter.hits.map((hit) => hit.key)).toEqual([IP_HASH, 'ana@laespiga.com']);

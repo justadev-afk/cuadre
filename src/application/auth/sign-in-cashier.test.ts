@@ -6,6 +6,7 @@ import { fakeIdGen } from '../../shared/id.ts';
 import {
   CASHIER_USER,
   COMPANY_USER,
+  makeFakeActiveSessions,
   makeFakeCompanies,
   makeFakeLimiter,
   makeFakePasswords,
@@ -23,11 +24,13 @@ import {
 const NOW = 1_770_000_000;
 const PIN = '8317';
 const IP_HASH = 'b1946ac92492d2347c6235b4d2611184';
+const DEVICE_ID = 'device-till';
 
 function setUp(overrides: { companyStatus?: string } = {}) {
   const users = makeFakeUsers([CASHIER_USER, COMPANY_USER]);
   const companies = makeFakeCompanies({ 'la-espiga': overrides.companyStatus ?? 'active' });
   const sessions = makeFakeSessions();
+  const activeSessions = makeFakeActiveSessions();
   const limiter = makeFakeLimiter();
   const passwords = makeFakePasswords();
 
@@ -35,16 +38,23 @@ function setUp(overrides: { companyStatus?: string } = {}) {
     users: users.users,
     companies: companies.companies,
     sessions: sessions.sessions,
+    activeSessions: activeSessions.activeSessions,
     limiter: limiter.limiter,
     passwords: passwords.passwords,
     clock: fixedClock(NOW),
     ids: fakeIdGen({ tokens: ['sess-till'] }),
   };
 
-  return { deps, users, companies, sessions, limiter, passwords };
+  return { deps, users, companies, sessions, activeSessions, limiter, passwords };
 }
 
-const GOOD = { companySlug: 'la-espiga', username: 'maria.r', pin: PIN, ipHash: IP_HASH };
+const GOOD = {
+  companySlug: 'la-espiga',
+  username: 'maria.r',
+  pin: PIN,
+  ipHash: IP_HASH,
+  deviceId: DEVICE_ID,
+};
 
 describe('the counter door', () => {
   it('opens a session for the cashier', async () => {
@@ -65,8 +75,21 @@ describe('the counter door', () => {
       createdAt: NOW,
       shiftAckAt: NOW,
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
     expect(sessions.records.get('sess-till')).toEqual(result.value.session);
+  });
+
+  it('makes this the cashier one active session', async () => {
+    const { deps, activeSessions } = setUp();
+
+    await makeSignInCashier(deps)(GOOD);
+
+    expect(activeSessions.pointers.get('user-cashier')).toEqual({
+      sessionId: 'sess-till',
+      deviceId: DEVICE_ID,
+      at: NOW,
+    });
   });
 
   it('looks the cashier up by the tuple that was typed on the screen', async () => {

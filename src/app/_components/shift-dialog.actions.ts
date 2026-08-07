@@ -16,10 +16,13 @@ import { container, currentSession } from '../_lib/current-session.ts';
  * screen.
  */
 export async function acknowledgeShiftAction(): Promise<void> {
-  const resolved = await currentSession();
-  if (resolved === null) redirect('/login');
+  const resolution = await currentSession();
+  if (resolution.kind === 'anonymous') redirect('/login');
+  if (resolution.kind === 'superseded') redirect('/session-ended');
 
-  const session = await container().auth.acknowledgeShift({ sessionId: resolved.sessionId });
+  const session = await container().auth.acknowledgeShift({
+    sessionId: resolution.active.sessionId,
+  });
   if (session === null) redirect('/login');
 
   // The prompt lives in a layout, so the whole shell has to re-render for it to

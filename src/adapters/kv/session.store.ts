@@ -47,6 +47,8 @@ export const SessionRecord = z.object({
   shiftAckAt: z.number().int(),
   /** `hashIp()` output. A raw address is never written here. */
   ipHash: z.string(),
+  /** The persistent browser id this session was minted for. See the domain type. */
+  deviceId: z.string(),
 });
 
 export type SessionRecord = z.infer<typeof SessionRecord>;

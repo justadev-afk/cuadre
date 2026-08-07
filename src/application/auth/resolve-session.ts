@@ -16,7 +16,12 @@
  */
 import { needsShiftConfirmation } from '../../domain/shift.ts';
 import type { Clock } from '../../shared/clock.ts';
-import { type SessionRecord, type StoredSession, toSessionRecord } from '../session.ts';
+import {
+  type ActiveSessionPointer,
+  type SessionRecord,
+  type StoredSession,
+  toSessionRecord,
+} from '../session.ts';
 
 export type ResolveSessionInput = { readonly sessionId: string };
 
@@ -30,31 +35,62 @@ export type ResolvedSession = {
   readonly needsShiftConfirmation: boolean;
 };
 
+/**
+ * The three states a cookie can resolve to.
+ *
+ * `superseded` is the new one: the record still parses, but the user has since
+ * signed in elsewhere, so the per-user pointer names a different session. It is
+ * kept distinct from `anonymous` precisely so the caller can clear the cookie
+ * *and* explain why — a deleted record would have collapsed to `anonymous` and
+ * signed the user out with no reason given.
+ */
+export type SessionResolution =
+  | { readonly kind: 'active'; readonly active: ResolvedSession }
+  | { readonly kind: 'superseded'; readonly sameDevice: boolean }
+  | { readonly kind: 'anonymous' };
+
+/** Reads the per-user active-session pointer. `null` means nothing newer exists. */
+export type ActiveSessionReader = {
+  getActive(userId: string): Promise<ActiveSessionPointer | null>;
+};
+
 export type ResolveSessionDeps = {
   /** `touch` is the read that renews the sliding TTL. */
   readonly sessions: { touch(id: string): Promise<StoredSession | null> };
+  readonly activeSessions: ActiveSessionReader;
   readonly clock: Clock;
 };
 
-export type ResolveSession = (input: ResolveSessionInput) => Promise<ResolvedSession | null>;
+export type ResolveSession = (input: ResolveSessionInput) => Promise<SessionResolution>;
 
 export function makeResolveSession(deps: ResolveSessionDeps): ResolveSession {
   return async ({ sessionId }) => {
     const stored = await deps.sessions.touch(sessionId);
-    if (stored === null) return null;
+    if (stored === null) return { kind: 'anonymous' };
 
     // A record whose role this build no longer knows is not a session it can
     // reason about, so it is nobody rather than somebody with reduced rights.
     const session = toSessionRecord(stored);
-    if (session === null) return null;
+    if (session === null) return { kind: 'anonymous' };
+
+    // The pointer names the one session this user is allowed. A null pointer
+    // fails open (nothing newer exists); a pointer naming a *different* session
+    // means the user signed in elsewhere and this one is superseded.
+    const pointer = await deps.activeSessions.getActive(session.userId);
+    if (pointer !== null && pointer.sessionId !== sessionId) {
+      return { kind: 'superseded', sameDevice: pointer.deviceId === session.deviceId };
+    }
 
     return {
-      sessionId,
-      session,
-      needsShiftConfirmation: needsShiftConfirmation({
-        shiftAckAt: session.shiftAckAt,
-        now: deps.clock.nowSeconds(),
-      }),
+      kind: 'active',
+      active: {
+        sessionId,
+        session,
+        needsShiftConfirmation: needsShiftConfirmation({
+          shiftAckAt: session.shiftAckAt,
+          now: deps.clock.nowSeconds(),
+        }),
+      },
     };
   };
 }

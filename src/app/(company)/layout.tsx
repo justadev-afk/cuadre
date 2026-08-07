@@ -16,14 +16,17 @@ import { container, currentSession } from '../_lib/current-session.ts';
 import { shellModel } from '../_lib/shell-nav.ts';
 
 export default async function CompanyLayout({ children }: { children: ReactNode }) {
-  const resolved = await currentSession();
-  if (resolved === null) redirect('/login');
-  if (!canReach(resolved.session.role, 'company')) redirect('/');
+  const resolution = await currentSession();
+  if (resolution.kind === 'anonymous') redirect('/login');
+  if (resolution.kind === 'superseded') redirect('/session-ended');
 
-  const companyId = resolved.session.companyId;
+  const { session } = resolution.active;
+  if (!canReach(session.role, 'company')) redirect('/');
+
+  const companyId = session.companyId;
   const detail = companyId ? await container().companies.getCompany({ companyId }) : null;
   const company =
     detail?.ok === true ? { name: detail.value.company.name, code: detail.value.company.id } : null;
 
-  return <AppShell model={shellModel(resolved.session, company)}>{children}</AppShell>;
+  return <AppShell model={shellModel(session, company)}>{children}</AppShell>;
 }

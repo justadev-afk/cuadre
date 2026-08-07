@@ -36,6 +36,29 @@ export type SessionRecord = {
   readonly shiftAckAt: number;
   /** `hashIp()` output. A raw address is never written here. */
   readonly ipHash: string;
+  /**
+   * The persistent browser id this session was minted for — a uuid a device
+   * keeps in `localStorage`. It agrees with the per-user active-session pointer,
+   * which is how "same device re-login" is told apart from "signed in elsewhere"
+   * when a session is superseded. Not a credential, not a secret; it only
+   * labels a modal.
+   */
+  readonly deviceId: string;
+};
+
+/**
+ * The one active session a user is allowed. Written in KV under
+ * `user-active-session:<userId>` on every sign-in; read on the resolve path to
+ * decide whether the session presenting itself is still the current one. A
+ * session whose id no longer matches the pointer has been superseded.
+ */
+export type ActiveSessionPointer = {
+  /** The session id the pointer currently names — the one that still works. */
+  readonly sessionId: string;
+  /** The device that minted it, for telling a same-device re-login apart. */
+  readonly deviceId: string;
+  /** Epoch seconds the pointer was written. */
+  readonly at: number;
 };
 
 /**

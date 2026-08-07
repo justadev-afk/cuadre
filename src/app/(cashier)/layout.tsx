@@ -21,9 +21,11 @@ import { container, currentSession } from '../_lib/current-session.ts';
 import { shellModel } from '../_lib/shell-nav.ts';
 
 export default async function CashierLayout({ children }: { children: ReactNode }) {
-  const resolved = await currentSession();
-  if (resolved === null) redirect('/login');
+  const resolution = await currentSession();
+  if (resolution.kind === 'anonymous') redirect('/login');
+  if (resolution.kind === 'superseded') redirect('/session-ended');
 
+  const resolved = resolution.active;
   const { session } = resolved;
   if (!canReach(session.role, 'counter')) redirect('/');
 

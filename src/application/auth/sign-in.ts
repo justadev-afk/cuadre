@@ -12,7 +12,7 @@ import type { Clock } from '../../shared/clock.ts';
 import type { IdGen } from '../../shared/id.ts';
 import { logger } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
-import type { Role, SessionRecord } from '../session.ts';
+import type { ActiveSessionPointer, Role, SessionRecord } from '../session.ts';
 import { normaliseEmail } from './email.ts';
 
 /**
@@ -63,6 +63,17 @@ export type LastLoginWriter = {
   touchLastLogin(id: string, at: number): Promise<void>;
 };
 
+/**
+ * The per-user "one active session" pointer. Sign-in writes it so a later
+ * request on a different device can discover its own session was superseded.
+ * It is a write here and a read on the resolve path; the two never race for the
+ * same key beyond last-writer-wins, which is exactly the semantics we want —
+ * the last device to sign in is the one that keeps the session.
+ */
+export type ActiveSessionWriter = {
+  setActive(userId: string, pointer: ActiveSessionPointer): Promise<void>;
+};
+
 /** Only the status matters here. Whether the company exists is a data question. */
 export type CompanyStatusReader = {
   findById(id: string): Promise<{ readonly status: string } | null>;
@@ -94,6 +105,7 @@ export type PasswordSignInDeps = {
   } & LastLoginWriter;
   readonly companies: CompanyStatusReader;
   readonly sessions: SessionWriter;
+  readonly activeSessions: ActiveSessionWriter;
   readonly limiter: LoginRateLimiter;
   readonly passwords: PasswordVerifier;
   readonly clock: Clock;
@@ -105,6 +117,12 @@ export type PasswordSignInInput = {
   readonly password: string;
   /** `hashIp()` output. The use case never sees an address. */
   readonly ipHash: string;
+  /**
+   * The persistent browser id, off a hidden form field. Empty is tolerated (a
+   * form submitted before the mount effect wrote it) — supersession still fires
+   * in the safe direction; only the same-device labelling degrades.
+   */
+  readonly deviceId: string;
 };
 
 // ── the limits ─────────────────────────────────────────────────────────────
@@ -193,7 +211,7 @@ export async function signInWithPassword(
   // sharing that address a fresh window for free.
   await deps.limiter.reset(LOGIN_BY_EMAIL_SCOPE, email, LOGIN_BY_EMAIL);
 
-  return ok(await openSession(deps, user, expectedRole, input.ipHash));
+  return ok(await openSession(deps, user, expectedRole, input.ipHash, input.deviceId));
 }
 
 /**
@@ -227,12 +245,14 @@ export async function openSession(
   deps: {
     readonly sessions: SessionWriter;
     readonly users: LastLoginWriter;
+    readonly activeSessions: ActiveSessionWriter;
     readonly clock: Clock;
     readonly ids: IdGen;
   },
   user: AuthenticatingUser,
   role: Role,
   ipHash: string,
+  deviceId: string,
 ): Promise<SignedIn> {
   const now = deps.clock.nowSeconds();
   const sessionId = deps.ids.token();
@@ -250,10 +270,16 @@ export async function openSession(
     // would greet them with the prompt they just answered.
     shiftAckAt: now,
     ipHash,
+    deviceId,
   };
 
   await deps.sessions.put(sessionId, session);
   await deps.users.touchLastLogin(user.id, now);
+
+  // This becomes the user's one active session. Any session they had open on
+  // another device is now superseded — not deleted here, but no longer named
+  // by the pointer, so the resolve path stops honouring it and can say why.
+  await deps.activeSessions.setActive(user.id, { sessionId, deviceId, at: now });
 
   // The session id is a live credential and never reaches a log line.
   logger.info('signed_in', { userId: user.id, role, companyId: user.companyId });

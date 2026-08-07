@@ -7,8 +7,8 @@
  */
 
 import { useActionState } from 'react';
-
 import { FormNote } from '../../_components/form-note.tsx';
+import { DeviceIdField } from '../../_lib/device-id-field.tsx';
 import { NO_SIGN_IN_ERROR } from '../../_lib/sign-in-state.ts';
 import { signInAdminAction } from './actions.ts';
 
@@ -17,6 +17,7 @@ export function AdminLoginForm() {
 
   return (
     <form action={action}>
+      <DeviceIdField />
       <div className="auth-fields">
         <div className="field">
           <label htmlFor="admin-email">Correo corporativo</label>

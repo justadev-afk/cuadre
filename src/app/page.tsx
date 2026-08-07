@@ -10,6 +10,7 @@ import { landingFor } from './_lib/landing.ts';
  * one place, is what keeps it out of the edge middleware.
  */
 export default async function Home() {
-  const resolved = await currentSession();
-  redirect(resolved === null ? '/login' : landingFor(resolved.session.role));
+  const resolution = await currentSession();
+  if (resolution.kind === 'superseded') redirect('/session-ended');
+  redirect(resolution.kind === 'active' ? landingFor(resolution.active.session.role) : '/login');
 }

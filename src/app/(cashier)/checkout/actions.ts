@@ -8,10 +8,11 @@ import { container, currentSession } from '../../_lib/current-session.ts';
 import type { ChargeInput, ChargeOutcome } from './charge-types.ts';
 
 export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
-  const resolved = await currentSession();
-  if (resolved === null) redirect('/login');
+  const resolution = await currentSession();
+  if (resolution.kind === 'anonymous') redirect('/login');
+  if (resolution.kind === 'superseded') redirect('/session-ended');
 
-  const { session } = resolved;
+  const { session } = resolution.active;
   // The counter is shared: a cashier works it, and so can a company owner. Both
   // reach the till, so both may charge — the guard is the same `counter` area.
   if (!canReach(session.role, 'counter') || session.companyId === null) redirect('/');
@@ -19,7 +20,7 @@ export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
   const outcome = await container().validations.validatePayment({
     companyId: session.companyId,
     cashierId: session.userId,
-    sessionId: resolved.sessionId,
+    sessionId: resolution.active.sessionId,
     reference: input.reference,
     payerPhone: input.payerPhone,
     sourceBankId: input.sourceBankId,

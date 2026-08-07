@@ -28,6 +28,7 @@ const SESSION: StoredSession = {
   createdAt: NOW - 3600,
   shiftAckAt: NOW - 3600,
   ipHash: 'b1946ac92492d2347c6235b4d2611184',
+  deviceId: 'device-web',
 };
 
 async function setUp(overrides: Partial<FakeResetRow> = {}) {

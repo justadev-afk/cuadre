@@ -5,6 +5,7 @@ import { fakeIdGen } from '../../shared/id.ts';
 import {
   ADMIN_USER,
   COMPANY_USER,
+  makeFakeActiveSessions,
   makeFakeCompanies,
   makeFakeLimiter,
   makeFakePasswords,
@@ -16,11 +17,13 @@ import { makeSignInAdmin, type SignInAdminDeps } from './sign-in-admin.ts';
 
 const NOW = 1_770_000_000;
 const IP_HASH = 'b1946ac92492d2347c6235b4d2611184';
+const DEVICE_ID = 'device-admin';
 
 function setUp() {
   const users = makeFakeUsers([ADMIN_USER, COMPANY_USER]);
   const companies = makeFakeCompanies({ 'la-espiga': 'active' });
   const sessions = makeFakeSessions();
+  const activeSessions = makeFakeActiveSessions();
   const limiter = makeFakeLimiter();
   const passwords = makeFakePasswords();
 
@@ -28,13 +31,14 @@ function setUp() {
     users: users.users,
     companies: companies.companies,
     sessions: sessions.sessions,
+    activeSessions: activeSessions.activeSessions,
     limiter: limiter.limiter,
     passwords: passwords.passwords,
     clock: fixedClock(NOW),
     ids: fakeIdGen({ tokens: ['sess-admin'] }),
   };
 
-  return { deps, users, companies, sessions, limiter, passwords };
+  return { deps, users, companies, sessions, activeSessions, limiter, passwords };
 }
 
 describe('the platform door', () => {
@@ -45,11 +49,29 @@ describe('the platform door', () => {
       email: 'julio@cuadre.ve',
       password: 'platform pass',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result.ok && result.value.session.role).toBe('admin');
     expect(result.ok && result.value.session.companyId).toBeNull();
     expect(sessions.records.get('sess-admin')?.userId).toBe('user-admin');
+  });
+
+  it('makes this the admin one active session', async () => {
+    const { deps, activeSessions } = setUp();
+
+    await makeSignInAdmin(deps)({
+      email: 'julio@cuadre.ve',
+      password: 'platform pass',
+      ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
+    });
+
+    expect(activeSessions.pointers.get('user-admin')).toEqual({
+      sessionId: 'sess-admin',
+      deviceId: DEVICE_ID,
+      at: NOW,
+    });
   });
 
   it('reads no company for an admin, because an admin has none', async () => {
@@ -59,6 +81,7 @@ describe('the platform door', () => {
       email: 'julio@cuadre.ve',
       password: 'platform pass',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(companies.lookups).toEqual([]);
@@ -71,6 +94,7 @@ describe('the platform door', () => {
       email: 'ana@laespiga.com',
       password: 'correct horse',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'invalid_credentials' });
@@ -84,6 +108,7 @@ describe('the platform door', () => {
       email: 'nobody@cuadre.ve',
       password: 'platform pass',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     // The two doors have to be indistinguishable to anything that is not an
@@ -100,6 +125,7 @@ describe('the platform door', () => {
       email: 'julio@cuadre.ve',
       password: 'platform pass',
       ipHash: IP_HASH,
+      deviceId: DEVICE_ID,
     });
 
     expect(result).toEqual({ ok: false, error: 'account_disabled' });

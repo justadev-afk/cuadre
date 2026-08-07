@@ -13,7 +13,7 @@
  */
 import { env } from 'cloudflare:workers';
 import { cookies } from 'next/headers';
-import type { ResolvedSession } from '../../application/auth/resolve-session.ts';
+import type { SessionResolution } from '../../application/auth/resolve-session.ts';
 import { SESSION_COOKIE } from '../../application/session.ts';
 import type { Container } from '../../container.ts';
 import { buildContainer } from '../../container.ts';
@@ -25,14 +25,15 @@ export function container(): Container {
 }
 
 /**
- * The signed-in session, or null. Resolving renews the sliding TTL on the KV
- * record — reading *is* the keep-alive, which is why there is no separate
+ * How this request resolves: `active` with the session, `superseded` (the user
+ * signed in elsewhere), or `anonymous`. Resolving renews the sliding TTL on the
+ * KV record — reading *is* the keep-alive, which is why there is no separate
  * heartbeat and why the session never expires under an active till.
  */
-export async function currentSession(): Promise<ResolvedSession | null> {
+export async function currentSession(): Promise<SessionResolution> {
   const store = await cookies();
   const sessionId = store.get(SESSION_COOKIE.name)?.value;
-  if (!sessionId) return null;
+  if (!sessionId) return { kind: 'anonymous' };
 
   return container().auth.resolveSession({ sessionId });
 }

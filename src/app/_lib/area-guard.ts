@@ -36,6 +36,13 @@ const LOGIN_PATH: Record<Area, string> = {
   counter: '/login',
 };
 
+/**
+ * Where a superseded cookie goes to be signed out — the same route for every
+ * area, because it clears the cookie and re-resolves rather than trusting the
+ * caller's area. It forwards to the login screen that renders the modal.
+ */
+const SESSION_ENDED_PATH = '/session-ended';
+
 /** One resolve per request, however many layouts and pages ask for it. */
 export const sessionOnce = cache(currentSession);
 
@@ -46,12 +53,17 @@ export const sessionOnce = cache(currentSession);
  * simply live elsewhere.
  */
 export async function requireArea(area: Area): Promise<ResolvedSession> {
-  const resolved = await sessionOnce();
-  if (resolved === null) redirect(LOGIN_PATH[area]);
-  if (!canReach(resolved.session.role, area)) {
-    redirect(AREA_HOME[homeAreaFor(resolved.session.role)]);
+  const resolution = await sessionOnce();
+  if (resolution.kind === 'anonymous') redirect(LOGIN_PATH[area]);
+  // A superseded cookie is not signed out inline: `/session-ended` clears it and
+  // sends them to the login screen with the "signed in elsewhere" explanation.
+  if (resolution.kind === 'superseded') redirect(SESSION_ENDED_PATH);
+
+  const { active } = resolution;
+  if (!canReach(active.session.role, area)) {
+    redirect(AREA_HOME[homeAreaFor(active.session.role)]);
   }
-  return resolved;
+  return active;
 }
 
 /**

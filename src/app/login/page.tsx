@@ -18,17 +18,24 @@ import { currentSession } from '../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../_lib/inputs.ts';
 import { landingFor } from '../_lib/landing.ts';
 import { LoginForm, type LoginNotice } from './login-form.tsx';
+import { SessionEndedModal } from './session-ended-modal.tsx';
 
 export const metadata = { title: 'Entrar · Cuadre' };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
-  const resolved = await currentSession();
-  if (resolved !== null) redirect(landingFor(resolved.session.role));
+  const resolution = await currentSession();
+  if (resolution.kind === 'superseded') redirect('/session-ended');
+  if (resolution.kind === 'active') redirect(landingFor(resolution.active.session.role));
+
+  // `/session-ended` cleared the cookie before forwarding here, so by now this
+  // resolves anonymous and the middleware lets the page render.
+  const endedElsewhere = queryValue(params, 'ended') === 'other-device';
 
   return (
     <AuthSplit>
       <LoginForm next={queryValue(params, 'next')} notice={noticeFor(params)} />
+      {endedElsewhere && <SessionEndedModal />}
     </AuthSplit>
   );
 }

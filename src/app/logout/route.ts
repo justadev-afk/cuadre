@@ -13,11 +13,12 @@ import { expiredSessionCookie } from '../../application/session.ts';
 import { container, currentSession } from '../_lib/current-session.ts';
 
 export async function POST(request: Request): Promise<Response> {
-  const resolved = await currentSession();
-  if (resolved !== null) {
+  const resolution = await currentSession();
+  if (resolution.kind === 'active') {
     // Best-effort: even if the KV delete fails, the cleared cookie below signs
-    // the browser out, and the session's own TTL reaps the record.
-    await container().auth.signOut({ sessionId: resolved.sessionId });
+    // the browser out, and the session's own TTL reaps the record. A superseded
+    // cookie owns no live record to delete — clearing the cookie is enough.
+    await container().auth.signOut({ sessionId: resolution.active.sessionId });
   }
 
   return new Response(null, {

@@ -4,7 +4,7 @@ import { SHIFT_CONFIRMATION_SECONDS } from '../../domain/shift.ts';
 import { fixedClock } from '../../shared/clock.ts';
 import type { StoredSession } from '../session.ts';
 import { makeAcknowledgeShift } from './acknowledge-shift.ts';
-import { makeFakeSessions } from './auth.fake.ts';
+import { makeFakeActiveSessions, makeFakeSessions } from './auth.fake.ts';
 import { makeResolveSession } from './resolve-session.ts';
 
 const SIGNED_IN_AT = 1_770_000_000;
@@ -20,6 +20,7 @@ const STORED: StoredSession = {
   createdAt: SIGNED_IN_AT,
   shiftAckAt: SIGNED_IN_AT,
   ipHash: 'b1946ac92492d2347c6235b4d2611184',
+  deviceId: 'device-till',
 };
 
 describe('acknowledgeShift', () => {
@@ -43,17 +44,24 @@ describe('acknowledgeShift', () => {
       clock: fixedClock(FOUR_HOURS_LATER),
     })({ sessionId: 'sess-1' });
 
+    // No pointer is seeded, so resolution fails open to 'active' — exactly the
+    // path that carries `needsShiftConfirmation`.
+    const activeSessions = makeFakeActiveSessions();
     const justInside = makeResolveSession({
       sessions: sessions.sessions,
+      activeSessions: activeSessions.activeSessions,
       clock: fixedClock(FOUR_HOURS_LATER + SHIFT_CONFIRMATION_SECONDS - 1),
     });
     const justOutside = makeResolveSession({
       sessions: sessions.sessions,
+      activeSessions: activeSessions.activeSessions,
       clock: fixedClock(FOUR_HOURS_LATER + SHIFT_CONFIRMATION_SECONDS),
     });
 
-    expect((await justInside({ sessionId: 'sess-1' }))?.needsShiftConfirmation).toBe(false);
-    expect((await justOutside({ sessionId: 'sess-1' }))?.needsShiftConfirmation).toBe(true);
+    const inside = await justInside({ sessionId: 'sess-1' });
+    const outside = await justOutside({ sessionId: 'sess-1' });
+    expect(inside.kind === 'active' && inside.active.needsShiftConfirmation).toBe(false);
+    expect(outside.kind === 'active' && outside.active.needsShiftConfirmation).toBe(true);
   });
 
   it('leaves everything else about the session alone', async () => {
