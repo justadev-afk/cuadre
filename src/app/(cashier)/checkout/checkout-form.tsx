@@ -112,8 +112,9 @@ const MARK_OK =
   'grid size-[52px] shrink-0 place-items-center rounded-full border border-primary bg-primary/[0.14] text-2xl text-primary';
 const MARK_QUIET =
   'grid size-[52px] shrink-0 place-items-center rounded-full border border-[var(--color-neutral-500)] bg-foreground/[0.07] text-2xl text-[var(--color-neutral-300)]';
+// Label pinned top-left (default text-align), the number centred under it.
 const STAT_CARD =
-  'flex min-h-[76px] flex-col items-center justify-center gap-0.5 rounded-md bg-card px-2.5 py-3.5 text-center shadow-[var(--shadow-sm)]';
+  'flex min-h-[76px] flex-col justify-center gap-0.5 rounded-md bg-card px-2.5 py-3.5 shadow-[var(--shadow-sm)]';
 // The inset-fade hairline under a "mi turno" row — the table's row rule, on a button.
 const RECENT_ROW =
   'flex w-full cursor-pointer items-center gap-2.5 -mx-1.5 rounded-sm px-1.5 py-[9px] text-left transition-colors hover:bg-foreground/[0.06] bg-[linear-gradient(to_right,transparent,color-mix(in_srgb,var(--color-text)_8%,transparent)_20px,color-mix(in_srgb,var(--color-text)_8%,transparent)_calc(100%-20px),transparent)] bg-[length:100%_1px] bg-bottom bg-no-repeat';
@@ -308,13 +309,7 @@ export function CheckoutForm({
   );
 
   return (
-    <ContentLayout
-      title="Validar pago móvil"
-      subtitle="Pide al cliente la referencia completa y su teléfono."
-      aside={aside}
-      asideTitle="Mi turno"
-      fill={express}
-    >
+    <ContentLayout title="Validar pago móvil" aside={aside} asideTitle="Mi turno" fill={express}>
       <form
         className={cn(BOX_LG, express && 'h-full')}
         onSubmit={(event) => {
@@ -491,11 +486,11 @@ function MiTurno({
       <div className="grid grid-cols-[0.7fr_1.3fr] gap-2.5">
         <div className={STAT_CARD}>
           <span className={KICKER}>Validados</span>
-          <span className="font-heading text-[22px]">{turnoCount}</span>
+          <span className="text-center font-heading text-[22px]">{turnoCount}</span>
         </div>
         <div className={STAT_CARD}>
           <span className={KICKER}>Cobrado</span>
-          <span className="font-heading text-[19px] whitespace-nowrap tabular-nums">
+          <span className="whitespace-nowrap text-center font-heading text-[19px] tabular-nums">
             {formatBolivares(turnoCents)}
           </span>
         </div>
