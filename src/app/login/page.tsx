@@ -14,6 +14,7 @@
 import { redirect } from 'next/navigation';
 
 import { AuthSplit } from '../_components/auth-shell.tsx';
+import { PWA_SIZE, PwaResizer } from '../_components/pwa-resizer.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../_lib/inputs.ts';
 import { landingFor } from '../_lib/landing.ts';
@@ -46,6 +47,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   return (
     <AuthSplit>
+      <PwaResizer width={PWA_SIZE.login.width} height={PWA_SIZE.login.height} />
       <LoginForm next={queryValue(params, 'next')} notice={noticeFor(params)} stats={statsView} />
       {endedElsewhere && <SessionEndedModal />}
     </AuthSplit>

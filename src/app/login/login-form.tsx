@@ -35,6 +35,14 @@ import { signInCashierAction, signInCompanyAction } from './actions.ts';
  */
 const REMEMBERED_SLUG_KEY = 'cuadre.company-slug';
 
+/**
+ * Which door was last used, remembered per device. A shop's staff open the same
+ * one every day — a cashier is always the cashier — so restoring it saves the
+ * first tap and lands the cursor in the right field. It is a preference, not a
+ * credential.
+ */
+const REMEMBERED_DOOR_KEY = 'cuadre.login-door';
+
 type Door = 'company' | 'cashier';
 
 export type LoginNotice = { readonly tone: 'error' | 'success'; readonly text: string };
@@ -61,6 +69,18 @@ const asideBackground: CSSProperties = {
 export function LoginForm({ next, notice, stats }: LoginFormProps) {
   const [door, setDoor] = useState<Door>('company');
 
+  // Restore the last-used door after mount (never during render: the server has
+  // no localStorage, and a differing first render is a hydration mismatch).
+  useEffect(() => {
+    const stored = window.localStorage.getItem(REMEMBERED_DOOR_KEY);
+    if (stored === 'company' || stored === 'cashier') setDoor(stored);
+  }, []);
+
+  const changeDoor = (value: Door) => {
+    setDoor(value);
+    window.localStorage.setItem(REMEMBERED_DOOR_KEY, value);
+  };
+
   return (
     <>
       <div className={authPanel}>
@@ -78,7 +98,7 @@ export function LoginForm({ next, notice, stats }: LoginFormProps) {
             </p>
           </div>
 
-          <Tabs value={door} onValueChange={(value) => setDoor(value as Door)}>
+          <Tabs value={door} onValueChange={(value) => changeDoor(value as Door)}>
             <TabsList>
               <TabsTrigger value="company">
                 <Icon name="storefront" />
@@ -186,6 +206,11 @@ function CompanyForm({ next }: { next: string | null }) {
   const [remember, setRemember] = useState(true);
   const emailRef = useRef<HTMLInputElement>(null);
 
+  // Land the cursor on the first field the moment this door opens.
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
+
   // On a refusal, clear only the password and put the cursor back on the email:
   // the email is usually right and the password is what gets re-typed, so this
   // saves re-selecting the field. Fires once per refused submission.
@@ -277,11 +302,14 @@ function CompanyForm({ next }: { next: string | null }) {
 function CashierForm({ next }: { next: string | null }) {
   const [state, action, pending] = useActionState(signInCashierAction, NO_SIGN_IN_ERROR);
   const [slug, setSlug] = useState('');
-  const [remember, setRemember] = useState(false);
+  // On by default: a till belongs to one shop, so remembering the código is the
+  // helpful default — the cashier just types their usuario and PIN each shift.
+  const [remember, setRemember] = useState(true);
   // Controlled, so a refused sign-in keeps the code, the username and the PIN
   // rather than clearing them under the error. The PIN never leaves client state.
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
+  const slugRef = useRef<HTMLInputElement>(null);
   const usernameRef = useRef<HTMLInputElement>(null);
 
   // A refused sign-in clears only the PIN and returns the cursor to the usuario,
@@ -300,6 +328,10 @@ function CashierForm({ next }: { next: string | null }) {
     if (stored !== null && stored !== '') {
       setSlug(stored);
       setRemember(true);
+      // The code is known, so the first empty field is the usuario.
+      usernameRef.current?.focus();
+    } else {
+      slugRef.current?.focus();
     }
   }, []);
 
@@ -322,6 +354,7 @@ function CashierForm({ next }: { next: string | null }) {
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="cashier-slug">Código de empresa</Label>
           <Input
+            ref={slugRef}
             id="cashier-slug"
             name="companySlug"
             className="h-10 tracking-[0.06em]"
