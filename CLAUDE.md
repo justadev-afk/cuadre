@@ -258,6 +258,15 @@ gateway at call time.
   or *Cerrar sesión*. Nothing logs out automatically if nobody answers.
 - **The counter lives in the session record** (`shiftAckAt`), not the client.
   Reloading the page or opening a second tab does not dodge it.
+- **Opening the app is presence: a cold start restarts the four hours.** The
+  session records `lastSeenAt`, and the resolve path (`KvSessionStore.touch` →
+  the pure `shiftAckOnResume`) restarts the clock when a session is seen again
+  after a real gap — the app was closed, or a phone pocketed and taken back out.
+  Greeting someone with *¿sigues en caja?* the instant they launch the till is a
+  prompt they answer by launching it. A quick reload is too small a gap to
+  reset, so F5 still cannot dodge a prompt that is genuinely due — the two are
+  told apart by `SHIFT_RESUME_GAP_SECONDS` (15 min), and `lastSeenAt` is written
+  on a slower cadence that stays comfortably under it.
 - **No query without `company_id` in the `WHERE`.** That is the boundary
   between merchants, and it is not negotiable in a review.
 
