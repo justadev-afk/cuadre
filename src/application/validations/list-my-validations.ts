@@ -54,7 +54,8 @@ export type MyValidationList = {
 
 export type ListMyValidations = (input: ListMyValidationsInput) => Promise<MyValidationList>;
 
-const PAGE_SIZE = 20;
+/** Ten to a page — the cashier's list pages in the UI, ten at a time. */
+const PAGE_SIZE = 10;
 
 /** The reader's own ceiling: one round trip per hundred rows scanned. */
 const SCAN_BATCH = 100;

@@ -70,14 +70,14 @@ describe('list my validations', () => {
     expect(page.from).toBe(queries[0]?.from);
   });
 
-  it('asks for twenty and shows sandbox rows alongside the rest', async () => {
+  it('asks for ten and shows sandbox rows alongside the rest', async () => {
     const rows = [validation(), validation({ id: 'validation-2', isSandbox: true })];
     const { validations, queries } = fakeValidations(rows);
     const listMyValidations = makeListMyValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listMyValidations(INPUT);
 
-    expect(queries[0]?.limit).toBe(20);
+    expect(queries[0]?.limit).toBe(10);
     // A cashier testing against the sandbox has to see what they just did; the
     // badge on the row is what tells them apart, not their absence.
     expect(page.items.map((item) => item.isSandbox)).toEqual([false, true]);

@@ -161,16 +161,23 @@ export function ValidationList({
 }
 
 /** The empty state — screen 27. */
-export function NoValidations({ cta }: { cta?: { href: string; label: string } }) {
+export function NoValidations({
+  cta,
+  title = 'Todavía no validas nada hoy',
+  hint = 'El primer cobro del día aparecerá aquí.',
+}: {
+  cta?: { href: string; label: string };
+  /** Range-aware copy — "hoy" is only right on today's list. */
+  title?: string;
+  hint?: string;
+}) {
   return (
     <div className="flex flex-col items-center gap-2 py-[34px] text-center">
       <span className="grid size-11 place-items-center rounded-full bg-sidebar text-[22px] text-muted-foreground">
         <Icon name="receipt" />
       </span>
-      <div className="font-heading text-base">Todavía no validas nada hoy</div>
-      <span className="max-w-[28ch] text-xs text-muted-foreground">
-        El primer cobro del día aparecerá aquí.
-      </span>
+      <div className="font-heading text-base">{title}</div>
+      <span className="max-w-[28ch] text-xs text-muted-foreground">{hint}</span>
       {cta && (
         <Button asChild className="mt-2">
           <a href={cta.href}>{cta.label}</a>
