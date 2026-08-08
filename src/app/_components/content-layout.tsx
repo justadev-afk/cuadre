@@ -58,7 +58,7 @@ export function ContentLayout({
         fill
           ? 'min-h-full grid-rows-[auto_minmax(0,1fr)] pb-7 max-[899px]:pb-4'
           : 'content-start pb-11 max-[899px]:pb-7',
-        aside && 'min-[900px]:grid-cols-[minmax(0,1fr)_360px]',
+        aside && 'min-[900px]:grid-cols-[minmax(0,1fr)_324px]',
         aside && (fill ? 'items-stretch' : 'items-start'),
       )}
     >

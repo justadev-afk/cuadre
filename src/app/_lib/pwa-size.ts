@@ -8,8 +8,9 @@
  * One layout owns each size, so the window changes only when the screen does.
  */
 export const PWA_SIZE = {
-  /** The cashier's till — small, focused, still wide enough for the two panes. */
-  express: { width: 920, height: 760 },
+  /** The cashier's till — focused, but wide enough that the form leads and
+   *  "mi turno" reads as the secondary pane. */
+  express: { width: 1012, height: 760 },
   /** The full app (admin / company) — room for the sidebar and a table. */
   panel: { width: 1280, height: 900 },
   /** A single centred card. */
