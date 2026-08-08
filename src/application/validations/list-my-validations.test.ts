@@ -112,4 +112,71 @@ describe('list my validations', () => {
 
     expect(page.items.map((item) => item.id)).toEqual(['validation-1']);
   });
+
+  describe('search', () => {
+    const rows = [
+      validation({
+        id: 'a',
+        reference: '000123456789',
+        controlCode: '654321',
+        amountCents: 124_000,
+      }),
+      validation({
+        id: 'b',
+        reference: '000999888777',
+        controlCode: '111222',
+        amountCents: 63_000,
+      }),
+    ];
+
+    it('narrows to the row whose reference carries the digits', async () => {
+      const { validations } = fakeValidations(rows);
+      const listMyValidations = makeListMyValidations({ validations, clock: fixedClock(NOW) });
+
+      const page = await listMyValidations({ ...INPUT, search: '999888' });
+
+      expect(page.items.map((item) => item.id)).toEqual(['b']);
+    });
+
+    it('finds a charge by its control code', async () => {
+      const { validations } = fakeValidations(rows);
+      const listMyValidations = makeListMyValidations({ validations, clock: fixedClock(NOW) });
+
+      const page = await listMyValidations({ ...INPUT, search: '654321' });
+
+      expect(page.items.map((item) => item.id)).toEqual(['a']);
+    });
+
+    it('finds a charge by its whole-bolívar amount', async () => {
+      const { validations } = fakeValidations(rows);
+      const listMyValidations = makeListMyValidations({ validations, clock: fixedClock(NOW) });
+
+      // 63 000 cents is Bs 630 — "630" finds it and not the Bs 1 240 row.
+      const page = await listMyValidations({ ...INPUT, search: '630' });
+
+      expect(page.items.map((item) => item.id)).toEqual(['b']);
+    });
+
+    it('returns nothing when the term matches no field', async () => {
+      const { validations } = fakeValidations(rows);
+      const listMyValidations = makeListMyValidations({ validations, clock: fixedClock(NOW) });
+
+      const page = await listMyValidations({ ...INPUT, search: '000000' });
+
+      expect(page.items).toHaveLength(0);
+    });
+
+    it('never returns another company row, even when the term matches it', async () => {
+      const shared = [
+        validation({ id: 'mine', reference: '000123456789' }),
+        validation({ id: 'theirs', reference: '000123456789', companyId: 'otra-empresa' }),
+      ];
+      const { validations } = fakeValidations(shared);
+      const listMyValidations = makeListMyValidations({ validations, clock: fixedClock(NOW) });
+
+      const page = await listMyValidations({ ...INPUT, search: '123456' });
+
+      expect(page.items.map((item) => item.id)).toEqual(['mine']);
+    });
+  });
 });

@@ -92,6 +92,13 @@ type CheckoutFormProps = {
   cashierName?: string;
   /** The sidebar-less express till: fill the height and drop the "ver todas" exit. */
   express?: boolean;
+  /**
+   * The four-hour shift prompt is up (a blocking, full-screen gate rendered by
+   * the layout). While it is, the till must not also raise its own modal — the
+   * shift dialog is the single overlay on screen. The in-flight `busy`/`outcome`
+   * state is kept, so acknowledging the prompt reveals the same result again.
+   */
+  shiftDue?: boolean;
 };
 
 /** The Venezuelan banks, shaped once for the searchable dropdown. */
@@ -163,6 +170,7 @@ export function CheckoutForm({
   merchantName,
   cashierName,
   express = false,
+  shiftDue = false,
 }: CheckoutFormProps) {
   const referenceId = useId();
   const phoneId = useId();
@@ -304,7 +312,7 @@ export function CheckoutForm({
       turnoCount={turnoCount}
       turnoCents={turnoCents}
       onOpen={(charge) => setViewing(charge)}
-      showAll={!express}
+      express={express}
     />
   );
 
@@ -428,7 +436,7 @@ export function CheckoutForm({
         </p>
       </form>
 
-      {(busy || outcome !== null) && (
+      {!shiftDue && (busy || outcome !== null) && (
         <ChargeModal
           busy={busy}
           outcome={outcome}
@@ -449,7 +457,7 @@ export function CheckoutForm({
         />
       )}
 
-      {viewing !== null && (
+      {!shiftDue && viewing !== null && (
         <ValidatedModal
           charge={viewing}
           bankName={bankName}
@@ -469,15 +477,19 @@ function MiTurno({
   turnoCount,
   turnoCents,
   onOpen,
-  showAll = true,
+  express = false,
 }: {
   recent: readonly RecentCharge[];
   turnoCount: number;
   turnoCents: number;
   onOpen: (charge: ConfirmedCharge) => void;
-  /** The link out to /my-validations — hidden on the express till, which is a
-   *  one-way door: the cashier's only exit is logout. */
-  showAll?: boolean;
+  /**
+   * The express till is a one-way door — the cashier's only *exit* is logout —
+   * so its link to `/my-validations` opens a new tab (the full, searchable list
+   * in a browser tab) rather than navigating the till away. The shell till
+   * links in place, since it can come back.
+   */
+  express?: boolean;
 }) {
   return (
     <section className={cn(BOX_QUIET, 'h-full')}>
@@ -530,7 +542,17 @@ function MiTurno({
         </div>
       )}
 
-      {showAll && (
+      {express ? (
+        <a
+          href="/my-validations"
+          target="_blank"
+          rel="noopener"
+          className="mt-auto inline-flex items-center gap-1.5 text-xs"
+        >
+          Mis validaciones
+          <Icon name="arrow-square-out" />
+        </a>
+      ) : (
         <a href="/my-validations" className="mt-auto text-xs">
           Ver todas mis validaciones
         </a>

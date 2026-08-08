@@ -26,9 +26,12 @@ import { currentSession } from './current-session.ts';
 export const AREA_HOME: Record<Area, string> = {
   admin: '/admin/companies',
   company: '/validations',
-  // A cashier lands on the sidebar-less express till; a company owner homes to
-  // their own panel and reaches `/checkout` from its nav, so this only ever
-  // sends cashiers here.
+  // The counter's home is the sidebar-less express till — the installed PWA's
+  // whole surface, so a cashier lands there without ever passing through the
+  // shell (no double window-resize). A *browser* tab that lands here is sent on
+  // to `/checkout` by `ExpressBrowserGate`, so a cashier signing in on a desktop
+  // still gets the nav. A company owner homes to their own panel and reaches
+  // `/checkout` from its nav — this only ever sends cashiers here.
   counter: '/checkout-express',
 };
 

@@ -14,8 +14,14 @@ import { CheckoutForm } from './checkout-form.tsx';
 import { NoBankAccount } from './no-bank-account.tsx';
 
 export async function CheckoutContent({ express = false }: { express?: boolean } = {}) {
-  const { session } = await requireArea('counter');
+  const { session, needsShiftConfirmation } = await requireArea('counter');
   const companyId = session.companyId;
+  // While the shift prompt blocks the till, the checkout must not also raise a
+  // modal — the shift dialog is the single gate on screen. Same condition the
+  // layout renders the dialog under, so the two never disagree about which one
+  // shows. A company owner working the till never sees the shift prompt, so
+  // their result modal is never suppressed.
+  const shiftDue = needsShiftConfirmation && session.role === 'cashier';
 
   // A cashier always has a company; the type carries null only for a platform
   // admin, whom `requireArea('counter')` already turned away.
@@ -73,6 +79,7 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
       merchantName={merchantName}
       cashierName={session.name}
       express={express}
+      shiftDue={shiftDue}
     />
   );
 }
