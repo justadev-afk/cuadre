@@ -6,9 +6,10 @@
  * spend it. The page only carries it into the form.
  */
 import { AuthShell } from '../../_components/auth-shell.tsx';
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { ResetForm } from './reset-form.tsx';
 
-export const metadata = { title: 'Nueva contraseña · Cuadre' };
+export const metadata = pageMeta('Nueva contraseña');
 
 export default async function ResetPasswordPage({
   params,

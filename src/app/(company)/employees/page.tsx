@@ -8,9 +8,10 @@
  */
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { EmployeesView } from './employees-view.tsx';
 
-export const metadata = { title: 'Empleados · Cuadre' };
+export const metadata = pageMeta('Empleados');
 
 export default async function EmployeesPage() {
   const { companyId } = await requireCompany();

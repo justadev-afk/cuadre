@@ -11,12 +11,13 @@ import { BankAccountCard } from '../../_components/bank-account-card.tsx';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { changeCredentialsAction } from './actions.ts';
 import { BanksPanel } from './banks-panel.tsx';
 import { ChangeCredentialsButton } from './change-credentials-button.tsx';
 import { DeactivateBankButton } from './deactivate-bank-button.tsx';
 
-export const metadata = { title: 'Bancos · Cuadre' };
+export const metadata = pageMeta('Bancos');
 
 export default async function BanksPage() {
   const { companyId } = await requireCompany();

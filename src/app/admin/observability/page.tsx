@@ -13,8 +13,9 @@ import { AttemptInsightsPanel } from '../../_components/attempt-insights-panel.t
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 
-export const metadata = { title: 'Observabilidad · Cuadre' };
+export const metadata = pageMeta('Observabilidad');
 
 const WINDOW_DAYS = 30;
 

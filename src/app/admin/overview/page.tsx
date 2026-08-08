@@ -12,9 +12,10 @@ import { Card } from '@/components/ui/card.tsx';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { CompaniesTable } from '../companies/companies-table.tsx';
 
-export const metadata = { title: 'Resumen · Cuadre' };
+export const metadata = pageMeta('Resumen');
 
 export default async function AdminOverviewPage() {
   await requireArea('admin');

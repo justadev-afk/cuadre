@@ -21,8 +21,9 @@ import { ValidationList } from '../../_components/validation-list.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 
-export const metadata = { title: 'Validaciones · Cuadre' };
+export const metadata = pageMeta('Validaciones');
 
 type EnvFilter = 'all' | 'production' | 'sandbox';
 

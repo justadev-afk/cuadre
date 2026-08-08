@@ -7,9 +7,10 @@ import Link from 'next/link';
 
 import { AuthShell } from '../_components/auth-shell.tsx';
 import { Icon } from '../_components/icon.tsx';
+import { pageMeta } from '../_lib/page-meta.ts';
 import { ForgotForm } from './forgot-form.tsx';
 
-export const metadata = { title: 'Recuperar acceso · Cuadre' };
+export const metadata = pageMeta('Recuperar acceso');
 
 export default function ForgotPasswordPage() {
   return (

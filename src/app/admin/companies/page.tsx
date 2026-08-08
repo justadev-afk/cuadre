@@ -11,10 +11,11 @@ import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { CompaniesTable } from './companies-table.tsx';
 import { NewCompanyDialog } from './new-company-dialog.tsx';
 
-export const metadata = { title: 'Empresas · Cuadre' };
+export const metadata = pageMeta('Empresas');
 
 export default async function CompaniesPage({
   searchParams,

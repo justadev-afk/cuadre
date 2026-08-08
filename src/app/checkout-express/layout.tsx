@@ -21,8 +21,6 @@ import { ShiftDialog } from '../_components/shift-dialog.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
 
-export const metadata = { title: 'Caja · Cuadre' };
-
 export default async function CheckoutExpressLayout({ children }: { children: ReactNode }) {
   const resolution = await currentSession();
   if (resolution.kind === 'anonymous') redirect('/login');

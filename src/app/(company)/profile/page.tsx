@@ -9,10 +9,11 @@ import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { initialsOf } from '../../_lib/venezuela-format.ts';
 import { ChangePasswordForm } from './change-password-form.tsx';
 
-export const metadata = { title: 'Perfil · Cuadre' };
+export const metadata = pageMeta('Perfil');
 
 export default async function ProfilePage() {
   const { resolved } = await requireCompany();

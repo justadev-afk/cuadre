@@ -7,9 +7,10 @@
  * Production wins when a company holds both a production and a sandbox account;
  * the sandbox one only answers a till when it is the only one connected.
  */
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { CheckoutContent } from './checkout-content.tsx';
 
-export const metadata = { title: 'Cobrar · Cuadre' };
+export const metadata = pageMeta('Cobrar');
 
 export default function CheckoutPage() {
   return <CheckoutContent />;

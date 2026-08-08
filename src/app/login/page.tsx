@@ -19,11 +19,12 @@ import { container, currentSession } from '../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../_lib/inputs.ts';
 import { landingFor } from '../_lib/landing.ts';
 import { groupThousands } from '../_lib/masks.ts';
+import { pageMeta } from '../_lib/page-meta.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import { LoginForm, type LoginNotice, type LoginStatView } from './login-form.tsx';
 import { SessionEndedModal } from './session-ended-modal.tsx';
 
-export const metadata = { title: 'Entrar · Cuadre' };
+export const metadata = pageMeta('Entrar');
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

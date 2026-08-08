@@ -10,7 +10,7 @@ import type { MetadataRoute } from 'next';
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Cuadre — validación de pago móvil',
+    name: 'Cuadre',
     short_name: 'Cuadre',
     description: 'Confirma un pago móvil en el mostrador, con la respuesta del banco.',
     start_url: '/checkout',

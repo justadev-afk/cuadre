@@ -5,6 +5,11 @@ import { Toaster } from '../components/ui/sonner.tsx';
 import './globals.css';
 
 export const metadata: Metadata = {
+  // The brand lives here (and in the manifest), once. This is the fallback title
+  // for a route that sets none; a page contributes only its own subtitle through
+  // `pageMeta`, which overrides this outright. Deliberately a plain string, not a
+  // `{ template }` — nothing is ever appended, so "Cuadre" never doubles in a
+  // title bar. See `_lib/page-meta.ts`.
   title: 'Cuadre',
   description: 'Validación automática de pago móvil',
   applicationName: 'Cuadre',

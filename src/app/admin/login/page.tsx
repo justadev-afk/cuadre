@@ -14,9 +14,10 @@ import { Brand } from '../../_components/brand.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { currentSession } from '../../_lib/current-session.ts';
 import { landingFor } from '../../_lib/landing.ts';
+import { pageMeta } from '../../_lib/page-meta.ts';
 import { AdminLoginForm } from './admin-login-form.tsx';
 
-export const metadata = { title: 'Administración · Cuadre' };
+export const metadata = pageMeta('Administración');
 
 export default async function AdminLoginPage() {
   const resolution = await currentSession();
