@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { cn } from '@/lib/utils.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import type { ShellModel } from '../_lib/shell-nav.ts';
+import { Brand } from './brand.tsx';
 import { Icon } from './icon.tsx';
 import { PwaResizer } from './pwa-resizer.tsx';
 import { SessionHeartbeat } from './session-heartbeat.tsx';
@@ -29,15 +30,6 @@ import { SessionHeartbeat } from './session-heartbeat.tsx';
 /** A link is current when the path is it or sits below it. */
 function isCurrent(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-/** The accent-outlined brand square, at the two sizes the shell draws it. */
-function BrandMark() {
-  return (
-    <span className="grid size-6 place-items-center rounded-[7px] border border-primary text-sm text-primary">
-      <Icon name="check-square-offset" />
-    </span>
-  );
 }
 
 export function AppShell({ model, children }: { model: ShellModel; children: React.ReactNode }) {
@@ -51,7 +43,7 @@ export function AppShell({ model, children }: { model: ShellModel; children: Rea
       <SessionHeartbeat />
       <aside className="sticky top-0 hidden h-dvh flex-col gap-5 overflow-y-auto bg-sidebar px-3 py-4 shadow-[inset_-1px_0_0_var(--sidebar-border)] min-[900px]:flex">
         <Link href={home} className="flex items-center gap-2.5 px-1.5 text-inherit no-underline">
-          <BrandMark />
+          <Brand markOnly size={24} />
           <span className="font-heading text-base">Cuadre</span>
           {model.isAdmin && (
             <Badge variant="neutral" className="ml-auto text-[10px]">
@@ -119,7 +111,7 @@ export function AppShell({ model, children }: { model: ShellModel; children: Rea
         {/* Mobile top bar: the rail is a bottom tab bar below, so this only
             orients — brand, role. */}
         <div className="flex items-center gap-2.5 bg-sidebar px-4 py-[13px] shadow-[inset_0_-1px_0_var(--border)] min-[900px]:hidden">
-          <BrandMark />
+          <Brand markOnly size={24} />
           <span className="font-heading text-base">{model.switcher?.name ?? 'Cuadre'}</span>
           <Badge variant="accent" className="ml-auto text-[10px]">
             {model.roleLabel}
