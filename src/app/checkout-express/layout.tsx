@@ -16,6 +16,7 @@ import { canReach } from '../../application/session.ts';
 import { Brand } from '../_components/brand.tsx';
 import { Icon } from '../_components/icon.tsx';
 import { PwaResizer } from '../_components/pwa-resizer.tsx';
+import { SessionHeartbeat } from '../_components/session-heartbeat.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
@@ -39,6 +40,7 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <PwaResizer width={PWA_SIZE.express.width} height={PWA_SIZE.express.height} />
+      <SessionHeartbeat />
 
       <header className="flex items-center justify-between gap-3 border-border border-b bg-card px-5 py-3">
         <div className="flex min-w-0 items-center gap-2.5">

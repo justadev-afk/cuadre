@@ -24,6 +24,7 @@ import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import type { ShellModel } from '../_lib/shell-nav.ts';
 import { Icon } from './icon.tsx';
 import { PwaResizer } from './pwa-resizer.tsx';
+import { SessionHeartbeat } from './session-heartbeat.tsx';
 
 /** A link is current when the path is it or sits below it. */
 function isCurrent(pathname: string, href: string): boolean {
@@ -47,6 +48,7 @@ export function AppShell({ model, children }: { model: ShellModel; children: Rea
   return (
     <div className="grid min-h-dvh grid-cols-1 min-[900px]:grid-cols-[224px_minmax(0,1fr)]">
       <PwaResizer width={PWA_SIZE.panel.width} height={PWA_SIZE.panel.height} />
+      <SessionHeartbeat />
       <aside className="sticky top-0 hidden h-dvh flex-col gap-5 overflow-y-auto bg-sidebar px-3 py-4 shadow-[inset_-1px_0_0_var(--sidebar-border)] min-[900px]:flex">
         <Link href={home} className="flex items-center gap-2.5 px-1.5 text-inherit no-underline">
           <BrandMark />
