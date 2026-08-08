@@ -36,11 +36,14 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
   const merchantName = detail?.ok === true ? detail.value.company.name : null;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    // A definite height (h-dvh, not min-h-dvh) so the fill below has something to
+    // resolve against, and overflow-hidden so the window itself never scrolls —
+    // any overflow is a box's own to scroll, never the whole till's.
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <PwaResizer width={PWA_SIZE.express.width} height={PWA_SIZE.express.height} />
       <SessionHeartbeat />
 
-      <header className="flex items-center justify-between gap-3 border-border border-b bg-card px-5 py-3">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-border border-b bg-card px-5 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <Brand markOnly size={30} />
           <div className="min-w-0 leading-tight">
@@ -61,8 +64,10 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
       </header>
 
       {/* No padding here: ContentLayout owns the gutters, so the express till
-          sits exactly like the shell's /checkout — side padding, nothing more. */}
-      <main className="flex-1">{children}</main>
+          sits exactly like the shell's /checkout — side padding, nothing more.
+          min-h-0 lets it hold a definite height (for the fill) without growing
+          past the window, so overflow lands inside a box, not on the page. */}
+      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
 
       {resolved.needsShiftConfirmation && session.role === 'cashier' && (
         <ShiftDialog name={session.name} username={session.username} since={session.createdAt} />

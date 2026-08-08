@@ -502,7 +502,10 @@ function MiTurno({
           Todavía no validas nada en este turno.
         </span>
       ) : (
-        <div className="flex flex-col">
+        // The one scrollable region: many cobros scroll here, inside the box,
+        // never the whole till. flex-1 + min-h-0 lets it take the leftover height
+        // and clip its own overflow.
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {recent.map((row) => (
             <button
               type="button"
