@@ -8,5 +8,5 @@ import { CheckoutContent } from '../(cashier)/checkout/checkout-content.tsx';
 export const metadata = { title: 'Caja · Cuadre' };
 
 export default function CheckoutExpressPage() {
-  return <CheckoutContent />;
+  return <CheckoutContent express />;
 }

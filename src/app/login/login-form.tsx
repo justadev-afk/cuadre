@@ -86,7 +86,7 @@ export function LoginForm({ next, notice, stats }: LoginFormProps) {
       <div className={authPanel}>
         <Brand size={24} />
 
-        <div className="my-auto flex w-full max-w-[360px] flex-col gap-4">
+        <div className="my-auto flex w-full flex-col gap-4">
           <div>
             <h1 className="font-heading text-xl font-medium leading-tight md:text-[25px]">
               Entrar
@@ -293,7 +293,10 @@ function CompanyForm({ next }: { next: string | null }) {
 
       <Button type="submit" size="block" className="mt-0.5 h-11" disabled={pending}>
         Entrar
-        <Icon name="arrow-right" />
+        <Icon
+          name={pending ? 'arrows-clockwise' : 'arrow-right'}
+          className={pending ? 'animate-spin' : ''}
+        />
       </Button>
     </form>
   );
@@ -415,7 +418,10 @@ function CashierForm({ next }: { next: string | null }) {
 
       <Button type="submit" size="block" className="mt-2 h-11" disabled={pending}>
         Entrar a caja
-        <Icon name="arrow-right" />
+        <Icon
+          name={pending ? 'arrows-clockwise' : 'arrow-right'}
+          className={pending ? 'animate-spin' : ''}
+        />
       </Button>
     </form>
   );

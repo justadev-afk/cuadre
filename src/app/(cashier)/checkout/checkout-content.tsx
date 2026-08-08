@@ -13,7 +13,7 @@ import { container } from '../../_lib/current-session.ts';
 import { CheckoutForm } from './checkout-form.tsx';
 import { NoBankAccount } from './no-bank-account.tsx';
 
-export async function CheckoutContent() {
+export async function CheckoutContent({ express = false }: { express?: boolean } = {}) {
   const { session } = await requireArea('counter');
   const companyId = session.companyId;
 
@@ -72,6 +72,7 @@ export async function CheckoutContent() {
       turnoCents={turnoCents}
       merchantName={merchantName}
       cashierName={session.name}
+      express={express}
     />
   );
 }

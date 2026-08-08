@@ -30,6 +30,13 @@ type ContentLayoutProps = {
   aside?: ReactNode;
   /** The aside's title, rendered level with the main title (e.g. "Mi turno"). */
   asideTitle?: ReactNode;
+  /**
+   * Stretch the body row to the bottom of the frame and close the extra bottom
+   * padding so the boxes end a margin above the edge equal to the side margin —
+   * the express till fills its whole PWA window this way. Off by default: normal
+   * screens size to their content and scroll.
+   */
+  fill?: boolean;
   children: ReactNode;
 };
 
@@ -41,13 +48,18 @@ export function ContentLayout({
   actions,
   aside,
   asideTitle,
+  fill = false,
   children,
 }: ContentLayoutProps) {
   return (
     <main
       className={cn(
-        'grid w-full max-w-[1040px] content-start gap-x-6 gap-y-[18px] px-7 pt-[26px] pb-11 max-[899px]:px-4 max-[899px]:pt-[18px] max-[899px]:pb-7',
-        aside && 'items-start min-[900px]:grid-cols-[minmax(0,1fr)_360px]',
+        'grid w-full max-w-[1040px] gap-x-6 gap-y-[18px] px-7 pt-[26px] max-[899px]:px-4 max-[899px]:pt-[18px]',
+        fill
+          ? 'min-h-full grid-rows-[auto_minmax(0,1fr)] pb-7 max-[899px]:pb-4'
+          : 'content-start pb-11 max-[899px]:pb-7',
+        aside && 'min-[900px]:grid-cols-[minmax(0,1fr)_360px]',
+        aside && (fill ? 'items-stretch' : 'items-start'),
       )}
     >
       <header className="flex items-start justify-between gap-4">

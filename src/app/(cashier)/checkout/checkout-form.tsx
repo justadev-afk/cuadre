@@ -90,6 +90,8 @@ type CheckoutFormProps = {
   /** Printed on the receipt — the shop and who is at the till. */
   merchantName?: string;
   cashierName?: string;
+  /** The sidebar-less express till: fill the height and drop the "ver todas" exit. */
+  express?: boolean;
 };
 
 /** The Venezuelan banks, shaped once for the searchable dropdown. */
@@ -159,6 +161,7 @@ export function CheckoutForm({
   turnoCents,
   merchantName,
   cashierName,
+  express = false,
 }: CheckoutFormProps) {
   const referenceId = useId();
   const phoneId = useId();
@@ -300,6 +303,7 @@ export function CheckoutForm({
       turnoCount={turnoCount}
       turnoCents={turnoCents}
       onOpen={(charge) => setViewing(charge)}
+      showAll={!express}
     />
   );
 
@@ -309,9 +313,10 @@ export function CheckoutForm({
       subtitle="Pide al cliente la referencia completa y su teléfono."
       aside={aside}
       asideTitle="Mi turno"
+      fill={express}
     >
       <form
-        className={BOX_LG}
+        className={cn(BOX_LG, express && 'h-full')}
         onSubmit={(event) => {
           event.preventDefault();
           void send();
@@ -469,11 +474,15 @@ function MiTurno({
   turnoCount,
   turnoCents,
   onOpen,
+  showAll = true,
 }: {
   recent: readonly RecentCharge[];
   turnoCount: number;
   turnoCents: number;
   onOpen: (charge: ConfirmedCharge) => void;
+  /** The link out to /my-validations — hidden on the express till, which is a
+   *  one-way door: the cashier's only exit is logout. */
+  showAll?: boolean;
 }) {
   return (
     <section className={cn(BOX_QUIET, 'h-full')}>
@@ -523,9 +532,11 @@ function MiTurno({
         </div>
       )}
 
-      <a href="/my-validations" className="mt-auto text-xs">
-        Ver todas mis validaciones
-      </a>
+      {showAll && (
+        <a href="/my-validations" className="mt-auto text-xs">
+          Ver todas mis validaciones
+        </a>
+      )}
     </section>
   );
 }

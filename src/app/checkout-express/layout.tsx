@@ -13,12 +13,12 @@ import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import { canReach } from '../../application/session.ts';
+import { Brand } from '../_components/brand.tsx';
 import { Icon } from '../_components/icon.tsx';
 import { PwaResizer } from '../_components/pwa-resizer.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
-import { initialsOf } from '../_lib/venezuela-format.ts';
 
 export const metadata = { title: 'Caja · Cuadre' };
 
@@ -42,9 +42,7 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
 
       <header className="flex items-center justify-between gap-3 border-border border-b bg-card px-5 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--color-accent-800)] font-heading text-[13px] text-[var(--color-accent-100)]">
-            {initialsOf(merchantName ?? session.name)}
-          </span>
+          <Brand markOnly size={30} />
           <div className="min-w-0 leading-tight">
             <div className="truncate font-heading text-sm">{merchantName ?? 'Caja'}</div>
             <div className="truncate text-muted-foreground text-xs">
