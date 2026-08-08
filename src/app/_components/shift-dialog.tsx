@@ -29,7 +29,7 @@ type ShiftDialogProps = {
 };
 
 export function ShiftDialog({ name, username, since, where }: ShiftDialogProps) {
-  const who = [username, where].filter((part) => part !== null && part !== '').join(' · ');
+  const who = [username, where].filter(Boolean).join(' · ');
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-[color-mix(in_srgb,var(--color-neutral-900)_50%,transparent)] p-4">
