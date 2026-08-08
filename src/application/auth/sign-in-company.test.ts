@@ -66,6 +66,7 @@ describe('a good password', () => {
       email: 'ana@laespiga.com',
       createdAt: NOW,
       shiftAckAt: NOW,
+      lastSeenAt: NOW,
       ipHash: IP_HASH,
       deviceId: DEVICE_ID,
     });

@@ -84,16 +84,19 @@ describe('touch', () => {
     expect(fake.writes.get('session:sess-1')).toBe(1);
   });
 
-  it('renews once the last write is old enough to matter', async () => {
+  it('writes again once last-seen is old enough to matter', async () => {
     const fake = makeFakeKv();
     const clock = movableClock(1_770_000_000);
     const store = new KvSessionStore(fake.kv, clock);
     await store.put('sess-1', RECORD);
 
-    clock.advance(60 * 60);
+    clock.advance(5 * 60);
     const renewed = await store.touch('sess-1');
 
-    expect(renewed).toEqual(RECORD);
+    // Five minutes gets last-seen written down; the shift clock is untouched —
+    // five minutes is a reload, not a resume.
+    expect(renewed?.shiftAckAt).toBe(RECORD.shiftAckAt);
+    expect(renewed?.lastSeenAt).toBe(1_770_000_300);
     expect(fake.writes.get('session:sess-1')).toBe(2);
   });
 
@@ -108,8 +111,46 @@ describe('touch', () => {
       await store.touch('sess-1');
     }
 
+    // The TTL is the same every renewal, and the session is still there after
+    // three months. (Each daily touch is a resume, so the shift stamps have
+    // moved — that is a different concern, checked below.)
     expect(fake.entries.get('session:sess-1')?.expirationTtl).toBe(SESSION_TTL_SECONDS);
-    expect(await store.get('sess-1')).toEqual(RECORD);
+    const survivor = await store.get('sess-1');
+    expect(survivor?.userId).toBe(RECORD.userId);
+    expect(survivor?.role).toBe(RECORD.role);
+  });
+
+  it('restarts the shift when a session is resumed after a gap — a cold start', async () => {
+    const fake = makeFakeKv();
+    const clock = movableClock(1_770_000_000);
+    const store = new KvSessionStore(fake.kv, clock);
+    // Signed in four hours ago and last seen then: the prompt would be due.
+    await store.put('sess-1', {
+      ...RECORD,
+      shiftAckAt: 1_770_000_000 - 4 * 3600,
+      lastSeenAt: 1_770_000_000,
+    });
+
+    // Twenty minutes away — the app was closed and reopened — then resolved.
+    clock.advance(20 * 60);
+    const resumed = await store.touch('sess-1');
+
+    // The clock restarts from now, so opening the till never lands on the prompt.
+    expect(resumed?.shiftAckAt).toBe(1_770_000_000 + 20 * 60);
+    expect(resumed?.lastSeenAt).toBe(1_770_000_000 + 20 * 60);
+  });
+
+  it('does not restart the shift on a quick reload — F5 cannot dodge it', async () => {
+    const fake = makeFakeKv();
+    const clock = movableClock(1_770_000_000);
+    const store = new KvSessionStore(fake.kv, clock);
+    // Signed in four hours ago (prompt due) but seen five seconds ago.
+    const ackAt = 1_770_000_000 - 4 * 3600;
+    await store.put('sess-1', { ...RECORD, shiftAckAt: ackAt, lastSeenAt: 1_770_000_000 - 5 });
+
+    const reloaded = await store.touch('sess-1');
+
+    expect(reloaded?.shiftAckAt).toBe(ackAt);
   });
 });
 
@@ -134,7 +175,12 @@ describe('ackShift', () => {
 
     const acknowledged = await store.ackShift('sess-1', 1_770_014_400);
 
-    expect(acknowledged).toEqual({ ...RECORD, shiftAckAt: 1_770_014_400 });
+    // Acknowledging is presence, so it stamps last-seen too.
+    expect(acknowledged).toEqual({
+      ...RECORD,
+      shiftAckAt: 1_770_014_400,
+      lastSeenAt: 1_770_014_400,
+    });
   });
 
   it('returns null for a session that is gone', async () => {

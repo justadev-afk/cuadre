@@ -12,9 +12,17 @@
  * a cashier who wants to skip the prompt would otherwise only have to press
  * F5 — and the whole point of the prompt is that the person confirming payments
  * is the person we think it is.
+ *
+ * What a reload must *not* do is what merely opening the app does. A session
+ * resolved again after a real gap — the app was closed, or a phone was pocketed
+ * and taken back out — restarts the shift clock (`shiftAckOnResume`), because
+ * opening the till is itself a sign of presence and greeting that with the
+ * prompt is nonsense. `lastSeenAt`, written on a slow cadence here, is how the
+ * resolve path tells that resume from an F5.
  */
 import { z } from 'zod';
 
+import { shiftAckOnResume } from '../../domain/shift.ts';
 import type { Clock } from '../../shared/clock.ts';
 import { logger } from '../../shared/logger.ts';
 
@@ -33,6 +41,16 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
  */
 const RENEW_AFTER_SECONDS = 60 * 60;
 
+/**
+ * How often `lastSeenAt` is written down. It has to be fresher than the
+ * resume-gap the shift clock reads it against (`SHIFT_RESUME_GAP_SECONDS`, 15
+ * min), or a still-open till would look like it had gone away — so five minutes,
+ * a comfortable third of the gap. Between writes the value drifts by at most
+ * this much, which the gap absorbs. A heartbeat runs every couple of minutes,
+ * so this is a handful of writes an hour per open till, not one per request.
+ */
+const LAST_SEEN_WRITE_AFTER_SECONDS = 5 * 60;
+
 export const SessionRecord = z.object({
   userId: z.string().min(1),
   role: z.enum(['admin', 'company', 'cashier']),
@@ -45,6 +63,12 @@ export const SessionRecord = z.object({
   createdAt: z.number().int(),
   /** Epoch seconds of the last shift acknowledgement. */
   shiftAckAt: z.number().int(),
+  /**
+   * Epoch seconds this session was last resolved. Optional: records written
+   * before it existed parse fine and fall back to `shiftAckAt` on the first
+   * read, which then stamps it.
+   */
+  lastSeenAt: z.number().int().optional(),
   /** `hashIp()` output. A raw address is never written here. */
   ipHash: z.string(),
   /** The persistent browser id this session was minted for. See the domain type. */
@@ -96,17 +120,33 @@ export class KvSessionStore implements SessionStore {
     const stored = await this.read(id);
     if (stored === null) return null;
 
-    if (this.clock.nowSeconds() - stored.renewedAt >= RENEW_AFTER_SECONDS) {
-      await this.put(id, stored.record);
-    }
-    return stored.record;
+    const now = this.clock.nowSeconds();
+    // A record from before `lastSeenAt` existed reads its shift stamp as the
+    // last time we saw it — the most it could have been active.
+    const lastSeenAt = stored.record.lastSeenAt ?? stored.record.shiftAckAt;
+    // Resumed after a gap? Restart the shift clock, so a cold start never lands
+    // on the prompt. A quick reload is too small a gap to reset — F5 still can't
+    // dodge it.
+    const shiftAckAt = shiftAckOnResume({ shiftAckAt: stored.record.shiftAckAt, lastSeenAt, now });
+    const record: SessionRecord = { ...stored.record, shiftAckAt, lastSeenAt: now };
+
+    // Write when the shift restarted (that must persist), when the TTL is due to
+    // slide, or when `lastSeenAt` has drifted far enough that the next resume
+    // check would misread a still-open till as having gone away.
+    const write =
+      shiftAckAt !== stored.record.shiftAckAt ||
+      now - stored.renewedAt >= RENEW_AFTER_SECONDS ||
+      now - lastSeenAt >= LAST_SEEN_WRITE_AFTER_SECONDS;
+    if (write) await this.put(id, record);
+
+    return record;
   }
 
   async ackShift(id: string, at: number): Promise<SessionRecord | null> {
     const stored = await this.read(id);
     if (stored === null) return null;
 
-    const acknowledged: SessionRecord = { ...stored.record, shiftAckAt: at };
+    const acknowledged: SessionRecord = { ...stored.record, shiftAckAt: at, lastSeenAt: at };
     await this.put(id, acknowledged);
     return acknowledged;
   }

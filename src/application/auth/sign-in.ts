@@ -269,6 +269,9 @@ export async function openSession(
     // second proved who is at the till. Starting the four hours anywhere else
     // would greet them with the prompt they just answered.
     shiftAckAt: now,
+    // Seen this second too, so the resume check has a baseline and a session
+    // that never gets a second request still reads as freshly present.
+    lastSeenAt: now,
     ipHash,
     deviceId,
   };

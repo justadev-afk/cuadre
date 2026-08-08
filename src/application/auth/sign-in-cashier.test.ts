@@ -74,6 +74,7 @@ describe('the counter door', () => {
       email: null,
       createdAt: NOW,
       shiftAckAt: NOW,
+      lastSeenAt: NOW,
       ipHash: IP_HASH,
       deviceId: DEVICE_ID,
     });

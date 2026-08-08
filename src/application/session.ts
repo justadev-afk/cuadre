@@ -34,6 +34,14 @@ export type SessionRecord = {
    * one, which is why this is never null: somebody just proved who they are.
    */
   readonly shiftAckAt: number;
+  /**
+   * Epoch seconds the session was last resolved — the keep-alive's own clock.
+   * The resolve path reads it to tell a resume-after-a-gap (a cold start, a
+   * phone left and picked back up) apart from a quick reload, so opening the
+   * till restarts the shift clock while an F5 does not. Optional: records minted
+   * before it existed simply fall back to `shiftAckAt`.
+   */
+  readonly lastSeenAt?: number;
   /** `hashIp()` output. A raw address is never written here. */
   readonly ipHash: string;
   /**

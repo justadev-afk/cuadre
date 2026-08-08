@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { needsShiftConfirmation, SHIFT_CONFIRMATION_SECONDS } from './shift.ts';
+import {
+  needsShiftConfirmation,
+  SHIFT_CONFIRMATION_SECONDS,
+  SHIFT_RESUME_GAP_SECONDS,
+  shiftAckOnResume,
+} from './shift.ts';
 
 const NOW = 1_770_000_000;
 const FOUR_HOURS = SHIFT_CONFIRMATION_SECONDS;
+const GAP = SHIFT_RESUME_GAP_SECONDS;
 
 describe('needsShiftConfirmation', () => {
   const table: ReadonlyArray<{
@@ -75,5 +81,58 @@ describe('needsShiftConfirmation', () => {
 
   it('measures four hours in seconds, the unit every timestamp column uses', () => {
     expect(SHIFT_CONFIRMATION_SECONDS).toBe(14_400);
+  });
+});
+
+describe('shiftAckOnResume', () => {
+  // A shift that is already due, so a reset is observable as "no longer asks".
+  const Due = NOW - FOUR_HOURS;
+
+  const table: ReadonlyArray<{ lastSeenAt: number; expected: number; why: string }> = [
+    {
+      lastSeenAt: NOW - 30,
+      expected: Due,
+      why: 'a reload 30s later keeps the clock — F5 cannot dodge it',
+    },
+    {
+      lastSeenAt: NOW - (GAP - 1),
+      expected: Due,
+      why: 'one second under the gap is still a reload',
+    },
+    {
+      lastSeenAt: NOW - GAP,
+      expected: NOW,
+      why: 'exactly the gap counts as resumed: the clock restarts',
+    },
+    {
+      lastSeenAt: NOW - (GAP + 3600),
+      expected: NOW,
+      why: 'a cold start an hour later restarts the clock',
+    },
+    {
+      lastSeenAt: Number.NaN,
+      expected: Due,
+      why: 'an unusable last-seen leaves the stamp untouched',
+    },
+  ];
+
+  for (const { lastSeenAt, expected, why } of table) {
+    it(why, () => {
+      expect(shiftAckOnResume({ shiftAckAt: Due, lastSeenAt, now: NOW })).toBe(expected);
+    });
+  }
+
+  it('a resumed session no longer needs confirmation', () => {
+    const restarted = shiftAckOnResume({ shiftAckAt: Due, lastSeenAt: NOW - GAP, now: NOW });
+    expect(needsShiftConfirmation({ shiftAckAt: restarted, now: NOW })).toBe(false);
+  });
+
+  it('a quiet reload still faces the prompt', () => {
+    const kept = shiftAckOnResume({ shiftAckAt: Due, lastSeenAt: NOW - 5, now: NOW });
+    expect(needsShiftConfirmation({ shiftAckAt: kept, now: NOW })).toBe(true);
+  });
+
+  it('the resume gap is fifteen minutes', () => {
+    expect(SHIFT_RESUME_GAP_SECONDS).toBe(900);
   });
 });
