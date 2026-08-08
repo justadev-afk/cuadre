@@ -26,13 +26,14 @@ import { currentSession } from './current-session.ts';
 export const AREA_HOME: Record<Area, string> = {
   admin: '/admin/companies',
   company: '/validations',
-  // The counter's home is the sidebar-less express till — the installed PWA's
-  // whole surface, so a cashier lands there without ever passing through the
-  // shell (no double window-resize). A *browser* tab that lands here is sent on
-  // to `/checkout` by `ExpressBrowserGate`, so a cashier signing in on a desktop
-  // still gets the nav. A company owner homes to their own panel and reaches
-  // `/checkout` from its nav — this only ever sends cashiers here.
-  counter: '/checkout-express',
+  // The counter's server home is `/checkout` (the shell), where a browser tab
+  // belongs. The installed PWA lives on the sidebar-less `/checkout-express`,
+  // reached by its manifest `start_url` and — as a safety net for a stale cached
+  // manifest — by `StandaloneRedirect`, which forwards a standalone app there
+  // from `/checkout`. Landing everyone on `/checkout` keeps the failure mode
+  // safe: an uncertain "am I a PWA?" reading leaves a browser tab on the shell
+  // rather than exiling it to the express till.
+  counter: '/checkout',
 };
 
 /** The platform team signs in on its own route; merchants share the other. */

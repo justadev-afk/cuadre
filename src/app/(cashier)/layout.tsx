@@ -18,6 +18,7 @@ import { canReach } from '../../application/session.ts';
 import { AppShell } from '../_components/app-shell.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
+import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import { shellModel } from '../_lib/shell-nav.ts';
 
 export default async function CashierLayout({ children }: { children: ReactNode }) {
@@ -36,7 +37,14 @@ export default async function CashierLayout({ children }: { children: ReactNode 
     detail?.ok === true ? { name: detail.value.company.name, code: detail.value.company.id } : null;
 
   return (
-    <AppShell model={shellModel(session, company)}>
+    <AppShell
+      model={shellModel(session, company)}
+      // A cashier who reaches the shell till is on their way to the express
+      // window (StandaloneRedirect) when running as a PWA — size to it so the
+      // hop does not resize twice. A company owner working the till keeps the
+      // roomy panel.
+      pwaSize={session.role === 'cashier' ? PWA_SIZE.express : PWA_SIZE.panel}
+    >
       {children}
       {resolved.needsShiftConfirmation && session.role === 'cashier' && (
         <ShiftDialog name={session.name} username={session.username} since={session.createdAt} />

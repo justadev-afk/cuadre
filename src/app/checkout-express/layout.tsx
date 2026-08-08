@@ -14,7 +14,6 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { canReach } from '../../application/session.ts';
 import { Brand } from '../_components/brand.tsx';
-import { ExpressBrowserGate } from '../_components/express-browser-gate.tsx';
 import { Icon } from '../_components/icon.tsx';
 import { PwaResizer } from '../_components/pwa-resizer.tsx';
 import { SessionHeartbeat } from '../_components/session-heartbeat.tsx';
@@ -43,10 +42,6 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <PwaResizer width={PWA_SIZE.express.width} height={PWA_SIZE.express.height} />
       <SessionHeartbeat />
-      {/* A browser tab is sent on to the shell `/checkout`; the PWA stays here.
-          Doing the hop in this direction resizes nothing (PwaResizer is inert
-          off-standalone), so the loading screen covers a plain content swap. */}
-      <ExpressBrowserGate to="/checkout" />
 
       <header className="flex shrink-0 items-center justify-between gap-3 border-border border-b bg-card px-5 py-3">
         <div className="flex min-w-0 items-center gap-2.5">

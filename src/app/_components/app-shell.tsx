@@ -32,14 +32,28 @@ function isCurrent(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppShell({ model, children }: { model: ShellModel; children: React.ReactNode }) {
+export function AppShell({
+  model,
+  children,
+  pwaSize = PWA_SIZE.panel,
+}: {
+  model: ShellModel;
+  children: React.ReactNode;
+  /**
+   * The window shape this shell asks for when running as an installed PWA. The
+   * panels want room; the cashier's shell passes the *express* size, so a PWA
+   * that lands on `/checkout` and is forwarded to the express till does not
+   * resize twice.
+   */
+  pwaSize?: { readonly width: number; readonly height: number };
+}) {
   const pathname = usePathname();
   const home = model.groups[0]?.items[0]?.href ?? '/';
   const flatItems = model.groups.flatMap((group) => group.items);
 
   return (
     <div className="grid min-h-dvh grid-cols-1 min-[900px]:grid-cols-[224px_minmax(0,1fr)]">
-      <PwaResizer width={PWA_SIZE.panel.width} height={PWA_SIZE.panel.height} />
+      <PwaResizer width={pwaSize.width} height={pwaSize.height} />
       <SessionHeartbeat />
       <aside className="sticky top-0 hidden h-dvh flex-col gap-5 overflow-y-auto bg-sidebar px-3 py-4 shadow-[inset_-1px_0_0_var(--sidebar-border)] min-[900px]:flex">
         <Link href={home} className="flex items-center gap-2.5 px-1.5 text-inherit no-underline">
