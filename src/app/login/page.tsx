@@ -14,11 +14,12 @@
 import { redirect } from 'next/navigation';
 
 import { AuthSplit } from '../_components/auth-shell.tsx';
-import { PWA_SIZE, PwaResizer } from '../_components/pwa-resizer.tsx';
+import { PwaResizer } from '../_components/pwa-resizer.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../_lib/inputs.ts';
 import { landingFor } from '../_lib/landing.ts';
 import { groupThousands } from '../_lib/masks.ts';
+import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import { LoginForm, type LoginNotice, type LoginStatView } from './login-form.tsx';
 import { SessionEndedModal } from './session-ended-modal.tsx';
 

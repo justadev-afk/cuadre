@@ -20,9 +20,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { cn } from '@/lib/utils.ts';
+import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import type { ShellModel } from '../_lib/shell-nav.ts';
 import { Icon } from './icon.tsx';
-import { PWA_SIZE, PwaResizer } from './pwa-resizer.tsx';
+import { PwaResizer } from './pwa-resizer.tsx';
 
 /** A link is current when the path is it or sits below it. */
 function isCurrent(pathname: string, href: string): boolean {

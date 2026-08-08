@@ -14,20 +14,8 @@ import { useEffect } from 'react';
 
 import { PWA_RESIZE_ENABLED } from '../_lib/flags.ts';
 
-/**
- * The fixed window shape for each surface. One layout owns each, so the size
- * changes only when the screen does (login → express → panel), never within a
- * screen. Clamped to the user's screen at run time, so a small display just gets
- * a smaller window rather than one running off the edge.
- */
-export const PWA_SIZE = {
-  /** The cashier's till — small, focused, still wide enough for the two panes. */
-  express: { width: 920, height: 760 },
-  /** The full app (admin / company) — room for the sidebar and a table. */
-  panel: { width: 1280, height: 900 },
-  /** A single centred card. */
-  login: { width: 480, height: 760 },
-} as const;
+// `PWA_SIZE` lives in `../_lib/pwa-size.ts` — a plain module — so the server
+// layouts that import it are not importing a value across the client boundary.
 
 /** Slack left around the window so it never quite fills (or overflows) the screen. */
 const SCREEN_MARGIN_X = 40;

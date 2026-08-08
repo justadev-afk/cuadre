@@ -14,9 +14,10 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { canReach } from '../../application/session.ts';
 import { Icon } from '../_components/icon.tsx';
-import { PWA_SIZE, PwaResizer } from '../_components/pwa-resizer.tsx';
+import { PwaResizer } from '../_components/pwa-resizer.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
+import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import { initialsOf } from '../_lib/venezuela-format.ts';
 
 export const metadata = { title: 'Caja · Cuadre' };
