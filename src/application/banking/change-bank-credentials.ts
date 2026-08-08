@@ -11,8 +11,9 @@
  * is no shared version to keep true anymore.
  *
  * Nothing about the old secret is read back to the caller; the new pairs are
- * proven the same way onboarding proves them — by authenticating each — and only
- * then sealed onto their rows.
+ * proven the same way onboarding proves them — by `credential-groups.ts`, the
+ * one walk both flows share, so "what makes a credential good" cannot mean two
+ * different things depending on which screen the merchant opened.
  */
 import type {
   BankAccount,
@@ -21,14 +22,14 @@ import type {
 } from '../../adapters/d1/bank-account.repository.ts';
 import type { Clock } from '../../shared/clock.ts';
 import { seal } from '../../shared/crypto.ts';
-import { AppError } from '../../shared/errors.ts';
 import type { IdGen } from '../../shared/id.ts';
 import { logger } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import type { BankGateway, BankId } from '../ports/bank-gateway.ts';
 import type { AccountCredentials } from './account-credentials.ts';
 import { type BankAccountView, toBankAccountView } from './bank-account-view.ts';
-import { type BankOnboardingFailure, toOnboardingFailure } from './bank-failure.ts';
+import type { BankOnboardingFailure } from './bank-failure.ts';
+import { authenticateCredentialGroups, operateGroupOf } from './credential-groups.ts';
 
 type BankAccess = {
   get(bank: BankId): BankGateway;
@@ -80,47 +81,30 @@ export function makeChangeBankCredentials({
     if (account.status === 'removed') return err('not_found');
 
     const gateway = banks.get(account.bank);
-    const operateGroup = gateway.credentialGroups.find((group) => group.usage === 'operate');
-    if (operateGroup === undefined) {
-      throw new AppError('internal', `bank ${account.bank} declares no operate credentials`);
-    }
+    const operateGroup = operateGroupOf(gateway);
 
-    // Every group the merchant filled is authenticated — the strongest proof
-    // available without a payment in hand — and the required (operate) one must
-    // be present. Nothing is written unless the bank accepts them. Each accepted
-    // pair becomes a fresh row, sealed on its own; the whole set replaces the old.
+    // Nothing is written unless the bank accepts the pairs. The refusal loses its
+    // group here — the modal shows one message for the whole form — but the walk
+    // that produced it is the onboarding one.
+    const proven = await authenticateCredentialGroups({
+      gateway,
+      environment: account.environment,
+      credentials: input.credentials,
+      companyId: input.companyId,
+      flow: 'change',
+    });
+    if (!proven.ok) return err(proven.error.failure);
+
+    // Each accepted pair becomes a fresh row, sealed on its own; the whole set
+    // replaces the old.
     const rows: NewStoredCredential[] = [];
-    for (const group of gateway.credentialGroups) {
-      const pair = input.credentials[group.key];
-      const filled = pair !== undefined && pair.clientId !== '' && pair.clientSecret !== '';
-      if (!filled) {
-        if (group.required) return err('invalid_input');
-        continue;
-      }
-
-      const session = await gateway.authenticate(account.environment, pair);
-      if (!session.ok) {
-        logger.warn('bank_credentials_change_rejected', {
-          companyId: input.companyId,
-          bank: account.bank,
-          group: group.key,
-          failure: session.error,
-        });
-        return err(toOnboardingFailure(session.error));
-      }
-      // A discover pair still has to list accounts — that is what it is for.
-      if (group.usage === 'discover') {
-        const listed = await gateway.listAccounts(session.value);
-        if (!listed.ok) return err(toOnboardingFailure(listed.error));
-        if (listed.value.length === 0) return err('no_accounts');
-      }
-
+    for (const { group, credentials } of proven.value.groups) {
       rows.push({
         id: ids.uuid(),
         credKey: group.key,
         usage: group.usage,
-        clientIdLast6: pair.clientId.slice(-6),
-        credentials: await seal(credsKey, pair),
+        clientIdLast6: credentials.clientId.slice(-6),
+        credentials: await seal(credsKey, credentials),
       });
     }
 

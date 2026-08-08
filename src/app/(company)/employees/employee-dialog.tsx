@@ -13,7 +13,7 @@
  * dialog — Radix keeps the modal a fixed size, and a growing error line would
  * jump it under the cursor.
  */
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
-import { toast } from '../../_lib/toast.ts';
+import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
 import { createEmployeeAction, updateEmployeeAction } from './actions.ts';
 import { CREATE_EMPLOYEE_INITIAL } from './form-state.ts';
 
@@ -56,12 +56,7 @@ export function EmployeeDialog({
   const [pin, setPin] = useState('');
 
   // Close on success; surface a refusal as a toast, never resizing the modal.
-  useEffect(() => {
-    if (state.ok) onClose();
-  }, [state.ok, onClose]);
-  useEffect(() => {
-    if (state.error) toast(state.error);
-  }, [state]);
+  useActionOutcome(state, onClose);
 
   return (
     <Dialog

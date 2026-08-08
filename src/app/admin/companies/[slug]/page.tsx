@@ -195,6 +195,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                         action={changeCredentialsAdminAction}
                         accountId={account.id}
                         companyId={slug}
+                        bankId={account.bank}
                         bankLabel={info.displayName}
                         environment={account.environment}
                         credentialGroups={info.credentialGroups}

@@ -3,6 +3,7 @@
  * a `'use server'` module may only export async functions — a type or a
  * constant beside the actions makes the whole file fail the RSC build.
  */
+import { ACTION_INITIAL, type ActionState } from '../../_lib/action-state.ts';
 
 export type SelectableAccountView = {
   readonly accountId: string;
@@ -40,9 +41,9 @@ export type ConnectState =
 export const CONNECT_INITIAL: ConnectState = { step: 'idle' };
 
 /** The deactivate confirm dialog's action state. */
-export type RemoveBankState = { readonly ok: boolean; readonly error: string | null };
-export const REMOVE_BANK_INITIAL: RemoveBankState = { ok: false, error: null };
+export type RemoveBankState = ActionState;
+export const REMOVE_BANK_INITIAL: RemoveBankState = ACTION_INITIAL;
 
 /** The "cambiar credenciales" modal's action state (company and admin share it). */
-export type ChangeCredentialsState = { readonly ok: boolean; readonly error: string | null };
-export const CHANGE_CREDENTIALS_INITIAL: ChangeCredentialsState = { ok: false, error: null };
+export type ChangeCredentialsState = ActionState;
+export const CHANGE_CREDENTIALS_INITIAL: ChangeCredentialsState = ACTION_INITIAL;

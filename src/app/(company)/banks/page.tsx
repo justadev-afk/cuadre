@@ -61,6 +61,7 @@ export default async function BanksPage() {
                     <ChangeCredentialsButton
                       action={changeCredentialsAction}
                       accountId={account.id}
+                      bankId={account.bank}
                       bankLabel={name}
                       environment={account.environment}
                       credentialGroups={info.credentialGroups}

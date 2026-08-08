@@ -14,39 +14,12 @@
  * a bank, so the same code serves whatever the catalogue declares.
  */
 import type { AccountCredentials } from '../../../application/banking/account-credentials.ts';
-import type { BankCredentials } from '../../../application/ports/bank-gateway.ts';
 import { logger } from '../../../shared/logger.ts';
 import { container } from '../../_lib/current-session.ts';
-import { secretField, textField } from '../../_lib/inputs.ts';
+import { textField } from '../../_lib/inputs.ts';
+import { bankFailureMessage } from './bank-messages.ts';
+import { readCredentialPair } from './credentials.ts';
 import type { ConnectState, VerifyState } from './form-state.ts';
-
-const ONBOARDING_MESSAGES: Record<string, string> = {
-  rejected_credentials:
-    'Banesco rechazó estas credenciales. Revisa el Client ID y el Client Secret.',
-  environment_mismatch: 'Estas credenciales no son del entorno que declaraste.',
-  no_accounts:
-    'Las credenciales son válidas, pero Banesco no reporta cuentas para esta afiliación.',
-  maintenance: 'Banesco está en mantenimiento. Intenta de nuevo en un rato.',
-  unavailable: 'Banesco no pudo responder. Intenta de nuevo.',
-  timeout: 'Banesco tardó demasiado. Intenta de nuevo.',
-  invalid_input: 'Revisa los datos e intenta de nuevo.',
-};
-
-const CONNECT_MESSAGES: Record<string, string> = {
-  ...ONBOARDING_MESSAGES,
-  verification_expired: 'La verificación expiró. Vuelve a empezar el alta.',
-  unknown_account: 'Esa cuenta ya no está en la lista. Vuelve a verificar.',
-  invalid_account: 'Ese número de cuenta no es válido. Revísalo e intenta de nuevo.',
-  account_already_linked: 'Esa cuenta ya está conectada.',
-};
-
-/** Reads one credential pair from the form, by the group prefix the wizard uses. */
-function readPair(form: FormData, prefix: string): BankCredentials {
-  return {
-    clientId: textField(form, `${prefix}.clientId`),
-    clientSecret: secretField(form, `${prefix}.clientSecret`),
-  };
-}
 
 /** Step 1–2: read the picked bank's credential groups and verify them. */
 export async function verifyBankCore(companyId: string, form: FormData): Promise<VerifyState> {
@@ -69,7 +42,7 @@ export async function verifyBankCore(companyId: string, form: FormData): Promise
 
     const credentials: AccountCredentials = {};
     for (const group of bank.credentialGroups) {
-      const pair = readPair(form, group.key);
+      const pair = readCredentialPair(form, group.key);
       const bothFilled = pair.clientId !== '' && pair.clientSecret !== '';
       const halfFilled = !bothFilled && (pair.clientId !== '' || pair.clientSecret !== '');
 
@@ -101,7 +74,7 @@ export async function verifyBankCore(companyId: string, form: FormData): Promise
       return {
         step: 'error',
         groupKey: result.error.groupKey,
-        message: ONBOARDING_MESSAGES[result.error.failure] ?? 'No se pudo verificar.',
+        message: bankFailureMessage(result.error.failure, bank.displayName),
       };
     }
 
@@ -149,12 +122,7 @@ export async function connectBankCore(companyId: string, form: FormData): Promis
       accountId: accountId === '' ? undefined : accountId,
       accountNumber: accountNumber === '' ? undefined : accountNumber,
     });
-    if (!result.ok) {
-      return {
-        step: 'error',
-        message: CONNECT_MESSAGES[result.error] ?? 'No se pudo conectar la cuenta.',
-      };
-    }
+    if (!result.ok) return { step: 'error', message: bankFailureMessage(result.error) };
 
     return { step: 'done' };
   } catch (error) {

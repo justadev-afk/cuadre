@@ -375,16 +375,60 @@ kept) lives in `src/app/globals.css`; the components are Tailwind + shadcn.
 - Phosphor icons for app content (the `Icon` component); `lucide-react` only
   inside the shadcn primitives (chevrons, the dialog close). Interactive states
   are themed, never browser defaults: `:focus-visible` is the 2px accent ring.
+- **The same question is asked with the same form** — see §11.
 
 ---
 
-## 11. Testing
+## 11. Two screens that ask the same thing are one component
+
+If two flows ask the merchant for the same thing, they render the *same* form.
+Not a similar one, not one built from the same primitives — the same file.
+
+The one that made this a rule: connecting a bank and changing a connected
+account's credentials both ask for "which bank, which environment, one pair per
+service", and were two hand-written modals. They had already drifted — one hid
+the optional pairs behind a disclosure and the other listed them, one showed a
+bank picker and the other a chip, one showed the waiting overlay over the bank
+round trip and the other froze. Nobody decided any of that. It is what happens
+to a copy.
+
+The rule is not "don't repeat yourself" everywhere; it is narrower and it binds:
+
+- **A form is shared by its fields**, and what wraps them is the caller's — the
+  title, the hidden ids, the server action, what happens on success. When one
+  flow may not change a field (bank and environment are a connected account's
+  identity), it renders **the same control, disabled**, never a different widget.
+  A merchant should recognise the form they already filled.
+- **A wire format is declared once and read once.** `<groupKey>.clientId` is a
+  contract between a client component and a server action; both sides get it from
+  `banks/credentials.ts` and neither spells the dot itself. A convention that
+  lives in two files drifts in one of them, silently, and drops credentials.
+- **A rule that decides money is written once.** "Every filled group is
+  authenticated, a required one missing is a refusal, a discover pair must list
+  accounts" is one function (`application/banking/credential-groups.ts`) that
+  `verify` and `change` both call — never the same loop twice.
+- **One failure, one sentence.** Bank failure copy is a single table
+  (`banks/bank-messages.ts`), and the bank is a *parameter*: a bank's name
+  hardcoded in shared copy is the §4 leak in prose form.
+- **One answer shape for actions.** `ActionState` (`{ ok, error }`) and
+  `useActionOutcome` — close on success, toast on refusal — so a dialog does not
+  hand-roll the two effects and get the dependency array subtly right by luck.
+
+Before adding a screen, search for the one that already asks the question. The
+second copy is cheaper to write today and is the whole cost of the feature
+forever after. Extract when the second caller appears, not in anticipation of
+one — but when it appears, extract, do not paste.
+
+---
+
+## 12. Testing
 
 | Level | Scope |
 |---|---|
 | Domain unit | Payment match, money, phone, slug, control code, shift. Table-driven — **the table is the specification**. |
 | Use case | Hand-written fakes of the ports. Orchestration and failure paths. |
 | Adapter | Row→domain mapping; the UNIQUE-index outcome parsing; bank response parsing against recorded fixtures. |
+| Form wire (`src/app`) | What a client component names and an action reads back — `banks/credentials.test.ts`. The contract, never the JSX. |
 
 - Tests live next to their subject as `*.test.ts`.
 - **Fakes over mock frameworks.** `vi.mock` on our own module means a missing port.

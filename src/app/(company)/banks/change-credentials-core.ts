@@ -12,40 +12,10 @@
  */
 import type { AccountCredentials } from '../../../application/banking/account-credentials.ts';
 import { container } from '../../_lib/current-session.ts';
-import { secretField, textField } from '../../_lib/inputs.ts';
+import { textField } from '../../_lib/inputs.ts';
+import { bankFailureMessage } from './bank-messages.ts';
+import { credentialGroupKeysIn, readCredentialPair } from './credentials.ts';
 import type { ChangeCredentialsState } from './form-state.ts';
-
-const MESSAGES: Record<string, string> = {
-  rejected_credentials:
-    'El banco rechazó estas credenciales. Revisa el Client ID y el Client Secret.',
-  environment_mismatch: 'Estas credenciales no son del entorno de la cuenta.',
-  no_accounts: 'Las credenciales son válidas, pero el banco no reporta cuentas.',
-  maintenance: 'El banco está en mantenimiento. Intenta de nuevo en un rato.',
-  unavailable: 'El banco no pudo responder. Intenta de nuevo.',
-  timeout: 'El banco tardó demasiado. Intenta de nuevo.',
-  invalid_input: 'Escribe el Client ID y el Client Secret.',
-  not_found: 'No encontramos esa cuenta.',
-};
-
-/** Every `<groupKey>.clientId` / `<groupKey>.clientSecret` pair the form carries. */
-function readCredentialGroups(form: FormData): AccountCredentials {
-  const groupKeys = new Set<string>();
-  for (const [name] of form.entries()) {
-    const dot = name.indexOf('.');
-    if (dot === -1) continue;
-    const field = name.slice(dot + 1);
-    if (field === 'clientId' || field === 'clientSecret') groupKeys.add(name.slice(0, dot));
-  }
-
-  const credentials: AccountCredentials = {};
-  for (const key of groupKeys) {
-    credentials[key] = {
-      clientId: textField(form, `${key}.clientId`),
-      clientSecret: secretField(form, `${key}.clientSecret`),
-    };
-  }
-  return credentials;
-}
 
 /**
  * Runs the change for a company already resolved by the caller's guard.
@@ -59,17 +29,16 @@ export async function changeBankCredentialsCore(
   const accountId = textField(form, 'accountId');
   if (accountId === '') return { ok: false, error: 'Cuenta inválida.' };
 
-  const credentials = readCredentialGroups(form);
+  // The action does not know the bank — the use case resolves it from the
+  // account — so every pair the form carried is harvested and judged there.
+  const credentials: AccountCredentials = {};
+  for (const key of credentialGroupKeysIn(form)) credentials[key] = readCredentialPair(form, key);
+
   const result = await container().banking.changeBankCredentials({
     companyId,
     accountId,
     credentials,
   });
-  if (!result.ok) {
-    return {
-      ok: false,
-      error: MESSAGES[result.error] ?? 'No se pudieron cambiar las credenciales.',
-    };
-  }
+  if (!result.ok) return { ok: false, error: bankFailureMessage(result.error) };
   return { ok: true, error: null };
 }

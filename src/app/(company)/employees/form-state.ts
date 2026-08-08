@@ -1,5 +1,7 @@
 /** State shapes for the employee forms. Split from `actions.ts` because a
  * `'use server'` module may only export async functions — a type or a constant
  * beside the actions makes the whole file fail the RSC build. */
-export type CreateEmployeeState = { readonly error: string | null; readonly ok: boolean };
-export const CREATE_EMPLOYEE_INITIAL: CreateEmployeeState = { error: null, ok: false };
+import { ACTION_INITIAL, type ActionState } from '../../_lib/action-state.ts';
+
+export type CreateEmployeeState = ActionState;
+export const CREATE_EMPLOYEE_INITIAL: CreateEmployeeState = ACTION_INITIAL;

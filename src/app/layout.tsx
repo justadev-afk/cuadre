@@ -8,6 +8,22 @@ export const metadata: Metadata = {
   title: 'Cuadre',
   description: 'Validación automática de pago móvil',
   applicationName: 'Cuadre',
+  // The manifest route exists at `/manifest.webmanifest`, but nothing links to
+  // it unless it is declared here — without this line the PWA is not
+  // installable and none of its icons are ever fetched.
+  manifest: '/manifest.webmanifest',
+  // Two marks, one family: `icon.svg` (phone, flag, check) is the app icon, and
+  // `favicon.svg` is the same idea redrawn for 16px, where the bezels, the
+  // notch and the badge would only turn to mush. The `.ico` carries 16/32/48
+  // for the browsers that still ask for it by path.
+  icons: {
+    icon: [
+      { url: '/icons/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '48x48' },
+    ],
+    // iOS rounds the touch icon itself, so that PNG is square and opaque.
+    apple: { url: '/icons/apple-touch-icon.png', sizes: '180x180' },
+  },
   appleWebApp: { capable: true, title: 'Cuadre', statusBarStyle: 'black-translucent' },
 };
 

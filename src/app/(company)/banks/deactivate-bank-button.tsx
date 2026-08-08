@@ -7,7 +7,7 @@
  * counter is not a stray-click affordance) and reports a refusal as a toast so
  * the confirm dialog never resizes under it.
  */
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -19,7 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog.tsx';
-import { toast } from '../../_lib/toast.ts';
+import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
 import { removeBankAccountAction } from './actions.ts';
 import { REMOVE_BANK_INITIAL } from './form-state.ts';
 
@@ -35,12 +35,7 @@ export function DeactivateBankButton({
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(removeBankAccountAction, REMOVE_BANK_INITIAL);
 
-  useEffect(() => {
-    if (state.ok) setOpen(false);
-  }, [state.ok]);
-  useEffect(() => {
-    if (state.error) toast(state.error);
-  }, [state]);
+  useActionOutcome(state, () => setOpen(false));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

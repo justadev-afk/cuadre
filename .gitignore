@@ -12,3 +12,4 @@ next-env.d.ts
 
 # Background-workflow worktrees
 .claude/worktrees/
+.vscode/

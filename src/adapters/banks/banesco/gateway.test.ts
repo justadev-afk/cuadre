@@ -269,7 +269,7 @@ describe('findPayment', () => {
  * The live QA payment, pinned as a regression. Ref 12346090431 → CR Bs 630, on
  * DOÑA AURORA's account ending 5394, was validated end to end against Banesco QA
  * (control code 582422). These replay the RECORDED response shape — never the
- * live bank (§11) — so a change to the envelope parse, the cents/direction
+ * live bank (§12) — so a change to the envelope parse, the cents/direction
  * normalisation, or the account filter that would have broken that sale fails
  * here instead of at a counter.
  */

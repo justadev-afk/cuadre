@@ -12,7 +12,7 @@
  * never resizes under the cursor. On success the action revalidates the list
  * and the dialog closes itself.
  */
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -29,7 +29,7 @@ import { Label } from '@/components/ui/label.tsx';
 import { Separator } from '@/components/ui/separator.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { maskRif } from '../../_lib/masks.ts';
-import { toast } from '../../_lib/toast.ts';
+import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
 import { createCompanyAction } from './actions.ts';
 import { CREATE_COMPANY_INITIAL } from './form-state.ts';
 
@@ -48,8 +48,7 @@ export function NewCompanyDialog() {
 
   // Close once the server confirms the create, and clear the fields so the next
   // "Nueva empresa" opens blank rather than on the company just created.
-  useEffect(() => {
-    if (!state.ok) return;
+  useActionOutcome(state, () => {
     setOpen(false);
     setName('');
     setRif('');
@@ -59,10 +58,7 @@ export function NewCompanyDialog() {
     setAdminEmail('');
     setAdminPassword('');
     setRevealPassword(false);
-  }, [state.ok]);
-  useEffect(() => {
-    if (state.error) toast(state.error);
-  }, [state]);
+  });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

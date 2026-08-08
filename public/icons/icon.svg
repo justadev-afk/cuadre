@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Cuadre">
+  <title>Cuadre</title>
+  <!-- Colours are Nocturne's tokens (globals.css) plus the flag's own three:
+       tile #161826 (color-bg), phone frame #e9e9ed (color-text),
+       badge and halo #9184d9 (color-accent).
+       Flag: #fcdd09 amarillo, #00247d azul, #cf142b rojo. -->
+  <defs>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#9184d9" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#9184d9" stop-opacity="0" />
+    </radialGradient>
+    <clipPath id="screen">
+      <rect x="164" y="110" width="184" height="292" rx="22" />
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#161826" />
+  <!-- The halo is a circle that fades to nothing, never a tile-wide gradient:
+       the ground stays exactly color-bg at the edges, so the full-bleed
+       maskable and apple-touch crops flatten onto it without a seam. -->
+  <circle cx="256" cy="212" r="228" fill="url(#glow)" />
+
+  <!-- the phone -->
+  <rect x="148" y="80" width="216" height="352" rx="46" fill="#e9e9ed" />
+  <g clip-path="url(#screen)">
+    <rect x="164" y="110" width="184" height="97.34" fill="#fcdd09" />
+    <rect x="164" y="207.34" width="184" height="97.33" fill="#00247d" />
+    <rect x="164" y="304.67" width="184" height="97.33" fill="#cf142b" />
+    <!-- The eight stars: an arc with the convexity upwards, centred on a
+         circle whose centre is below the blue band, each star tilted radially.
+         The angles and ratios are measured off the official flag, not drawn by
+         eye — an arc curving the other way is a different country. -->
+    <g fill="#ffffff">
+      <polygon points="176.95,273.63 184.33,274.34 187.28,267.54 188.89,274.78 196.26,275.49 189.88,279.25 191.48,286.48 185.93,281.57 179.54,285.33 182.5,278.54" />
+      <polygon points="191.94,250.32 198.71,253.34 203.67,247.83 202.9,255.2 209.67,258.21 202.42,259.75 201.64,267.12 197.94,260.71 190.69,262.25 195.65,256.74" />
+      <polygon points="214.21,232.61 219.63,237.66 226.11,234.07 222.98,240.79 228.4,245.84 221.04,244.94 217.91,251.65 216.5,244.38 209.14,243.48 215.62,239.88" />
+      <polygon points="241.03,223.11 244.51,229.65 251.81,228.37 246.66,233.7 250.14,240.24 243.48,236.99 238.33,242.32 239.36,234.98 232.7,231.74 240.0,230.45" />
+      <polygon points="270.97,223.11 272.0,230.45 279.3,231.74 272.64,234.98 273.67,242.32 268.52,236.99 261.86,240.24 265.34,233.7 260.19,228.37 267.49,229.65" />
+      <polygon points="297.79,232.61 296.38,239.88 302.86,243.48 295.5,244.38 294.09,251.65 290.96,244.94 283.6,245.84 289.02,240.79 285.89,234.07 292.37,237.66" />
+      <polygon points="320.06,250.32 316.35,256.74 321.31,262.25 314.06,260.71 310.36,267.12 309.58,259.75 302.33,258.21 309.1,255.2 308.33,247.83 313.29,253.34" />
+      <polygon points="335.05,273.63 329.5,278.54 332.46,285.33 326.07,281.57 320.52,286.48 322.12,279.25 315.74,275.49 323.11,274.78 324.72,267.54 327.67,274.34" />
+    </g>
+  </g>
+  <rect x="232" y="90" width="48" height="10" rx="5" fill="#161826" />
+  <rect x="222" y="412" width="68" height="9" rx="4.5" fill="#161826" />
+
+  <!-- confirmado: the check the counter is waiting for -->
+  <circle cx="364" cy="392" r="62" fill="#161826" />
+  <circle cx="364" cy="392" r="54" fill="#9184d9" />
+  <path d="M340 393 L357 410 L390 372" fill="none" stroke="#161826" stroke-width="16"
+        stroke-linecap="round" stroke-linejoin="round" />
+</svg>

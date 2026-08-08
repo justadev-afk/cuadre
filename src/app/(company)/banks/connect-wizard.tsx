@@ -7,14 +7,13 @@
  * persisted until the last step, so abandoning it at any point leaves no row and
  * no decryptable secret behind.
  *
- * A bank asks for credentials in **groups**, one per service (Banesco: a
- * required Confirmación pair the counter runs on, and an optional Consulta pair
- * that lists the accounts). This file renders whatever groups it is handed and
- * has no per-bank knowledge. Every field is controlled so a refusal keeps what
- * the merchant typed — including which environment — instead of the action
- * wiping the form the way React resets an uncontrolled one. It renders inside a
- * shadcn `Dialog` (see `banks-panel.tsx`), so its heading is a `DialogTitle` and
- * the modal's own close button is the only X.
+ * The credentials step is `credential-fields.tsx` — the same fields "cambiar
+ * credenciales" renders, because the two flows ask the merchant for the same
+ * thing and a merchant should not have to learn two forms for it. Every field is
+ * controlled so a refusal keeps what was typed — including which environment —
+ * instead of the action wiping the form the way React resets an uncontrolled
+ * one. It renders inside a shadcn `Dialog` (see `banks-panel.tsx`), so its
+ * heading is a `DialogTitle` and the modal's own close button is the only X.
  */
 import { useActionState, useEffect, useState } from 'react';
 
@@ -22,17 +21,21 @@ import { Button } from '@/components/ui/button.tsx';
 import { DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
 import { cn } from '@/lib/utils.ts';
 import type { SupportedBank } from '../../../application/banking/list-supported-banks.ts';
 import type { BankEnvironment } from '../../../application/ports/bank-gateway.ts';
 import { formatBolivares } from '../../../domain/money.ts';
 import { Icon } from '../../_components/icon.tsx';
-import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
 import { maskAccountNumber } from '../../_lib/masks.ts';
 import { toast } from '../../_lib/toast.ts';
 import { connectBankAction, verifyBankAction } from './actions.ts';
 import { ConnectingOverlay } from './connecting-overlay.tsx';
+import {
+  BankIdentityFields,
+  CredentialGroupFields,
+  type CredentialValues,
+} from './credential-fields.tsx';
+import { requiredCredentialsFilled } from './credentials.ts';
 import {
   CONNECT_INITIAL,
   type ConnectState,
@@ -57,11 +60,6 @@ type ConnectWizardProps = {
   companyId?: string;
 };
 
-/** `confirmation.clientId`, `consulta.clientSecret` — one flat key per field. */
-function fieldKey(groupKey: string, name: string): string {
-  return `${groupKey}.${name}`;
-}
-
 export function ConnectWizard({
   banks,
   onClose,
@@ -79,25 +77,15 @@ export function ConnectWizard({
   const [environment, setEnvironment] = useState<BankEnvironment>(
     banks[0]?.environments[0] ?? 'production',
   );
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<CredentialValues>({});
   const setField = (key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value }));
 
-  // The optional credential groups (Banesco's Consulta) hide behind a disclosure
-  // so the form opens with only what is required — the merchant sees two fields,
-  // not four, and reveals the rest only if they have them.
-  const [showExtras, setShowExtras] = useState(false);
-
-  const bankOptions: readonly SelectOption[] = banks.map((b) => ({
-    value: b.id,
-    label: b.displayName,
-  }));
   const chooseBank = (id: string): void => {
     const next = banks.find((b) => b.id === id);
     if (next === undefined) return;
     setBankId(next.id);
     setEnvironment(next.environments[0] ?? 'production');
     setValues({});
-    setShowExtras(false);
   };
 
   // A rejected credential set shows as a toast, never as an error line in the
@@ -112,47 +100,7 @@ export function ConnectWizard({
 
   // The verify button waits on the required (operate) group being filled — a
   // realtime check, so an empty submit is never even offered.
-  const canVerify = selectedBank.credentialGroups
-    .filter((group) => group.required)
-    .every((group) =>
-      group.fields.every((f) => (values[fieldKey(group.key, f.name)] ?? '').trim() !== ''),
-    );
-
-  const requiredGroups = selectedBank.credentialGroups.filter((g) => g.required);
-  const optionalGroups = selectedBank.credentialGroups.filter((g) => !g.required);
-
-  const renderGroup = (group: (typeof selectedBank.credentialGroups)[number]) => (
-    <div key={group.key} className="flex flex-col gap-2.5">
-      <div>
-        <h6 className="m-0 text-primary">{group.label}</h6>
-        {group.hint && (
-          <span className="mt-[3px] block text-[11px] text-muted-foreground">{group.hint}</span>
-        )}
-      </div>
-
-      {group.fields.map((f) => {
-        const key = fieldKey(group.key, f.name);
-        return (
-          <div className="flex flex-col gap-1.5" key={key}>
-            <Label htmlFor={`cred-${key}`}>{f.label}</Label>
-            <Input
-              id={`cred-${key}`}
-              name={key}
-              type={f.secret ? 'password' : 'text'}
-              autoCapitalize="none"
-              autoComplete={f.secret ? 'new-password' : 'off'}
-              spellCheck={false}
-              className="font-mono text-[13px]"
-              value={values[key] ?? ''}
-              onChange={(e) => setField(key, e.target.value)}
-              required={group.required}
-              disabled={verifying}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
+  const canVerify = requiredCredentialsFilled(selectedBank.credentialGroups, values);
 
   // Once the credentials verify, the wizard moves to choosing the account.
   if (verify.step === 'accounts') {
@@ -187,59 +135,23 @@ export function ConnectWizard({
         </DialogDescription>
       </div>
 
-      <input type="hidden" name="bank" value={bankId} />
       {companyId !== undefined && <input type="hidden" name="companyId" value={companyId} />}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="bank-select">Banco</Label>
-        <SearchableSelect
-          id="bank-select"
-          options={bankOptions}
-          value={bankId}
-          onChange={chooseBank}
-          searchPlaceholder="Buscar banco…"
-          disabled={verifying}
-        />
-      </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-foreground/70">Entorno</span>
-        <input type="hidden" name="environment" value={environment} />
-        <Tabs
-          value={environment}
-          onValueChange={(value) => setEnvironment(value as BankEnvironment)}
-        >
-          <TabsList>
-            {selectedBank.environments.map((env) => (
-              <TabsTrigger key={env} value={env} disabled={verifying}>
-                <Icon name={env === 'sandbox' ? 'flask' : 'broadcast'} />
-                {env === 'production' ? 'Producción' : 'Sandbox'}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
+      <BankIdentityFields
+        banks={banks}
+        bankId={bankId}
+        environment={environment}
+        onBankChange={chooseBank}
+        onEnvironmentChange={setEnvironment}
+        disabled={verifying}
+      />
 
-      {requiredGroups.map(renderGroup)}
-
-      {optionalGroups.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <button
-            type="button"
-            onClick={() => setShowExtras((v) => !v)}
-            disabled={verifying}
-            aria-expanded={showExtras}
-            className="flex items-center gap-1.5 self-start text-sm text-primary hover:opacity-80 disabled:opacity-60"
-          >
-            <Icon
-              name="caret-down"
-              className={cn('transition-transform', showExtras && 'rotate-180')}
-            />
-            Credenciales extras
-            <span className="font-normal text-muted-foreground">· opcional</span>
-          </button>
-          {showExtras && optionalGroups.map(renderGroup)}
-        </div>
-      )}
+      <CredentialGroupFields
+        groups={selectedBank.credentialGroups}
+        values={values}
+        onChange={setField}
+        disabled={verifying}
+      />
 
       <DialogFooter>
         <Button type="button" variant="secondary" onClick={onClose}>
