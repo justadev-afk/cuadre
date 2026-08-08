@@ -33,11 +33,8 @@ import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
 import { BankSpinner } from '../../_components/skeleton.tsx';
-import {
-  PrintReceiptButton,
-  type ReceiptData,
-  ThermalReceipt,
-} from '../../_components/thermal-receipt.tsx';
+import { type ReceiptData, ThermalReceipt } from '../../_components/thermal-receipt.tsx';
+import { ValidatedPaymentModal } from '../../_components/validated-payment-modal.tsx';
 import { maskCurrency } from '../../_lib/masks.ts';
 import {
   formatClock,
@@ -479,7 +476,7 @@ function MiTurno({
   onOpen: (charge: ConfirmedCharge) => void;
 }) {
   return (
-    <section className={BOX_QUIET}>
+    <section className={cn(BOX_QUIET, 'h-full')}>
       {/* Cobrado gets the wider column — a bolívar total runs into the millions,
           Validados is a small count — and both stack centred, kicker over value. */}
       <div className="grid grid-cols-[0.7fr_1.3fr] gap-2.5">
@@ -753,7 +750,7 @@ function VerdictContent({
   );
 }
 
-// ── the "mi turno" re-open modal ────────────────────────────────────────────
+// ── the "mi turno" re-open modal — the shared "cobro validado" modal ─────────
 function ValidatedModal({
   charge,
   bankName,
@@ -769,54 +766,22 @@ function ValidatedModal({
   cashierName?: string;
   onClose: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-
   return (
-    <Dialog
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
+    <ValidatedPaymentModal
+      view={{
+        controlCode: charge.controlCode,
+        amountCents: charge.amountCents,
+        reference: charge.reference,
+        payerPhone: charge.payerPhone,
+        bankName,
+        cashierName,
+        accountLabel: accountLabel(accounts, charge.bankAccountId),
+        atSeconds: charge.createdAt,
+        isSandbox: charge.isSandbox,
+        receipt: chargeReceipt(charge, { bankName, merchantName, cashierName }),
       }}
-    >
-      <DialogContent className={MODAL_CLASS} aria-describedby={undefined}>
-        <div className="flex items-center gap-3.5">
-          <span className={MARK_OK}>
-            <Icon name="check" />
-          </span>
-          <div className="flex-1">
-            <DialogTitle className="text-xl">Cobro validado</DialogTitle>
-            <span className="text-xs text-muted-foreground">
-              {bankName} · {formatDateTime(charge.createdAt)}
-            </span>
-          </div>
-          {charge.isSandbox && (
-            <Badge variant="outline">
-              <Icon name="flask" />
-              Sandbox
-            </Badge>
-          )}
-        </div>
-
-        <ControlCode
-          code={charge.controlCode}
-          copied={copied}
-          onCopy={async (code) => {
-            await navigator.clipboard.writeText(code);
-            setCopied(true);
-          }}
-        />
-        <ChargeRows charge={charge} accountLabel={accountLabel(accounts, charge.bankAccountId)} />
-
-        <div className="flex gap-2">
-          <PrintReceiptButton className="h-10 flex-1" />
-          <Button className="h-10 flex-1" onClick={onClose}>
-            Cerrar
-          </Button>
-        </div>
-
-        <ThermalReceipt data={chargeReceipt(charge, { bankName, merchantName, cashierName })} />
-      </DialogContent>
-    </Dialog>
+      onClose={onClose}
+    />
   );
 }
 
