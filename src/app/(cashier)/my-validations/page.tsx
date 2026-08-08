@@ -29,6 +29,10 @@ export default async function MyValidationsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { session } = await requireArea('counter');
+  const detail = session.companyId
+    ? await container().companies.getCompany({ companyId: session.companyId })
+    : null;
+  const merchantName = detail?.ok ? detail.value.company.name : undefined;
   const params = await searchParams;
   const range = readRange(queryValue(params, 'range'));
 
@@ -67,7 +71,7 @@ export default async function MyValidationsPage({
       {list.items.length === 0 ? (
         <NoValidations cta={{ href: '/checkout', label: 'Validar un pago' }} />
       ) : (
-        <ValidationList items={list.items} nowSeconds={nowSeconds} />
+        <ValidationList items={list.items} nowSeconds={nowSeconds} merchantName={merchantName} />
       )}
     </ContentLayout>
   );

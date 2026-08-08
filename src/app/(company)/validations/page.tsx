@@ -38,6 +38,8 @@ export default async function ValidationsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { companyId } = await requireCompany();
+  const companyDetail = await container().companies.getCompany({ companyId });
+  const merchantName = companyDetail.ok ? companyDetail.value.company.name : undefined;
   const params = await searchParams;
   const environment = readEnv(queryValue(params, 'environment'));
   const search = queryValue(params, 'q') ?? undefined;
@@ -138,7 +140,12 @@ export default async function ValidationsPage({
           </p>
         </Card>
       ) : (
-        <ValidationList items={list.items} nowSeconds={nowSeconds} showCashier />
+        <ValidationList
+          items={list.items}
+          nowSeconds={nowSeconds}
+          showCashier
+          merchantName={merchantName}
+        />
       )}
     </ContentLayout>
   );

@@ -1,0 +1,71 @@
+/**
+ * The cashier's express till — the counter with no sidebar.
+ *
+ * A cashier signs in and lands here: only what a till needs, in a compact PWA
+ * window. The frame is a slim header (who is signed in, and a logout that is
+ * always in reach) over the same two-pane checkout the shell serves at
+ * `/checkout`. It resolves the session itself — a sibling of `(cashier)/layout`
+ * without the `AppShell` — so a company owner or admin who lands here is bounced
+ * to their own home rather than shown a chrome-less till.
+ */
+import { redirect } from 'next/navigation';
+import type { ReactNode } from 'react';
+
+import { Button } from '@/components/ui/button.tsx';
+import { canReach } from '../../application/session.ts';
+import { Icon } from '../_components/icon.tsx';
+import { PWA_SIZE, PwaResizer } from '../_components/pwa-resizer.tsx';
+import { ShiftDialog } from '../_components/shift-dialog.tsx';
+import { container, currentSession } from '../_lib/current-session.ts';
+import { initialsOf } from '../_lib/venezuela-format.ts';
+
+export const metadata = { title: 'Caja · Cuadre' };
+
+export default async function CheckoutExpressLayout({ children }: { children: ReactNode }) {
+  const resolution = await currentSession();
+  if (resolution.kind === 'anonymous') redirect('/login');
+  if (resolution.kind === 'superseded') redirect('/session-ended');
+
+  const resolved = resolution.active;
+  const { session } = resolved;
+  if (!canReach(session.role, 'counter')) redirect('/');
+
+  const detail = session.companyId
+    ? await container().companies.getCompany({ companyId: session.companyId })
+    : null;
+  const merchantName = detail?.ok === true ? detail.value.company.name : null;
+
+  return (
+    <div className="flex min-h-dvh flex-col bg-background">
+      <PwaResizer width={PWA_SIZE.express.width} height={PWA_SIZE.express.height} />
+
+      <header className="flex items-center justify-between gap-3 border-border border-b bg-card px-5 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--color-accent-800)] font-heading text-[13px] text-[var(--color-accent-100)]">
+            {initialsOf(merchantName ?? session.name)}
+          </span>
+          <div className="min-w-0 leading-tight">
+            <div className="truncate font-heading text-sm">{merchantName ?? 'Caja'}</div>
+            <div className="truncate text-muted-foreground text-xs">
+              {session.name}
+              {session.username ? ` · ${session.username}` : ''}
+            </div>
+          </div>
+        </div>
+
+        <form action="/logout" method="post">
+          <Button type="submit" variant="secondary" size="sm">
+            <Icon name="sign-out" />
+            Salir
+          </Button>
+        </form>
+      </header>
+
+      <main className="mx-auto w-full max-w-[1000px] flex-1 p-4 md:p-6">{children}</main>
+
+      {resolved.needsShiftConfirmation && session.role === 'cashier' && (
+        <ShiftDialog name={session.name} username={session.username} since={session.createdAt} />
+      )}
+    </div>
+  );
+}

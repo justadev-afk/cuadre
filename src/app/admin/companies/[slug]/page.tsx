@@ -225,7 +225,12 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             </p>
           </Card>
         ) : (
-          <ValidationList items={recent.items} nowSeconds={now} showCashier />
+          <ValidationList
+            items={recent.items}
+            nowSeconds={now}
+            showCashier
+            merchantName={company.name}
+          />
         )}
       </div>
     </ContentLayout>

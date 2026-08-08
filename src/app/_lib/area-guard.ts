@@ -26,7 +26,10 @@ import { currentSession } from './current-session.ts';
 export const AREA_HOME: Record<Area, string> = {
   admin: '/admin/companies',
   company: '/validations',
-  counter: '/checkout',
+  // A cashier lands on the sidebar-less express till; a company owner homes to
+  // their own panel and reaches `/checkout` from its nav, so this only ever
+  // sends cashiers here.
+  counter: '/checkout-express',
 };
 
 /** The platform team signs in on its own route; merchants share the other. */

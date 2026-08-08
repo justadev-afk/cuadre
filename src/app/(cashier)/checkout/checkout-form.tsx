@@ -49,13 +49,18 @@ import { chargeAction } from './actions.ts';
 import type { ChargeOutcome, ConfirmedCharge } from './charge-types.ts';
 
 /** A confirmed charge as the thermal receipt states it. */
-function chargeReceipt(charge: ConfirmedCharge, bankName?: string): ReceiptData {
+function chargeReceipt(
+  charge: ConfirmedCharge,
+  extra?: { bankName?: string; merchantName?: string; cashierName?: string },
+): ReceiptData {
   return {
+    merchantName: extra?.merchantName,
     controlCode: charge.controlCode,
     reference: charge.reference,
     amountCents: charge.amountCents,
     payerPhone: charge.payerPhone,
-    bankName,
+    bankName: extra?.bankName,
+    cashierName: extra?.cashierName,
     atSeconds: charge.createdAt,
     isSandbox: charge.isSandbox,
   };
@@ -85,6 +90,9 @@ type CheckoutFormProps = {
   recent: readonly RecentCharge[];
   turnoCount: number;
   turnoCents: number;
+  /** Printed on the receipt — the shop and who is at the till. */
+  merchantName?: string;
+  cashierName?: string;
 };
 
 /** The Venezuelan banks, shaped once for the searchable dropdown. */
@@ -152,6 +160,8 @@ export function CheckoutForm({
   recent,
   turnoCount,
   turnoCents,
+  merchantName,
+  cashierName,
 }: CheckoutFormProps) {
   const referenceId = useId();
   const phoneId = useId();
@@ -437,6 +447,8 @@ export function CheckoutForm({
           onNewCharge={newCharge}
           onRetry={() => void send()}
           onEdit={backToForm}
+          merchantName={merchantName}
+          cashierName={cashierName}
         />
       )}
 
@@ -445,6 +457,8 @@ export function CheckoutForm({
           charge={viewing}
           bankName={bankName}
           accounts={accounts}
+          merchantName={merchantName}
+          cashierName={cashierName}
           onClose={() => setViewing(null)}
         />
       )}
@@ -532,6 +546,8 @@ function ChargeModal({
   onNewCharge,
   onRetry,
   onEdit,
+  merchantName,
+  cashierName,
 }: {
   busy: boolean;
   outcome: ChargeOutcome | null;
@@ -544,6 +560,8 @@ function ChargeModal({
   onNewCharge: () => void;
   onRetry: () => void;
   onEdit: () => void;
+  merchantName?: string;
+  cashierName?: string;
 }) {
   return (
     <Dialog
@@ -569,6 +587,8 @@ function ChargeModal({
             copied={copied}
             onCopy={onCopy}
             onNewCharge={onNewCharge}
+            merchantName={merchantName}
+            cashierName={cashierName}
           />
         ) : (
           <VerdictContent
@@ -624,12 +644,16 @@ function ConfirmedContent({
   copied,
   onCopy,
   onNewCharge,
+  merchantName,
+  cashierName,
 }: {
   charge: ConfirmedCharge;
   accounts: readonly CheckoutAccount[];
   copied: boolean;
   onCopy: (code: string) => void | Promise<void>;
   onNewCharge: () => void;
+  merchantName?: string;
+  cashierName?: string;
 }) {
   return (
     <>
@@ -666,7 +690,7 @@ function ConfirmedContent({
         </Button>
       </div>
 
-      <ThermalReceipt data={chargeReceipt(charge)} />
+      <ThermalReceipt data={chargeReceipt(charge, { merchantName, cashierName })} />
     </>
   );
 }
@@ -734,11 +758,15 @@ function ValidatedModal({
   charge,
   bankName,
   accounts,
+  merchantName,
+  cashierName,
   onClose,
 }: {
   charge: ConfirmedCharge;
   bankName: string;
   accounts: readonly CheckoutAccount[];
+  merchantName?: string;
+  cashierName?: string;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -786,7 +814,7 @@ function ValidatedModal({
           </Button>
         </div>
 
-        <ThermalReceipt data={chargeReceipt(charge, bankName)} />
+        <ThermalReceipt data={chargeReceipt(charge, { bankName, merchantName, cashierName })} />
       </DialogContent>
     </Dialog>
   );
