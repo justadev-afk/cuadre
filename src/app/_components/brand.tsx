@@ -1,19 +1,22 @@
 /**
- * The brand mark: an accent-outlined rounded square holding the check icon,
- * with the wordmark beside it.
+ * The brand lockup: the real Cuadre mark beside the wordmark.
  *
- * The design repeats this at three sizes (26px in the page header, 24px on the
- * auth screens, 16-ish in the nav bar) and the admin area swaps the accent for
- * neutral and the icon for a shield — the platform team's own login is not the
- * merchant's product, and looking slightly different is the point.
+ * The mark is `icon.svg` — the very artwork the PWA icon, the favicon and the
+ * apple-touch icon are cut from (the tricolour phone with the confirmation
+ * check), so the logo a cashier sees in the till header is the same one on their
+ * home screen. That recognition is the whole point; a drawn stand-in would not
+ * carry it.
+ *
+ * The admin area is the one exception: its `internal` variant swaps the mark for
+ * a neutral shield, because the platform team's own door is deliberately not the
+ * merchant's product and should not wear the merchant's logo.
  */
-import { cn } from '@/lib/utils.ts';
 import { Icon } from './icon.tsx';
 
 type BrandProps = {
-  /** Side of the square, px. The wordmark scales from it. */
+  /** Side of the mark, px. The wordmark scales from it. */
   size?: number;
-  /** The internal admin variant: neutral instead of accent, shield instead of check. */
+  /** The internal admin variant: a neutral shield, not the product's logo. */
   internal?: boolean;
   /** Mark only, no wordmark. */
   markOnly?: boolean;
@@ -22,17 +25,26 @@ type BrandProps = {
 export function Brand({ size = 24, internal = false, markOnly = false }: BrandProps) {
   return (
     <span className="inline-flex items-center gap-2.5">
-      <span
-        className={cn(
-          'grid place-items-center rounded-[7px] border',
-          internal
-            ? 'border-[var(--color-neutral-500)] text-[var(--color-neutral-300)]'
-            : 'border-primary text-primary',
-        )}
-        style={{ width: size, height: size, fontSize: Math.round(size * 0.58) }}
-      >
-        <Icon name={internal ? 'shield-check' : 'check-square-offset'} />
-      </span>
+      {internal ? (
+        <span
+          className="grid place-items-center rounded-[7px] border border-[var(--color-neutral-500)] text-[var(--color-neutral-300)]"
+          style={{ width: size, height: size, fontSize: Math.round(size * 0.58) }}
+        >
+          <Icon name="shield-check" />
+        </span>
+      ) : (
+        // The mark already carries its own rounded tile, so it needs no frame —
+        // just the image at the asked size. `alt` is empty when the wordmark
+        // spells the name beside it, and names the brand when it stands alone.
+        <img
+          src="/icons/icon.svg"
+          alt={markOnly ? 'Cuadre' : ''}
+          width={size}
+          height={size}
+          className="block shrink-0"
+          style={{ width: size, height: size }}
+        />
+      )}
       {!markOnly && (
         <span
           className="font-heading tracking-[-0.01em]"
