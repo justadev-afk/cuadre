@@ -74,6 +74,11 @@ deploy`.** The Cloudflare Vite plugin compiles `wrangler.toml` into
 gets deployed. Skipping the build ships the previous build's bindings, vars and
 routes — silently, with a success message naming the old values.
 
+**Finish clean: run `bun run fix`, then leave `bun run check` and `bun run
+typecheck` green.** The last thing every change does, before it is called done, is
+clear Biome — no lint or format error rides along in a commit. CI gates on it, so
+a red check is a broken build, not a nit for later.
+
 **vinext is beta.** The version is pinned exactly (`1.0.0-beta.4`, no caret).
 Keep the code inside the Next 16 surface and the escape hatch stays open: the
 same `src/app/` runs under `next` if something blocks. Do not depend on
