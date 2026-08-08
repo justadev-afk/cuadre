@@ -60,7 +60,9 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
         </form>
       </header>
 
-      <main className="mx-auto w-full max-w-[1000px] flex-1 p-4 md:p-6">{children}</main>
+      {/* No padding here: ContentLayout owns the gutters, so the express till
+          sits exactly like the shell's /checkout — side padding, nothing more. */}
+      <main className="flex-1">{children}</main>
 
       {resolved.needsShiftConfirmation && session.role === 'cashier' && (
         <ShiftDialog name={session.name} username={session.username} since={session.createdAt} />
