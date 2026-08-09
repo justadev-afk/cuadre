@@ -65,8 +65,31 @@ const LOOSE_RIF = /^([JGVEP])(\d{8,9})(\d)$/;
  */
 const RIF_LETTER_VALUES: Record<string, number> = { V: 1, E: 2, J: 3, P: 4, G: 5 };
 
+/**
+ * The reserved test RIF, for the companies we create to exercise the counter.
+ * SENIAT issues nothing that is all zeros, so the value belongs to nobody and
+ * spending it costs no real taxpayer their identity.
+ *
+ * It needs no exception in `isValidRif`: mod-11 over a J and a zero body really
+ * does come out at 0, so this is an arithmetically correct RIF and the check
+ * digit stays the one thing standing between a typo and a permanent squat.
+ */
+export const TEST_RIF = 'J-00000000-0';
+
+/**
+ * Whatever run of zeros a human typed. Someone reaching for "all zeros" types
+ * them until it looks right and stops — seven, eight, ten — and every one of
+ * those should land on the test company rather than on *RIF inválido*. Eight is
+ * the floor so a half-typed `J-0` is still just a half-typed RIF.
+ *
+ * The class letter goes with the zeros: there is one test RIF and it is a J.
+ */
+const ALL_ZEROS_RIF = /^[JGVEP]0{8,}$/;
+
 export function normaliseRif(raw: string): string | null {
   const compact = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (ALL_ZEROS_RIF.test(compact)) return TEST_RIF;
+
   const parsed = LOOSE_RIF.exec(compact);
   if (parsed === null) return null;
   return `${parsed[1]}-${parsed[2]}-${parsed[3]}`;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isValidRif, isValidSlug, normaliseRif, normaliseSlug } from './company.ts';
+import { isValidRif, isValidSlug, normaliseRif, normaliseSlug, TEST_RIF } from './company.ts';
 
 describe('normaliseSlug', () => {
   const table: ReadonlyArray<{ raw: string; expected: string | null; why: string }> = [
@@ -80,6 +80,12 @@ describe('normaliseRif', () => {
     { raw: 'E812345675', expected: 'E-81234567-5', why: 'a foreign resident' },
     { raw: 'P401234567', expected: 'P-40123456-7', why: 'a passport class' },
     { raw: 'J4012345678', expected: 'J-401234567-8', why: 'a nine-digit body' },
+    { raw: TEST_RIF, expected: TEST_RIF, why: 'the test RIF is already canonical' },
+    { raw: 'J-0000000-0', expected: TEST_RIF, why: 'all zeros, one short: still the test RIF' },
+    { raw: 'J00000000', expected: TEST_RIF, why: 'eight zeros, unpunctuated' },
+    { raw: 'J-0000000000', expected: TEST_RIF, why: 'a field filled with zeros folds too' },
+    { raw: 'V-00000000-0', expected: TEST_RIF, why: 'one test RIF, and it is a J' },
+    { raw: 'J-0000000-1', expected: null, why: 'not all zeros: a short body is short' },
     { raw: 'J-4012345-6', expected: null, why: 'body is short of eight digits' },
     { raw: 'J40123456789', expected: null, why: 'too many digits' },
     { raw: 'X401234567', expected: null, why: 'X is not a RIF class' },
@@ -129,6 +135,8 @@ describe('isValidRif', () => {
     { rif: 'P-40123456-5', expected: true, why: 'P maps to 4' },
     { rif: 'G-20000010-4', expected: true, why: 'G maps to 5' },
     { rif: 'J-00002961-0', expected: true, why: 'a remainder of 1 collapses to 0' },
+    { rif: TEST_RIF, expected: true, why: 'the test RIF: mod-11 over a J and zeros really is 0' },
+    { rif: 'V-00000000-0', expected: false, why: 'the test RIF is not exempt, it just adds up' },
     { rif: 'J-40123456-7', expected: false, why: 'plausible shape, wrong check digit' },
     { rif: 'J-40123456-9', expected: true, why: 'the same body with its real check digit' },
     { rif: 'J-07013830-5', expected: false, why: 'two digits transposed' },

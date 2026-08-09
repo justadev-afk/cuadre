@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { TEST_RIF } from '../../domain/company.ts';
 import { fixedClock } from '../../shared/clock.ts';
 import { verifyPassword } from '../../shared/crypto.ts';
 import { fakeIdGen } from '../../shared/id.ts';
@@ -140,6 +141,22 @@ describe('createCompany', () => {
     });
     expect(mistyped).toEqual({ ok: false, error: 'invalid_rif' });
     expect(companies.rows).toHaveLength(1);
+  });
+
+  it('registers the test company on the reserved all-zeros RIF', async () => {
+    const { createCompany } = registering();
+
+    // Typed the way somebody reaching for "all zeros" types it — a run of them,
+    // one short of a real body. It is a RIF nobody was ever issued, so a test
+    // merchant can hold it without squatting on a taxpayer.
+    const created = await createCompany({ ...INPUT, slug: 'pruebas', rif: 'J-0000000-0' });
+
+    expect(created).toEqual({
+      ok: true,
+      value: expect.objectContaining({
+        company: expect.objectContaining({ rif: TEST_RIF }),
+      }),
+    });
   });
 
   it('refuses a slug that cannot be one, and writes nothing', async () => {
