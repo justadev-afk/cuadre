@@ -118,7 +118,16 @@ function sameReference(actual: string, expected: string): boolean {
   return a !== '' && a === b;
 }
 
-function canonicalReference(reference: string): string {
+/**
+ * The reference reduced to the one spelling every padding of it shares — and
+ * therefore the key a payment is *identified* by, as opposed to the spelling it
+ * is *shown* in. `validations.reference` keeps what the cashier typed, zeros and
+ * all, because that is what the customer's receipt says; `reference_key` holds
+ * this, and it is what `ux_validations_payment` is unique over. Both come from
+ * here, so the rule that decides two spellings are one payment cannot drift
+ * between the comparison and the index.
+ */
+export function canonicalReference(reference: string): string {
   const compact = reference.replace(/\s/g, '').toUpperCase();
   // Keep the last digit: '000' is the reference zero, not the empty string.
   return compact.replace(/^0+(?=.)/, '');

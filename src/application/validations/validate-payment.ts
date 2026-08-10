@@ -391,13 +391,16 @@ export function makeValidatePayment({
       // Copied from the account, never joined back. Delete the sandbox account
       // tomorrow and this row still knows it was a test.
       isSandbox: account.environment === 'sandbox',
-      // The bank's reference, not the one that was typed. `matchPayment`
-      // tolerates a difference in leading zeros — a customer reads '123456' off
-      // a receipt another bank printed as '0000123456' — so storing what was
-      // typed would let two spellings of one payment past
-      // `ux_validations_payment`, which is the entire anti-double-charge
-      // mechanism.
-      reference: movement.reference,
+      // The reference exactly as it was typed, zeros and all: it is what the
+      // customer's receipt says, and a charge a customer cannot find on their
+      // phone is a charge nobody can settle an argument with. The banks do not
+      // agree on the padding — Banesco answers '00000150496' as '150496' and
+      // pads others the other way — so the *identity* of the payment cannot live
+      // in this column. It lives in `reference_key` beside it, which the
+      // repository derives with the domain's `canonicalReference` and which
+      // `ux_validations_payment` is unique over: two spellings of one payment
+      // still collide, and the anti-double-charge mechanism is untouched.
+      reference: claim.reference,
       // Equal to the claim by the verdict above; taken from the movement
       // because the movement is the evidence and the claim never was.
       amountCents: movement.amountCents,
@@ -405,8 +408,13 @@ export function makeValidatePayment({
       payerPhone: claim.payerPhone,
       // The bank knows who paid it better than the picker does: a customer who
       // chose the wrong bank on the screen still made the payment the bank
-      // reports.
-      sourceBankId: movement.sourceBankId ?? claim.sourceBankId,
+      // reports. But only when what it reports *names a bank* — Banesco returns
+      // its own two-digit `01` for its own customers, which pads to '0001' and
+      // is no Sudeban code at all. Storing that would put a number nothing can
+      // resolve where the payer's bank belongs, and the counter would print it
+      // raw beside the charge. An unrecognisable code is not better information
+      // than the one the cashier picked off the receipt.
+      sourceBankId: reportedBank(movement.sourceBankId) ?? claim.sourceBankId,
       trnAt: movement.occurredAt,
       searchMode: payment.strategy,
       idempotencyKey: claim.idempotencyKey,
@@ -483,6 +491,11 @@ export function makeValidatePayment({
       `control code collided ${CONTROL_CODE_MAX_ATTEMPTS} times for ${input.companyId}`,
     );
   };
+}
+
+/** The bank's own code for the payer's bank, if it is one we can name. */
+function reportedBank(sourceBankId: string | null): string | null {
+  return sourceBankId !== null && findBank(sourceBankId) !== null ? sourceBankId : null;
 }
 
 /** Nothing in here is a failure; the counter has a screen for each of them. */

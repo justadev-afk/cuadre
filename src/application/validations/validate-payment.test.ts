@@ -7,6 +7,7 @@ import type {
   Validation,
 } from '../../adapters/d1/validation.repository.ts';
 import type { ValidationAttempt } from '../../adapters/metrics/attempt.metrics.ts';
+import { canonicalReference } from '../../domain/payment-match.ts';
 import { type Clock, fixedClock } from '../../shared/clock.ts';
 import { seal } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
@@ -126,10 +127,18 @@ function storedValidation(overrides: Partial<Validation> = {}): Validation {
  * The three unique indexes, in memory. A fake that did not enforce them would
  * pass every test in this file while the real table refused the same rows.
  */
-function fakeValidations(seed: readonly Validation[] = []) {
+function fakeValidations(seed: readonly Validation[] = [], racing: readonly Validation[] = []) {
   const rows: Validation[] = [...seed];
   const takenControlCodes = new Set<string>();
   const inserts: NewValidation[] = [];
+  /**
+   * Rows that commit *between* the pre-flight check and our INSERT — the race
+   * the unique index exists for. Invisible to the first check and present from
+   * then on, which is exactly what another cashier's commit looks like from
+   * here. Checking first and inserting second is the bug; this is how a test
+   * gets to see the index do the arbitrating.
+   */
+  let pending: readonly Validation[] = racing;
 
   return {
     rows,
@@ -144,11 +153,15 @@ function fakeValidations(seed: readonly Validation[] = []) {
       bankAccountIds: readonly string[],
       reference: string,
     ): Promise<Validation | null> {
-      return (
+      const found =
         rows.find(
-          (row) => row.reference === reference && bankAccountIds.includes(row.bankAccountId),
-        ) ?? null
-      );
+          (row) =>
+            canonicalReference(row.reference) === canonicalReference(reference) &&
+            bankAccountIds.includes(row.bankAccountId),
+        ) ?? null;
+      rows.push(...pending);
+      pending = [];
+      return found;
     },
 
     async insert(input: NewValidation): Promise<InsertResult> {
@@ -157,9 +170,14 @@ function fakeValidations(seed: readonly Validation[] = []) {
       if (rows.some((row) => row.idempotencyKey === input.idempotencyKey)) {
         return { outcome: 'idempotent_replay' };
       }
+      // The real index is unique over (bank_account_id, reference_key), not over
+      // the reference as spelled: a fake that compared the spellings would pass
+      // while the table let two paddings of one payment through.
       if (
         rows.some(
-          (row) => row.bankAccountId === input.bankAccountId && row.reference === input.reference,
+          (row) =>
+            row.bankAccountId === input.bankAccountId &&
+            canonicalReference(row.reference) === canonicalReference(input.reference),
         )
       ) {
         return { outcome: 'duplicate_payment' };
@@ -248,12 +266,14 @@ async function harness(
     script?: GatewayScript;
     account?: Partial<BankAccount> | null;
     seed?: readonly Validation[];
+    /** Rows another cashier commits between the pre-flight check and our insert. */
+    racing?: readonly Validation[];
     digits?: string[];
     clock?: Clock;
   } = {},
 ) {
   const account = options.account === null ? null : await bankAccount(options.account ?? {});
-  const validations = fakeValidations(options.seed);
+  const validations = fakeValidations(options.seed, options.racing);
   const { banks, calls, queries } = fakeBanks(options.script);
   const { metrics, points } = fakeMetrics();
 
@@ -313,15 +333,33 @@ describe('validate payment', () => {
     ]);
   });
 
-  it("stores the bank's reference, not the one that was typed", async () => {
-    // Typed '123456789', the bank pads to '000123456789'. `matchPayment` folds
-    // the leading zeros, so both spell one payment — and only one of them can
-    // be stored, or `ux_validations_payment` stops preventing a double charge.
-    const { validatePayment, validations } = await harness({ script: { payment: ok(found()) } });
+  it('stores the reference exactly as it was typed, leading zeros and all', async () => {
+    // The customer's receipt says '00000150496' and the bank answers '150496'.
+    // What the cashier has to be able to match against the receipt is the row,
+    // so the row keeps the spelling that was typed — the padding is the bank's
+    // habit, not a fact about the payment.
+    const { validatePayment, validations } = await harness({
+      script: { payment: ok(found({ reference: '150496', amountCents: 52_508 })) },
+    });
 
-    await validatePayment(INPUT);
+    await validatePayment({ ...INPUT, reference: '00000150496', amountCents: 52_508 });
 
-    expect(validations.rows[0]?.reference).toBe('000123456789');
+    expect(validations.rows[0]?.reference).toBe('00000150496');
+  });
+
+  it('still refuses a second charge for the same payment spelled differently', async () => {
+    // The identity of a payment lives in `reference_key` — the canonical
+    // spelling — precisely so keeping the typed one above cannot open a hole in
+    // `ux_validations_payment`, which is the whole anti-double-charge mechanism.
+    const { validatePayment, validations } = await harness({
+      seed: [storedValidation({ reference: '150496', idempotencyKey: 'idem-earlier' })],
+      script: { payment: ok(found({ reference: '150496' })) },
+    });
+
+    const result = await validatePayment({ ...INPUT, reference: '00000150496' });
+
+    expect(result).toMatchObject({ ok: true, value: { kind: 'already_charged' } });
+    expect(validations.rows).toHaveLength(1);
   });
 
   it('replays an idempotent submission without asking the bank', async () => {
@@ -442,12 +480,12 @@ describe('validate payment', () => {
     expect(points[0]).toMatchObject({ outcome: 'already_charged', amountCents: 124_000 });
   });
 
-  it('names who charged a payment the bank padded past the pre-check, at the insert', async () => {
+  it('names who charged a payment that landed between the pre-check and the insert', async () => {
     const { validatePayment, validations, points } = await harness({
-      // The stored reference carries the bank's padding, so the typed reference
-      // misses the pre-check and the unique index catches it at the insert —
-      // which still reads back who charged it.
-      seed: [
+      // Another cashier commits this exact payment after our pre-flight check
+      // has already answered "not charged yet". The unique index is what stops
+      // the second charge, and the counter still reads back who took the first.
+      racing: [
         storedValidation({
           idempotencyKey: 'idem-0',
           controlCode: '999999',

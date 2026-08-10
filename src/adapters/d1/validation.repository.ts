@@ -14,6 +14,7 @@
  * read "not charged yet" and both charge.
  */
 import type { FoundPayment } from '../../application/ports/bank-gateway.ts';
+import { canonicalReference } from '../../domain/payment-match.ts';
 import { epochToIso, VENEZUELA_UTC_OFFSET_MINUTES } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 import { isUniqueIndex, readConstraintFailure, type UniqueIndex } from './constraint-error.ts';
@@ -133,9 +134,14 @@ export type DailyTotalsQuery = {
   readonly to: number;
 };
 
+/**
+ * Unique over the *canonical* reference (0006), not over the one on the row:
+ * `reference` is the spelling the customer's receipt carries, and two paddings
+ * of one payment must still collide here.
+ */
 const PAYMENT_INDEX: UniqueIndex = {
   name: 'ux_validations_payment',
-  columns: ['validations.bank_account_id', 'validations.reference'],
+  columns: ['validations.bank_account_id', 'validations.reference_key'],
 };
 const CONTROL_INDEX: UniqueIndex = {
   name: 'ux_validations_control',
@@ -179,19 +185,20 @@ export class D1ValidationRepository implements ValidationRepository {
     reference: string,
   ): Promise<Validation | null> {
     if (bankAccountIds.length === 0) return null;
-    // Exact reference match on the (bank_account_id, reference) unique columns —
-    // an exact hit is unambiguously the same payment, so this never refuses a
-    // genuine new charge. A bank that pads the reference differently just misses
-    // here and the authoritative INSERT below still catches the duplicate.
+    // Matched on the (bank_account_id, reference_key) unique columns, so a
+    // padding the customer's receipt spells differently is still the same
+    // payment and is still recognised as already charged. A hit is unambiguous,
+    // so this never refuses a genuine new charge; the authoritative INSERT stays
+    // the arbiter of the race either way.
     const placeholders = bankAccountIds.map(() => '?').join(', ');
     const row = await this.db
       .prepare(
         `SELECT ${LIST_COLUMNS} FROM validations v
            LEFT JOIN users u ON u.id = v.cashier_id
-          WHERE v.reference = ? AND v.bank_account_id IN (${placeholders})
+          WHERE v.reference_key = ? AND v.bank_account_id IN (${placeholders})
           LIMIT 1`,
       )
-      .bind(reference, ...bankAccountIds)
+      .bind(canonicalReference(reference), ...bankAccountIds)
       .first<D1Row>();
     return row === null ? null : toValidation(row);
   }
@@ -202,10 +209,10 @@ export class D1ValidationRepository implements ValidationRepository {
         .prepare(
           `INSERT INTO validations
                (id, company_id, cashier_id, bank_account_id, bank, is_sandbox,
-                control_code, reference, amount_cents, currency, payer_phone,
-                source_bank_id, trn_at, latency_ms, search_mode,
+                control_code, reference, reference_key, amount_cents, currency,
+                payer_phone, source_bank_id, trn_at, latency_ms, search_mode,
                 idempotency_key, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING ${COLUMNS}`,
         )
         .bind(
@@ -217,6 +224,11 @@ export class D1ValidationRepository implements ValidationRepository {
           input.isSandbox ? 1 : 0,
           input.controlCode,
           input.reference,
+          // Derived here rather than carried on the row: it is not a fact about
+          // the payment, it is the shape the unique index needs the reference in
+          // — and deriving it with the domain's own function is what keeps the
+          // index and `matchPayment` agreeing on what "the same payment" means.
+          canonicalReference(input.reference),
           input.amountCents,
           input.currency,
           input.payerPhone,

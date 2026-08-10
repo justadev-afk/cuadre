@@ -129,8 +129,13 @@ const MARK_QUIET =
 const STAT_CARD =
   'flex min-h-[76px] flex-col justify-center gap-0.5 rounded-md bg-card px-2.5 py-3.5 shadow-[var(--shadow-sm)]';
 // The inset-fade hairline under a "mi turno" row — the table's row rule, on a button.
+//
+// `w-full` with a negative margin does not widen a box, it *slides* it: the row
+// was 100% wide and 6px to the left, so the hover bled past the text on one side
+// and stopped short of it on the other. The width has to grow by both margins
+// for the highlight to sit evenly around the row it belongs to.
 const RECENT_ROW =
-  'flex w-full cursor-pointer items-center gap-2.5 -mx-1.5 rounded-sm px-1.5 py-[9px] text-left transition-colors hover:bg-foreground/[0.06] bg-[linear-gradient(to_right,transparent,color-mix(in_srgb,var(--color-text)_8%,transparent)_20px,color-mix(in_srgb,var(--color-text)_8%,transparent)_calc(100%-20px),transparent)] bg-[length:100%_1px] bg-bottom bg-no-repeat';
+  'flex w-[calc(100%+1.25rem)] cursor-pointer items-center gap-2.5 -mx-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors hover:bg-foreground/[0.06] bg-[linear-gradient(to_right,transparent,color-mix(in_srgb,var(--color-text)_8%,transparent)_20px,color-mix(in_srgb,var(--color-text)_8%,transparent)_calc(100%-20px),transparent)] bg-[length:100%_1px] bg-bottom bg-no-repeat';
 const MODAL_CLASS = 'w-[min(440px,calc(100%-2rem))]';
 
 /**
@@ -427,11 +432,6 @@ export function CheckoutForm({
           </div>
         </div>
 
-        <Button type="submit" className="mt-0.5 h-[50px] text-base" disabled={!canSubmit}>
-          Validar
-          <Icon name="arrow-right" />
-        </Button>
-
         {accounts.length > 1 && (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={accountSelectId}>Cuenta receptora</Label>
@@ -451,6 +451,14 @@ export function CheckoutForm({
             />
           </div>
         )}
+
+        {/* Last, and pinned to the floor of the card: the till fills the window,
+            so anywhere else leaves the dead space the cashier's thumb is aimed
+            at. `mt-auto` is inert on a card that is only as tall as its fields. */}
+        <Button type="submit" className="mt-auto h-[50px] text-base" disabled={!canSubmit}>
+          Validar
+          <Icon name="arrow-right" />
+        </Button>
       </form>
 
       {!shiftDue && (busy || outcome !== null) && (
@@ -548,7 +556,8 @@ function MiTurno({
                   {formatBolivares(row.amountCents)}
                 </div>
                 <span className="text-[11px] text-muted-foreground">
-                  {formatClock(row.createdAt)} · ref {row.reference} · {row.sourceBankId}
+                  {formatClock(row.createdAt)} · ref {row.reference} ·{' '}
+                  {findBank(row.sourceBankId)?.name ?? row.sourceBankId}
                 </span>
               </div>
               <span className="text-xs tabular-nums text-[var(--color-accent-300)]">

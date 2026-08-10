@@ -116,7 +116,7 @@ describe('insert', () => {
   it('reads ux_validations_payment as a double charge', async () => {
     const fake = makeFakeD1();
     fake.reply(
-      { throws: uniqueViolation('validations.bank_account_id', 'validations.reference') },
+      { throws: uniqueViolation('validations.bank_account_id', 'validations.reference_key') },
       // The follow-up lookup: no row with this idempotency key, so it really is
       // a different POST for a payment already taken.
       { rows: [] },
@@ -151,7 +151,7 @@ describe('insert', () => {
     // reason for sending an idempotency key was to be told otherwise.
     const fake = makeFakeD1();
     fake.reply(
-      { throws: uniqueViolation('validations.bank_account_id', 'validations.reference') },
+      { throws: uniqueViolation('validations.bank_account_id', 'validations.reference_key') },
       { rows: [row()] },
     );
 
