@@ -592,6 +592,45 @@ function MiTurno({
   );
 }
 
+/**
+ * Enter runs `action` while `active`, listened for on the document rather than
+ * left to whichever button holds focus.
+ *
+ * It has to be the document, because an answer replaces the wait *inside* an
+ * already-open dialog: the button that had focus a moment earlier — the wait's
+ * "Cancelar" — is unmounted with it, and a focused element removed from the DOM
+ * leaves focus on `<body>`, outside the dialog. There, no native activation
+ * happens and no handler bound to the dialog is ever reached, which is exactly
+ * why "Pago confirmado" and "No coincide con el movimiento" both sat there
+ * ignoring the key.
+ *
+ * A control that *does* have focus still answers for itself: Enter on "Recibo"
+ * prints, on "Reintentar" retries. So the listener stands aside whenever the key
+ * landed on something Enter already means something to, and nothing fires twice.
+ */
+function useEnterDismisses(active: boolean, action: () => void): void {
+  const latest = useRef(action);
+  useEffect(() => {
+    latest.current = action;
+  });
+
+  useEffect(() => {
+    if (!active) return;
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'Enter' || event.defaultPrevented || event.isComposing) return;
+      // An Enter still held down from sending the charge is not an answer to
+      // the answer: auto-repeat would dismiss it in the instant it appeared.
+      if (event.repeat) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest('a, button, input, select, textarea')) return;
+      event.preventDefault();
+      latest.current();
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [active]);
+}
+
 // ── the answer, as a modal over the form ────────────────────────────────────
 function ChargeModal({
   busy,
@@ -622,6 +661,15 @@ function ChargeModal({
   merchantName?: string;
   cashierName?: string;
 }) {
+  // Enter closes an answer, with the action that answer already marks as its
+  // primary one: "Nuevo cobro" on a confirmation, "Verificar datos" on a
+  // verdict. A till is worked with two hands and no mouse, so the key that sent
+  // the charge is the key that clears its answer.
+  useEnterDismisses(
+    !busy && outcome !== null,
+    outcome?.status === 'confirmed' ? onNewCharge : onEdit,
+  );
+
   return (
     <Dialog
       open
@@ -772,20 +820,6 @@ function VerdictContent({
 }) {
   const verdict = readVerdict(outcome, reference, amountCents);
 
-  /**
-   * Enter closes this. A verdict replaces the wait *inside* an already-open
-   * dialog, so the button that had focus a moment ago — the wait's "Cancelar" —
-   * is gone, and focus falls back to `<body>`, where Enter does nothing at all.
-   * The verdict claims it back, on "Verificar datos": the action that dismisses
-   * without touching what was typed, which is the only thing Enter can safely
-   * mean on a screen the cashier can do nothing else with. "Ese pago ya fue
-   * cobrado" and "No coincide con el movimiento" are exactly that screen.
-   */
-  const dismissRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    dismissRef.current?.focus();
-  }, []);
-
   // "Ya fue cobrado" says who charged it and how long ago — the till's answer
   // to "¿entonces quién lo cobró?".
   const chargedNote =
@@ -815,7 +849,7 @@ function VerdictContent({
             Nuevo cobro
           </Button>
         )}
-        <Button ref={dismissRef} className="flex-1" onClick={onEdit}>
+        <Button className="flex-1" onClick={onEdit}>
           <Icon name="pencil-simple" />
           Verificar datos
         </Button>
