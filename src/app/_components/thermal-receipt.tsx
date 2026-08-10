@@ -23,7 +23,8 @@ export type ReceiptData = {
   readonly controlCode: string;
   readonly reference: string;
   readonly amountCents: number;
-  readonly payerPhone: string;
+  /** `null` for a transferencia — there is no phone, and none is printed. */
+  readonly payerPhone: string | null;
   readonly bankName?: string | null;
   readonly cashierName?: string | null;
   /** Epoch seconds — the bank's transaction time. */
@@ -50,7 +51,9 @@ export function ThermalReceipt({ data }: { data: ReceiptData }) {
 
         <Rule />
         <div className="text-[11px] font-bold">COMPROBANTE DE PAGO</div>
-        <div className="text-[11px]">Pago móvil validado</div>
+        <div className="text-[11px]">
+          {data.payerPhone ? 'Pago móvil validado' : 'Transferencia validada'}
+        </div>
         <Rule />
 
         <div className="text-[10px] tracking-[0.2em]">CÓDIGO DE CONTROL</div>
@@ -62,7 +65,9 @@ export function ThermalReceipt({ data }: { data: ReceiptData }) {
         <div className="text-left">
           <Line label="Monto" value={formatBolivares(data.amountCents)} strong />
           <Line label="Referencia" value={data.reference} />
-          <Line label="Teléfono" value={formatPhoneForDisplay(data.payerPhone)} />
+          {data.payerPhone ? (
+            <Line label="Teléfono" value={formatPhoneForDisplay(data.payerPhone)} />
+          ) : null}
           {data.bankName ? <Line label="Banco" value={data.bankName} /> : null}
           {data.cashierName ? <Line label="Cajero" value={data.cashierName} /> : null}
           <Line label="Fecha" value={formatDateTime(data.atSeconds)} />

@@ -25,6 +25,7 @@ type BankCatalogue = {
     readonly displayName: string;
     readonly environments: readonly BankEnvironment[];
     readonly credentialGroups: readonly BankCredentialGroup[];
+    readonly findsTransfers: boolean;
   }[];
 };
 
@@ -38,6 +39,14 @@ export type SupportedBank = {
   readonly displayName: string;
   readonly environments: readonly BankEnvironment[];
   readonly credentialGroups: readonly BankCredentialGroup[];
+  /**
+   * Whether the till may leave the payer's phone empty for this bank — a
+   * transferencia carries none. The counter reads it off the account's own bank
+   * rather than deciding for itself, which is the whole point of it travelling
+   * this far: a second bank that cannot search without a phone keeps the field
+   * required without a line changing on the screen.
+   */
+  readonly findsTransfers: boolean;
 };
 
 export type ListSupportedBanks = () => readonly SupportedBank[];
@@ -49,5 +58,6 @@ export function makeListSupportedBanks({ banks }: ListSupportedBanksDeps): ListS
       displayName: bank.displayName,
       environments: bank.environments,
       credentialGroups: bank.credentialGroups,
+      findsTransfers: bank.findsTransfers,
     }));
 }

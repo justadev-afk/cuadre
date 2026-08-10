@@ -76,6 +76,7 @@ function fakeBanks(script: Script = {}) {
     credentialGroups: [
       { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
     ],
+    findsTransfers: true,
 
     async authenticate() {
       return script.authenticate ?? ok(SESSION);

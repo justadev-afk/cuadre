@@ -18,7 +18,12 @@ import type { RejectionReason } from '../../../domain/payment-match.ts';
  */
 export type ChargeInput = {
   readonly reference: string;
-  readonly payerPhone: string;
+  /**
+   * `null` when the cashier left the field empty, which is a claim about a
+   * transferencia rather than a pago móvil — the till only offers the choice
+   * for a bank that declares it can find one.
+   */
+  readonly payerPhone: string | null;
   readonly sourceBankId: string;
   readonly amountCents: number;
   /**
@@ -49,7 +54,8 @@ export type ConfirmedCharge = {
   readonly controlCode: string;
   readonly reference: string;
   readonly amountCents: number;
-  readonly payerPhone: string;
+  /** `null` for a transferencia — there is no phone to print on the receipt. */
+  readonly payerPhone: string | null;
   readonly createdAt: number;
   readonly isSandbox: boolean;
   readonly latencyMs: number | null;

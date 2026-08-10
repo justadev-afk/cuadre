@@ -115,7 +115,13 @@ export type ValidatePaymentInput = {
   /** The cashier's session, forwarded so the bank's support can correlate. */
   readonly sessionId: string;
   readonly reference: string;
-  readonly payerPhone: string;
+  /**
+   * Blank or `null` is not a missing field: it is a claim with no payer phone
+   * behind it — a transferencia — and it is asked only of the banks that
+   * declare `findsTransfers`. A phone that *was* typed still has to be a real
+   * pago móvil number.
+   */
+  readonly payerPhone: string | null;
   /** Sudeban code of the payer's bank, four digits. */
   readonly sourceBankId: string;
   readonly amountCents: number;
@@ -159,8 +165,9 @@ export type ValidatePayment = (
 /** What the request means once the domain has read it. */
 type Claim = {
   readonly reference: string;
-  /** Canonical `584143125566`, whatever the customer read out. */
-  readonly payerPhone: string;
+  /** Canonical `584143125566`, whatever the customer read out — or `null` for
+   *  a transferencia, which has no phone to give. */
+  readonly payerPhone: string | null;
   readonly sourceBankId: string;
   readonly amountCents: number;
   readonly idempotencyKey: string;
@@ -205,12 +212,27 @@ export function makeValidatePayment({
     // usable account in turn. A stale chosen id — the account was removed since
     // the till loaded — narrows to nothing and reads as "no account", the same
     // as none connected.
-    const candidates = input.accountId ? usable.filter((a) => a.id === input.accountId) : usable;
-    if (candidates.length === 0) {
+    const scoped = input.accountId ? usable.filter((a) => a.id === input.accountId) : usable;
+    if (scoped.length === 0) {
       // Deliberately unrecorded: the metrics point is keyed by bank and
       // environment, and there is no bank in this story to attribute it to.
       logger.warn('validation_no_bank_account', { companyId: input.companyId, environment });
       return err('no_bank_account');
+    }
+
+    // A claim with no phone is a transferencia, and only a bank that can find
+    // one may be asked about it — anywhere else the question has no answer, and
+    // asking it anyway spends a round trip at the counter to be told nothing.
+    // The till keeps the field required for such a bank, so reaching this is
+    // either a second bank connected since the screen loaded or a hand-made
+    // request; both get the same refusal rather than a false "no aparece".
+    const candidates =
+      claim.payerPhone === null
+        ? scoped.filter((account) => banks.get(account.bank).findsTransfers)
+        : scoped;
+    if (candidates.length === 0) {
+      logger.warn('validation_phone_required', { companyId: input.companyId, environment });
+      return err('invalid_input');
     }
 
     // One metric per attempt. The loop below finds the account the bank reports
@@ -479,13 +501,20 @@ function outcome(
  * table joins against nothing in `validations.source_bank_id`, and a
  * non-positive amount is refused by the schema's own CHECK — asking the bank
  * any of those questions spends a round trip to be told no.
+ *
+ * The one field that may be absent is the phone, and absent is a *meaning*
+ * rather than a gap: no phone is a transferencia. It is only the typed-and-
+ * wrong phone that is refused here — a blank one is a different question, not
+ * a broken one.
  */
 function readClaim(input: ValidatePaymentInput): Result<Claim, 'invalid_input'> {
   const reference = input.reference.trim();
   const idempotencyKey = input.idempotencyKey.trim();
-  const payerPhone = normalisePhone(input.payerPhone);
+  const typedPhone = input.payerPhone?.trim() ?? '';
+  const payerPhone = typedPhone === '' ? null : normalisePhone(typedPhone);
 
-  if (reference === '' || idempotencyKey === '' || payerPhone === null) return err('invalid_input');
+  if (reference === '' || idempotencyKey === '') return err('invalid_input');
+  if (typedPhone !== '' && payerPhone === null) return err('invalid_input');
   if (findBank(input.sourceBankId) === null) return err('invalid_input');
   if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
     return err('invalid_input');

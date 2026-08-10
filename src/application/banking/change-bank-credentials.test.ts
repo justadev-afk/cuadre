@@ -59,6 +59,7 @@ function fakeBanks(authenticate?: Result<BankSession, BankFailure>) {
     credentialGroups: [
       { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
     ],
+    findsTransfers: true,
     async authenticate() {
       return authenticate ?? ok(SESSION);
     },

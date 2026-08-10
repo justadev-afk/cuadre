@@ -76,7 +76,8 @@ export function ValidationList({
                 <td className="text-right font-heading tabular-nums">
                   {amountDigits(v.amountCents)}
                 </td>
-                <td className="tabular-nums text-muted-foreground">{v.payerPhone}</td>
+                {/* A transferencia has no payer phone — the cell says so. */}
+                <td className="tabular-nums text-muted-foreground">{v.payerPhone ?? '—'}</td>
                 {showCashier && (
                   <td className="whitespace-nowrap text-muted-foreground">
                     {v.cashierName ?? '—'}
@@ -120,8 +121,13 @@ export function ValidationList({
             </div>
             <span className="text-xs text-muted-foreground">
               {formatDayClock(v.trnAt, nowSeconds)} · ref{' '}
-              <span className="tabular-nums">{v.reference}</span> ·{' '}
-              <span className="tabular-nums">{v.payerPhone}</span>
+              <span className="tabular-nums">{v.reference}</span>
+              {v.payerPhone !== null && (
+                <>
+                  {' · '}
+                  <span className="tabular-nums">{v.payerPhone}</span>
+                </>
+              )}
             </span>
             {showCashier && v.cashierName && (
               <span className="text-xs text-muted-foreground">Cajero · {v.cashierName}</span>

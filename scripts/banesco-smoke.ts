@@ -21,6 +21,13 @@
  * a manual release check. Override the target with BANESCO_QA_REFERENCE /
  * BANESCO_QA_ACCOUNT / BANESCO_QA_PAYER_PHONE / BANESCO_QA_SOURCE_BANK /
  * BANESCO_QA_ON_DATE if the QA fixture ever moves.
+ *
+ * Setting BANESCO_QA_PAYER_PHONE to the empty string runs the *transferencia*
+ * case — a payment with no phone behind it, found on the reference alone:
+ *
+ *   BANESCO_QA_REFERENCE=00000150496 BANESCO_QA_PAYER_PHONE= \
+ *   BANESCO_QA_CONFIRMATION_CLIENT_ID=... BANESCO_QA_CONFIRMATION_CLIENT_SECRET=... \
+ *   bun run scripts/banesco-smoke.ts
  */
 import { BanescoGateway } from '../src/adapters/banks/banesco/gateway.ts';
 import type { BankGatewayDeps } from '../src/application/ports/bank-gateway.ts';
@@ -65,7 +72,10 @@ const credentials = {
 
 const reference = process.env.BANESCO_QA_REFERENCE ?? '12346090431';
 const accountId = process.env.BANESCO_QA_ACCOUNT ?? '01340804108041005394';
-const payerPhone = process.env.BANESCO_QA_PAYER_PHONE ?? '584143775031';
+// Unset is the pago móvil fixture; set-but-empty is the transferencia one,
+// which carries no phone at all and is looked up on its reference alone.
+const phoneVar = process.env.BANESCO_QA_PAYER_PHONE;
+const payerPhone = phoneVar === undefined ? '584143775031' : phoneVar.trim() || null;
 const sourceBankId = process.env.BANESCO_QA_SOURCE_BANK ?? '0134';
 const onDate = process.env.BANESCO_QA_ON_DATE ?? new Date().toISOString().slice(0, 10);
 const tail = `…${accountId.slice(-4)}`;

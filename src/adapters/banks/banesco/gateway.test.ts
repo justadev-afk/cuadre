@@ -195,6 +195,44 @@ describe('findPayment', () => {
     expect(found).toMatchObject({ ok: true, value: { strategy: 'reference_tail_and_phone' } });
   });
 
+  it('finds a transferencia with no phone, on the exact reference alone', async () => {
+    // Recorded from QA (2026-08-10): a transferencia comes back under the
+    // reference *without* its leading zeros, which `sameReference` folds.
+    const transfer = detail({
+      referenceNumber: '150496',
+      amount: 525.08,
+      concept: 'TRANS.CTAS',
+      destBankId: '  ',
+    });
+    const sent = stubBank([rows(transfer)]);
+    const { gateway, session } = await authenticated();
+
+    const found = await gateway.findPayment(session, {
+      ...QUERY,
+      reference: '00000150496',
+      payerPhone: null,
+    });
+
+    expect(found).toMatchObject({
+      ok: true,
+      value: { strategy: 'exact_reference', movement: { amountCents: 52_508, isCredit: true } },
+    });
+    expect(paymentCalls(sent)[0].body).not.toContain('phoneNum');
+  });
+
+  it('does not fall back to the tail search when the claim has no phone', async () => {
+    // The fallback matches on phone, bank and date; without a phone the bank
+    // answers "sin resultados" however real the payment is (verified in QA), so
+    // a second call would only add latency at the counter to be told nothing.
+    const sent = stubBank([NO_RESULTS, rows(detail())]);
+    const { gateway, session } = await authenticated();
+
+    const found = await gateway.findPayment(session, { ...QUERY, payerPhone: null });
+
+    expect(found).toEqual({ ok: true, value: null });
+    expect(paymentCalls(sent)).toHaveLength(1);
+  });
+
   it('answers "not yet" rather than an error when neither route finds it', async () => {
     stubBank([NO_RESULTS, NO_RESULTS]);
     const { gateway, session } = await authenticated();

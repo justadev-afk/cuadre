@@ -196,6 +196,15 @@ gateway at call time.
   reference are all compared against what the bank returned. This lives in
   `src/domain/payment-match.ts` and is table-tested.
 - **Amount is exact.** No tolerance. Integer cents, always.
+- **A payment with no payer phone is a transferencia**, and it is a first-class
+  claim rather than a form with a field missing: `payerPhone` is `null` all the
+  way from the till to `validations.payer_phone` (nullable since 0005 — never an
+  empty string standing in for a phone). Whether the counter may ask it is the
+  *bank's* answer, declared on the port as `findsTransfers` and read by both the
+  screen (the field goes optional, with the hint under it) and the use case,
+  which asks a phoneless claim only of the banks that can answer one. A bank that
+  cannot search without a phone keeps the field required without a line changing
+  on the checkout — that is the §4 rule applied to a capability instead of a call.
 - **Only confirmed payments are stored.** An attempt with no match creates no
   row — it is not an accounting fact, it is a retry. It lives in Workers Logs
   and Analytics Engine, which is where the "todavía no aparece" rate is
@@ -328,6 +337,14 @@ gateway at call time.
   (the credentials email pasted copy-paste debris after it). Both search modes
   return the test pago móvil. **Proven end to end in the UI**: a cashier
   validated ref `12346090431` → CR Bs 630 → control code `582422`, persisted.
+- **Transferencias are found by exact reference and by nothing else**
+  (2026-08-10, live): `00000150496` → CR Bs 525,08, concept `TRANS.CTAS`, with no
+  phone in the request — and the bank answers under `150496`, its own unpadded
+  spelling, which `sameReference`/`matchPayment` already fold. The *tail* search
+  cannot find one: reference + `bankId` + `startDt` without `phoneNum` returns
+  `70001 · Consulta sin resultados`. So `findPayment` stops after the exact route
+  when there is no phone instead of spending a round trip on a search that
+  structurally cannot hit. Hence `BanescoGateway.findsTransfers = true`.
 
 ### The two-client problem (resolved: a per-pair credentials table)
 

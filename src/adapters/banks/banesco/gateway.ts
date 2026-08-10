@@ -45,6 +45,21 @@ export class BanescoGateway implements BankGateway {
   readonly environments: readonly BankEnvironment[] = ['production', 'sandbox'];
 
   /**
+   * Verified live against QA (2026-08-10): the exact-reference search returns a
+   * transferencia with no phone anywhere in the request — ref `00000150496` →
+   * CR Bs 525,08, concept `TRANS.CTAS`, on the …5394 account. The bank even
+   * answers it under the reference without its leading zeros, which is what
+   * `sameReference` below already folds.
+   *
+   * The *tail* search cannot do it: the same reference with `bankId` and
+   * `startDt` but no `phoneNum` comes back `70001 · Consulta sin resultados`.
+   * That is not a settlement lag, it is a search that structurally cannot hit —
+   * which is why `findPayment` stops after the exact route when there is no
+   * phone rather than falling into a fallback that will always answer nothing.
+   */
+  readonly findsTransfers = true;
+
+  /**
    * Two services, two credential pairs. Banesco issues one OAuth client for
    * confirming a transaction and a *separate* one for reading the account list,
    * and each 403s on the other's service (verified against QA). So the merchant
@@ -156,6 +171,12 @@ export class BanescoGateway implements BankGateway {
       const match = select(exact.movements, query);
       if (match) return ok({ movement: match, strategy: 'exact_reference' });
     }
+
+    // No phone: the claim is a transferencia, and the fallback below is a pago
+    // móvil search — it matches on phone, bank and date, and the bank answers
+    // "sin resultados" to one without a phone however real the payment is.
+    // The exact reference was the only route there is, and it has been tried.
+    if (query.payerPhone === null) return ok(null);
 
     // The bank settles a payment under its full reference some minutes after
     // it can already find it by tail and phone. Falling back automatically is

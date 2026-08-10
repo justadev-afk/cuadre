@@ -86,6 +86,7 @@ function fakeBanks(script: Script = {}) {
     displayName: 'Banesco',
     environments: script.environments ?? ['production', 'sandbox'],
     credentialGroups: GROUPS,
+    findsTransfers: true,
 
     async authenticate(_environment, credentials) {
       calls.authenticate++;

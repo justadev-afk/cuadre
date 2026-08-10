@@ -19,14 +19,17 @@ export function matchesValidation(validation: Validation, term: string): boolean
   if (name !== '' && foldText(validation.cashierName ?? '').includes(name)) return true;
 
   const phone = normalisePhone(term);
-  if (phone !== null && validation.payerPhone === phone) return true;
+  // A transferencia has no phone, so it is simply never what a phone term finds.
+  if (phone !== null && validation.payerPhone !== null && validation.payerPhone === phone) {
+    return true;
+  }
 
   const digits = term.replace(/\D/g, '');
   if (digits === '') return false;
 
   return (
     validation.reference.replace(/\D/g, '').includes(digits) ||
-    validation.payerPhone.includes(digits) ||
+    (validation.payerPhone?.includes(digits) ?? false) ||
     // The control code the receipt carries — "582422" finds that charge.
     validation.controlCode.replace(/\D/g, '').includes(digits) ||
     // The whole-bolívar figure the list shows — "630" finds Bs 630,00.

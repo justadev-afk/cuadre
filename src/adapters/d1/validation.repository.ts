@@ -43,7 +43,8 @@ export type Validation = {
   readonly reference: string;
   readonly amountCents: number;
   readonly currency: string;
-  readonly payerPhone: string;
+  /** `null` for a transferencia: the payment carried no payer phone (0005). */
+  readonly payerPhone: string | null;
   readonly sourceBankId: string;
   /** When the bank says the payment happened. */
   readonly trnAt: number;
@@ -374,7 +375,7 @@ export function toValidation(row: D1Row): Validation {
     reference: text(row, 'reference'),
     amountCents: integer(row, 'amount_cents'),
     currency: text(row, 'currency'),
-    payerPhone: text(row, 'payer_phone'),
+    payerPhone: optionalText(row, 'payer_phone'),
     sourceBankId: text(row, 'source_bank_id'),
     trnAt: epochFromIso(row, 'trn_at'),
     latencyMs: optionalInteger(row, 'latency_ms'),

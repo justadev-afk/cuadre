@@ -31,6 +31,7 @@ const BANESCO = {
   displayName: 'Banesco',
   environments: ['production', 'sandbox'] as const,
   credentialGroups: GROUPS,
+  findsTransfers: true,
 };
 
 describe('list supported banks', () => {
@@ -45,6 +46,7 @@ describe('list supported banks', () => {
         displayName: 'Banesco',
         environments: ['production', 'sandbox'],
         credentialGroups: GROUPS,
+        findsTransfers: true,
       },
     ]);
   });

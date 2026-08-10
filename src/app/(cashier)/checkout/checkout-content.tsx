@@ -31,11 +31,23 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
     ? 'production'
     : 'sandbox';
   const envAccounts = usable.filter((a) => a.environment === environment);
-  const accountViews = envAccounts.map((a) => ({
-    id: a.id,
-    last4: a.accountLast4,
-    bankName: bankDisplayName(a.bank),
-  }));
+  // The bank's own facts, off the registry rather than off a list kept here:
+  // its name, and whether the till may leave the payer's phone empty for it (a
+  // transferencia has none). A second bank arrives with its own answer to both.
+  const catalogue = new Map(
+    container()
+      .banking.listSupportedBanks()
+      .map((b) => [b.id, b]),
+  );
+  const accountViews = envAccounts.map((a) => {
+    const bank = catalogue.get(a.bank);
+    return {
+      id: a.id,
+      last4: a.accountLast4,
+      bankName: bank?.displayName ?? a.bank,
+      findsTransfers: bank?.findsTransfers ?? false,
+    };
+  });
   const bankNames = [...new Set(accountViews.map((a) => a.bankName))];
   const bankName = bankNames.length === 1 ? (bankNames[0] ?? 'el banco') : 'el banco';
 
@@ -82,9 +94,4 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
       shiftDue={shiftDue}
     />
   );
-}
-
-/** The only bank today. A registry lookup would be the general form. */
-function bankDisplayName(bank: string): string {
-  return bank === 'banesco' ? 'Banesco' : bank;
 }

@@ -74,6 +74,12 @@ export type CheckoutAccount = {
   readonly id: string;
   readonly last4: string;
   readonly bankName: string;
+  /**
+   * Whether this account's bank can find a payment with no payer phone — a
+   * transferencia. It is what makes the phone field optional, so the rule
+   * arrives from the bank rather than being written into this screen.
+   */
+  readonly findsTransfers: boolean;
 };
 
 type CheckoutFormProps = {
@@ -174,6 +180,7 @@ export function CheckoutForm({
 }: CheckoutFormProps) {
   const referenceId = useId();
   const phoneId = useId();
+  const phoneHintId = useId();
   const bankId = useId();
   const amountId = useId();
   const accountSelectId = useId();
@@ -225,16 +232,27 @@ export function CheckoutForm({
   const bank = findBank(bankCode);
   const amountCents = parseAmountToCents(amount);
 
+  // May this till validate without a phone? That is the receiving bank's answer,
+  // not this screen's: the chosen account's when one is chosen, and otherwise
+  // any account that could take the question — the use case asks exactly those.
+  const transfersOk =
+    selectedAccount !== null
+      ? selectedAccount.findsTransfers
+      : accounts.some((account) => account.findsTransfers);
+
   // ── realtime validity — the Validar button reads these, and each typed-but-
   //    wrong field turns red. Empty is never red: a field you have not filled is
   //    not a field you got wrong.
   const refValid = reference.trim().length > 0;
-  const phoneValid = normalisePhone(phone) !== null;
+  const phoneTyped = phone.trim() !== '';
+  // Blank is valid where a transferencia can be looked up: it is not a field
+  // left out, it is the cashier saying this payment has no phone behind it.
+  const phoneValid = phoneTyped ? normalisePhone(phone) !== null : transfersOk;
   const bankValid = bank !== null;
   const amountValid = amountCents !== null && amountCents > 0;
   const canSubmit = refValid && phoneValid && bankValid && amountValid;
 
-  const phoneInvalid = phone !== '' && !phoneValid;
+  const phoneInvalid = phoneTyped && normalisePhone(phone) === null;
   const amountInvalid = amount !== '' && !amountValid;
 
   function edited(): void {
@@ -257,10 +275,14 @@ export function CheckoutForm({
 
   async function send(): Promise<void> {
     const cents = parseAmountToCents(amount);
-    const payerPhone = normalisePhone(phone);
+    // Empty is a transferencia, not a missing field — but a phone that *was*
+    // typed still has to be a real one.
+    const payerPhone = phoneTyped ? normalisePhone(phone) : null;
     // The button gates this, but Enter can still fire a form: the same rules,
     // once more, silently — a disabled path, not an error message.
-    if (reference.trim() === '' || payerPhone === null || bank === null || cents === null) return;
+    if (reference.trim() === '' || bank === null || cents === null) return;
+    if (payerPhone === null && !transfersOk) return;
+    if (phoneTyped && payerPhone === null) return;
 
     const key = idempotencyKey.current ?? crypto.randomUUID();
     idempotencyKey.current = key;
@@ -317,7 +339,7 @@ export function CheckoutForm({
   );
 
   return (
-    <ContentLayout title="Validar pago móvil" aside={aside} asideTitle="Mi turno" fill={express}>
+    <ContentLayout title="Validar pago" aside={aside} asideTitle="Mi turno" fill={express}>
       <form
         className={cn(BOX_LG, express && 'h-full')}
         onSubmit={(event) => {
@@ -350,6 +372,7 @@ export function CheckoutForm({
             <Input
               id={phoneId}
               aria-invalid={phoneInvalid}
+              aria-describedby={transfersOk ? phoneHintId : undefined}
               value={phone}
               inputMode="tel"
               autoComplete="off"
@@ -360,6 +383,11 @@ export function CheckoutForm({
                 edited();
               }}
             />
+            {transfersOk && (
+              <span id={phoneHintId} className="block text-[11px] text-muted-foreground">
+                Si lo dejas vacío, validamos una transferencia.
+              </span>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -423,17 +451,6 @@ export function CheckoutForm({
             />
           </div>
         )}
-
-        <p className="mt-auto flex items-start gap-2 text-xs text-muted-foreground">
-          <Icon name="bank" className="mt-0.5" />
-          <span>
-            {selectedAccount === null
-              ? accounts.length > 1
-                ? `Consultamos a ${bankName} en tus ${accounts.length} cuentas receptoras.`
-                : `Consultamos a ${bankName} con la referencia, el teléfono y el monto. Cuenta receptora ···· ${accounts[0]?.last4 ?? ''}.`
-              : `Consultamos a ${selectedAccount.bankName} con la referencia, el teléfono y el monto. Cuenta receptora ···· ${selectedAccount.last4}.`}
-          </span>
-        </p>
       </form>
 
       {!shiftDue && (busy || outcome !== null) && (
@@ -858,7 +875,10 @@ function ChargeRows({
     <div className="flex flex-col gap-2.5 text-[13px]">
       <Row label="Monto" strong value={formatBolivares(charge.amountCents)} />
       <Row label="Referencia" mono value={charge.reference} />
-      <Row label="Teléfono" value={formatPhoneForDisplay(charge.payerPhone)} />
+      {/* A transferencia has no phone to show; the row is absent, not empty. */}
+      {charge.payerPhone !== null && (
+        <Row label="Teléfono" value={formatPhoneForDisplay(charge.payerPhone)} />
+      )}
       {account !== undefined && <Row label="Cuenta" value={account} />}
       <Row label="Fecha" value={formatDateTime(charge.createdAt)} />
     </div>

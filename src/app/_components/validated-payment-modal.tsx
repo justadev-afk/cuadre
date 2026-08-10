@@ -25,7 +25,8 @@ export type ValidatedPaymentView = {
   readonly controlCode: string;
   readonly amountCents: number;
   readonly reference: string;
-  readonly payerPhone: string;
+  /** `null` for a transferencia: the payment carried no payer phone. */
+  readonly payerPhone: string | null;
   /** The bank that answered, as a name (e.g. "Banesco"). */
   readonly bankName: string;
   readonly cashierName?: string | null;
@@ -101,7 +102,9 @@ export function ValidatedPaymentModal({
         <div className="flex flex-col gap-2.5 text-[13px]">
           <Row label="Monto" strong value={formatBolivares(view.amountCents)} />
           <Row label="Referencia" mono value={view.reference} />
-          <Row label="Teléfono" value={formatPhoneForDisplay(view.payerPhone)} />
+          {view.payerPhone !== null ? (
+            <Row label="Teléfono" value={formatPhoneForDisplay(view.payerPhone)} />
+          ) : null}
           {view.accountLabel ? <Row label="Cuenta" value={view.accountLabel} /> : null}
           {view.cashierName ? <Row label="Cajero" value={view.cashierName} /> : null}
           <Row label="Fecha" value={formatDateTime(view.atSeconds)} />

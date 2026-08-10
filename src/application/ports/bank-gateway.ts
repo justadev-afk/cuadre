@@ -167,8 +167,13 @@ export type FindPaymentQuery = {
   accountId: string;
   /** The full reference the customer read off their receipt. */
   reference: string;
-  /** Normalised to the bank's expected form by the domain, e.g. `584143125566`. */
-  payerPhone: string;
+  /**
+   * Normalised to the bank's expected form by the domain, e.g. `584143125566`
+   * — or `null` when the payment has no payer phone behind it at all, which is
+   * a transferencia rather than a pago móvil. Only a gateway that declares
+   * `findsTransfers` is ever handed one.
+   */
+  payerPhone: string | null;
   /** Sudeban code of the payer's bank. */
   sourceBankId: string;
   /** `YYYY-MM-DD` in Venezuela local time. */
@@ -213,6 +218,17 @@ export interface BankGateway {
    * screen has no per-bank branch because of this: it renders the groups.
    */
   readonly credentialGroups: readonly BankCredentialGroup[];
+  /**
+   * Can this bank find a payment that carries no payer phone — a transferencia?
+   *
+   * A pago móvil is made *from* a phone, so a bank can search by it; a
+   * transferencia has none, and the reference is the only handle there is. The
+   * two are not the same question, and a bank may well answer one and not the
+   * other, so the capability is declared rather than discovered: the counter
+   * keeps the phone required for a bank that says `false`, and a phoneless
+   * claim is never asked of one.
+   */
+  readonly findsTransfers: boolean;
 
   authenticate(
     environment: BankEnvironment,

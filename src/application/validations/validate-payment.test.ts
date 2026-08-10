@@ -182,6 +182,8 @@ function fakeValidations(seed: readonly Validation[] = []) {
 type GatewayScript = {
   authenticate?: Result<BankSession, BankFailure>;
   payment?: Result<FoundPayment | null, BankFailure>;
+  /** A bank that cannot look a payment up without the payer's phone. */
+  findsTransfers?: boolean;
 };
 
 function fakeBanks(script: GatewayScript = {}) {
@@ -195,6 +197,7 @@ function fakeBanks(script: GatewayScript = {}) {
     credentialGroups: [
       { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
     ],
+    findsTransfers: script.findsTransfers ?? true,
 
     async authenticate() {
       calls.authenticate++;
@@ -572,6 +575,45 @@ describe('validate payment', () => {
     expect(await validatePayment(INPUT)).toEqual({ ok: false, error: 'rejected_credentials' });
   });
 
+  it('takes a claim with no phone as a transferencia and records none', async () => {
+    // A transferencia is made from an account, not from a phone. The claim is
+    // asked without one and the row says so — an empty string standing in for a
+    // phone would be a payer nobody can look up.
+    const { validatePayment, validations, queries } = await harness({
+      script: { payment: ok(found()) },
+    });
+
+    const result = await validatePayment({ ...INPUT, payerPhone: null });
+
+    expect(result).toMatchObject({ ok: true, value: { kind: 'confirmed' } });
+    expect(queries[0]?.payerPhone).toBeNull();
+    expect(validations.rows[0]?.payerPhone).toBeNull();
+  });
+
+  it('treats a blank phone as no phone rather than as a bad one', async () => {
+    const { validatePayment, validations } = await harness({ script: { payment: ok(found()) } });
+
+    expect(await validatePayment({ ...INPUT, payerPhone: '   ' })).toMatchObject({ ok: true });
+    expect(validations.rows[0]?.payerPhone).toBeNull();
+  });
+
+  it('never asks a phoneless claim of a bank that cannot answer one', async () => {
+    // The till keeps the field required for such a bank, so this is a second
+    // bank connected since the screen loaded, or a hand-made request. Either
+    // way it is refused rather than asked a question with no answer — a bank
+    // that cannot search without a phone would report "todavía no aparece" for
+    // a payment that is plainly there.
+    const { validatePayment, calls, points } = await harness({
+      script: { payment: ok(found()), findsTransfers: false },
+    });
+
+    const result = await validatePayment({ ...INPUT, payerPhone: null });
+
+    expect(result).toEqual({ ok: false, error: 'invalid_input' });
+    expect(calls.authenticate).toBe(0);
+    expect(points).toEqual([]);
+  });
+
   it('refuses a phone that is not a Venezuelan mobile before asking the bank', async () => {
     const { validatePayment, calls, points } = await harness();
 
@@ -663,6 +705,7 @@ describe('validate payment across accounts', () => {
       credentialGroups: [
         { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
       ],
+      findsTransfers: true,
       async authenticate() {
         return ok(SESSION);
       },
