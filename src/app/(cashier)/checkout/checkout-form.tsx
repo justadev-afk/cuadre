@@ -32,7 +32,7 @@ import { findBank, SUDEBAN_BANKS } from '../../../domain/sudeban.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
-import { BankSpinner } from '../../_components/skeleton.tsx';
+import { BankSpinner, ButtonSpinner } from '../../_components/skeleton.tsx';
 import { type ReceiptData, ThermalReceipt } from '../../_components/thermal-receipt.tsx';
 import { ValidatedPaymentModal } from '../../_components/validated-payment-modal.tsx';
 import { maskCurrency } from '../../_lib/masks.ts';
@@ -454,10 +454,15 @@ export function CheckoutForm({
 
         {/* Last, and pinned to the floor of the card: the till fills the window,
             so anywhere else leaves the dead space the cashier's thumb is aimed
-            at. `mt-auto` is inert on a card that is only as tall as its fields. */}
-        <Button type="submit" className="mt-auto h-[50px] text-base" disabled={!canSubmit}>
+            at. `mt-auto` is inert on a card that is only as tall as its fields.
+
+            The arrow becomes a spinner for exactly as long as the bank is being
+            asked. The modal says the same thing, but the button is what was just
+            tapped and it is what the eye is still on — and when the shift prompt
+            suppresses the modal, it is the only answer there is. */}
+        <Button type="submit" className="mt-auto h-[50px] text-base" disabled={!canSubmit || busy}>
           Validar
-          <Icon name="arrow-right" />
+          {busy ? <ButtonSpinner /> : <Icon name="arrow-right" />}
         </Button>
       </form>
 

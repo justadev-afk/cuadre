@@ -89,12 +89,23 @@ export function SkeletonTable({
   );
 }
 
+/** One definition of what a spinner looks like here, at either size. */
+const SPINNER =
+  'animate-[spin_1s_linear_infinite] rounded-full border-2 border-[var(--color-neutral-800)] border-t-primary';
+
 /** "Consultando a Banesco" — the one the cashier watches. */
 export function BankSpinner({ size = 60 }: { size?: number }) {
-  return (
-    <div
-      className="animate-[spin_1s_linear_infinite] rounded-full border-2 border-[var(--color-neutral-800)] border-t-primary"
-      style={{ width: size, height: size }}
-    />
-  );
+  return <div className={SPINNER} style={{ width: size, height: size }} />;
+}
+
+/**
+ * The same spinner at icon size, for a button that is waiting.
+ *
+ * It goes **in the slot the trailing icon vacates**, at exactly that icon's
+ * 16px, so the label does not move by a pixel when the wait starts. A button
+ * that reflows mid-tap is how a second tap lands somewhere else — and this one
+ * is tapped by someone standing at a counter with a customer waiting.
+ */
+export function ButtonSpinner() {
+  return <span aria-hidden="true" className={`${SPINNER} size-4 shrink-0`} />;
 }
