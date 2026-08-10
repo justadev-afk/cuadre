@@ -1,16 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Cuadre">
   <title>Cuadre</title>
   <!-- Colours are Nocturne's tokens (globals.css) plus the flag's own three:
-       tile #161826 (color-bg), phone frame #e9e9ed (color-text),
+       tile #161826 (color-bg), device frame #e9e9ed (color-text),
        badge and halo #9184d9 (color-accent).
-       Flag: #fcdd09 amarillo, #00247d azul, #cf142b rojo. -->
+       Flag: #fcdd09 amarillo, #00247d azul, #cf142b rojo.
+
+       The device is a tablet, 304×368 — near enough to square that the mark
+       survives being 16px wide in a browser tab. A phone's 5:9 slab shrank to a
+       grey sliver with a smudge of colour on it: at favicon size the *shape*
+       has to be the tile, not a shard standing in the middle of it. It is also
+       what a counter actually holds. -->
   <defs>
     <radialGradient id="glow">
       <stop offset="0" stop-color="#9184d9" stop-opacity="0.28" />
       <stop offset="1" stop-color="#9184d9" stop-opacity="0" />
     </radialGradient>
     <clipPath id="screen">
-      <rect x="164" y="110" width="184" height="292" rx="22" />
+      <rect x="130" y="106" width="252" height="288" rx="12" />
     </clipPath>
   </defs>
 
@@ -20,17 +26,19 @@
        maskable and apple-touch crops flatten onto it without a seam. -->
   <circle cx="256" cy="212" r="228" fill="url(#glow)" />
 
-  <!-- the phone -->
-  <rect x="148" y="80" width="216" height="352" rx="46" fill="#e9e9ed" />
+  <!-- the tablet -->
+  <rect x="104" y="72" width="304" height="368" rx="38" fill="#e9e9ed" />
   <g clip-path="url(#screen)">
-    <rect x="164" y="110" width="184" height="97.34" fill="#fcdd09" />
-    <rect x="164" y="207.34" width="184" height="97.33" fill="#00247d" />
-    <rect x="164" y="304.67" width="184" height="97.33" fill="#cf142b" />
+    <rect x="130" y="106" width="252" height="96" fill="#fcdd09" />
+    <rect x="130" y="202" width="252" height="96" fill="#00247d" />
+    <rect x="130" y="298" width="252" height="96" fill="#cf142b" />
     <!-- The eight stars: an arc with the convexity upwards, centred on a
          circle whose centre is below the blue band, each star tilted radially.
          The angles and ratios are measured off the official flag, not drawn by
-         eye — an arc curving the other way is a different country. -->
-    <g fill="#ffffff">
+         eye — an arc curving the other way is a different country. The arc is
+         placed by transform rather than by 80 rewritten numbers: it is the same
+         drawing, recentred on the wider screen's blue band. -->
+    <g fill="#ffffff" transform="translate(256 250) scale(1.12) translate(-256 -256)">
       <polygon points="176.95,273.63 184.33,274.34 187.28,267.54 188.89,274.78 196.26,275.49 189.88,279.25 191.48,286.48 185.93,281.57 179.54,285.33 182.5,278.54" />
       <polygon points="191.94,250.32 198.71,253.34 203.67,247.83 202.9,255.2 209.67,258.21 202.42,259.75 201.64,267.12 197.94,260.71 190.69,262.25 195.65,256.74" />
       <polygon points="214.21,232.61 219.63,237.66 226.11,234.07 222.98,240.79 228.4,245.84 221.04,244.94 217.91,251.65 216.5,244.38 209.14,243.48 215.62,239.88" />
@@ -41,12 +49,14 @@
       <polygon points="335.05,273.63 329.5,278.54 332.46,285.33 326.07,281.57 320.52,286.48 322.12,279.25 315.74,275.49 323.11,274.78 324.72,267.54 327.67,274.34" />
     </g>
   </g>
-  <rect x="232" y="90" width="48" height="10" rx="5" fill="#161826" />
-  <rect x="222" y="412" width="68" height="9" rx="4.5" fill="#161826" />
+  <!-- camera above the screen, home bar below it: the two marks that say the
+       white slab is a device and not a card. -->
+  <circle cx="256" cy="89" r="6" fill="#161826" />
+  <rect x="222" y="413" width="68" height="8" rx="4" fill="#161826" />
 
   <!-- confirmado: the check the counter is waiting for -->
-  <circle cx="364" cy="392" r="62" fill="#161826" />
-  <circle cx="364" cy="392" r="54" fill="#9184d9" />
-  <path d="M340 393 L357 410 L390 372" fill="none" stroke="#161826" stroke-width="16"
+  <circle cx="396" cy="398" r="62" fill="#161826" />
+  <circle cx="396" cy="398" r="54" fill="#9184d9" />
+  <path d="M372 399 L389 416 L422 378" fill="none" stroke="#161826" stroke-width="16"
         stroke-linecap="round" stroke-linejoin="round" />
 </svg>

@@ -1,20 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Cuadre">
   <title>Cuadre</title>
-  <!-- The same mark as icon.svg, redrawn for 16px: at that size the bezels, the
-       notch, the badge and eight separate stars are all grey mush, so what is
-       left is what still reads — the tricolour phone and one star. Drawn on a
-       32 grid so the bands land on whole pixels. -->
+  <!-- The same mark as icon.svg, redrawn for 16px: at that size the camera, the
+       home bar, the badge and eight separate stars are all grey mush, so what is
+       left is what still reads — the tricolour tablet and one star. Drawn on a
+       32 grid so the bands land on whole pixels, and near enough to square that
+       it fills the tab's square instead of hiding in the middle of it. -->
   <defs>
     <clipPath id="body">
-      <rect x="8.25" y="3.5" width="15.5" height="25" rx="4.25" />
+      <rect x="6.5" y="4.5" width="19" height="23" rx="4" />
     </clipPath>
   </defs>
   <rect width="32" height="32" rx="7" fill="#161826" />
   <g clip-path="url(#body)">
-    <rect x="8" y="3" width="16" height="8.83" fill="#fcdd09" />
-    <rect x="8" y="11.83" width="16" height="8.34" fill="#00247d" />
-    <rect x="8" y="20.17" width="16" height="9" fill="#cf142b" />
+    <rect x="6" y="4" width="20" height="8.17" fill="#fcdd09" />
+    <rect x="6" y="12.17" width="20" height="7.66" fill="#00247d" />
+    <rect x="6" y="19.83" width="20" height="8.17" fill="#cf142b" />
   </g>
   <polygon points="16.0,13.0 16.67,15.07 18.85,15.07 17.09,16.35 17.76,18.43 16.0,17.15 14.24,18.43 14.91,16.35 13.15,15.07 15.33,15.07" fill="#ffffff" />
-  <rect x="8.25" y="3.5" width="15.5" height="25" rx="4.25" fill="none" stroke="#e9e9ed" stroke-width="1.5" />
+  <rect x="6.5" y="4.5" width="19" height="23" rx="4" fill="none" stroke="#e9e9ed" stroke-width="1.5" />
 </svg>

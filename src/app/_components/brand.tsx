@@ -2,7 +2,7 @@
  * The brand lockup: the real Cuadre mark beside the wordmark.
  *
  * The mark is `icon.svg` — the very artwork the PWA icon, the favicon and the
- * apple-touch icon are cut from (the tricolour phone with the confirmation
+ * apple-touch icon are cut from (the tricolour tablet with the confirmation
  * check), so the logo a cashier sees in the till header is the same one on their
  * home screen. That recognition is the whole point; a drawn stand-in would not
  * carry it.
