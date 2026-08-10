@@ -771,6 +771,21 @@ function VerdictContent({
   onEdit: () => void;
 }) {
   const verdict = readVerdict(outcome, reference, amountCents);
+
+  /**
+   * Enter closes this. A verdict replaces the wait *inside* an already-open
+   * dialog, so the button that had focus a moment ago — the wait's "Cancelar" —
+   * is gone, and focus falls back to `<body>`, where Enter does nothing at all.
+   * The verdict claims it back, on "Verificar datos": the action that dismisses
+   * without touching what was typed, which is the only thing Enter can safely
+   * mean on a screen the cashier can do nothing else with. "Ese pago ya fue
+   * cobrado" and "No coincide con el movimiento" are exactly that screen.
+   */
+  const dismissRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    dismissRef.current?.focus();
+  }, []);
+
   // "Ya fue cobrado" says who charged it and how long ago — the till's answer
   // to "¿entonces quién lo cobró?".
   const chargedNote =
@@ -800,7 +815,7 @@ function VerdictContent({
             Nuevo cobro
           </Button>
         )}
-        <Button className="flex-1" onClick={onEdit}>
+        <Button ref={dismissRef} className="flex-1" onClick={onEdit}>
           <Icon name="pencil-simple" />
           Verificar datos
         </Button>
