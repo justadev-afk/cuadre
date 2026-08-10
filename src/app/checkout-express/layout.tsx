@@ -50,7 +50,6 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
             <div className="truncate font-heading text-sm">{merchantName ?? 'Caja'}</div>
             <div className="truncate text-muted-foreground text-xs">
               {session.name}
-              {session.username ? ` · ${session.username}` : ''}
             </div>
           </div>
         </div>
