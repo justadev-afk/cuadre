@@ -48,9 +48,7 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
           <Brand markOnly size={30} />
           <div className="min-w-0 leading-tight">
             <div className="truncate font-heading text-sm">{merchantName ?? 'Caja'}</div>
-            <div className="truncate text-muted-foreground text-xs">
-              {session.name}
-            </div>
+            <div className="truncate text-muted-foreground text-xs">{session.name}</div>
           </div>
         </div>
 

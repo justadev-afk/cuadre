@@ -128,14 +128,23 @@ const MARK_QUIET =
 // Label pinned top-left (default text-align), the number centred under it.
 const STAT_CARD =
   'flex min-h-[76px] flex-col justify-center gap-0.5 rounded-md bg-card px-2.5 py-3.5 shadow-[var(--shadow-sm)]';
-// The inset-fade hairline under a "mi turno" row — the table's row rule, on a button.
-//
-// `w-full` with a negative margin does not widen a box, it *slides* it: the row
-// was 100% wide and 6px to the left, so the hover bled past the text on one side
-// and stopped short of it on the other. The width has to grow by both margins
-// for the highlight to sit evenly around the row it belongs to.
+// The inset-fade hairline under a "mi turno" row — the table's row rule, on a
+// button. The row is a plain 100% of the list it sits in; what makes its hover
+// bleed past the text is the list being wider than the pane, not the row being
+// wider than the list.
 const RECENT_ROW =
-  'flex w-[calc(100%+1.25rem)] cursor-pointer items-center gap-2.5 -mx-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors hover:bg-foreground/[0.06] bg-[linear-gradient(to_right,transparent,color-mix(in_srgb,var(--color-text)_8%,transparent)_20px,color-mix(in_srgb,var(--color-text)_8%,transparent)_calc(100%-20px),transparent)] bg-[length:100%_1px] bg-bottom bg-no-repeat';
+  'flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors hover:bg-foreground/[0.06] bg-[linear-gradient(to_right,transparent,color-mix(in_srgb,var(--color-text)_8%,transparent)_20px,color-mix(in_srgb,var(--color-text)_8%,transparent)_calc(100%-20px),transparent)] bg-[length:100%_1px] bg-bottom bg-no-repeat';
+// So the 10px of bleed on each side is the scroller's: a negative margin does
+// not widen a box, it *slides* it, and the width has to grow by both margins for
+// the highlight to sit evenly around the row it belongs to.
+//
+// It has to be the scroller and not the rows, because a row wider than its
+// scroll box is content overflowing sideways — and `overflow-y-auto` computes
+// overflow-x to `auto` as well, so six rows of identical width still put a
+// horizontal scrollbar under the list. Widening the box draws exactly the same
+// thing with nothing to scroll.
+const RECENT_SCROLLER =
+  'flex min-h-0 w-[calc(100%+1.25rem)] flex-1 -mx-2.5 flex-col overflow-y-auto';
 const MODAL_CLASS = 'w-[min(440px,calc(100%-2rem))]';
 
 /**
@@ -547,7 +556,7 @@ function MiTurno({
         // The one scrollable region: many cobros scroll here, inside the box,
         // never the whole till. flex-1 + min-h-0 lets it take the leftover height
         // and clip its own overflow.
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className={RECENT_SCROLLER}>
           {recent.map((row) => (
             <button
               type="button"
