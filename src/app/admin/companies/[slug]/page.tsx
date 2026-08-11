@@ -194,6 +194,8 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                         bankLabel={info.displayName}
                         environment={account.environment}
                         credentialGroups={info.credentialGroups}
+                        receivingAccountRule={info.receivingAccountRule}
+                        receivingAccounts={account.receivingAccounts}
                       />
                     )
                   }

@@ -24,7 +24,3 @@ export const REMOVE_BANK_INITIAL: RemoveBankState = ACTION_INITIAL;
 /** The "cambiar credenciales" modal's action state (company and admin share it). */
 export type ChangeCredentialsState = ActionState;
 export const CHANGE_CREDENTIALS_INITIAL: ChangeCredentialsState = ACTION_INITIAL;
-
-/** The "cuentas receptoras" editor's action state. */
-export type ReceivingAccountsState = ActionState;
-export const RECEIVING_ACCOUNTS_INITIAL: ReceivingAccountsState = ACTION_INITIAL;

@@ -34,6 +34,9 @@ export type CompanyBankAccount = {
   /** The merchant's own name for the connection, when they gave one. */
   readonly label: string | null;
   readonly clientIdLast6: string | null;
+  /** The accounts this connection receives transferencias in — the admin edits
+   *  the same list the merchant does, from the same dialog. */
+  readonly receivingAccounts: readonly string[];
   readonly verifiedAt: number | null;
   /** QA credentials expire; the panel warns seven days out. */
   readonly credsExpireAt: number | null;
@@ -93,6 +96,7 @@ function toSummary(account: CompanyBankAccount): CompanyBankAccount {
     status: account.status,
     label: account.label,
     clientIdLast6: account.clientIdLast6,
+    receivingAccounts: account.receivingAccounts,
     verifiedAt: account.verifiedAt,
     credsExpireAt: account.credsExpireAt,
     createdAt: account.createdAt,

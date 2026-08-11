@@ -550,6 +550,7 @@ export function CheckoutForm({
             ref={referenceRef}
             id={referenceId}
             aria-invalid={refInvalid}
+            disabled={transferBlocked}
             className="h-[66px] text-center text-[30px] tracking-[0.16em] tabular-nums max-[899px]:h-[58px] max-[899px]:text-[26px]"
             value={reference}
             inputMode="numeric"
@@ -582,6 +583,7 @@ export function CheckoutForm({
               <Input
                 id={phoneId}
                 aria-invalid={phoneInvalid}
+                disabled={transferBlocked}
                 value={phone}
                 inputMode="tel"
                 autoComplete="off"
@@ -604,6 +606,7 @@ export function CheckoutForm({
               onChange={chooseBank}
               placeholder="Elige el banco"
               searchPlaceholder="Buscar banco…"
+              disabled={transferBlocked}
             />
           </div>
         </div>
@@ -623,8 +626,9 @@ export function CheckoutForm({
               <span className="mr-2 font-heading text-muted-foreground">Bs</span>
               <input
                 id={amountId}
-                className="min-w-0 flex-1 border-none bg-transparent p-0 text-right font-heading text-[22px] tabular-nums text-foreground caret-primary outline-none"
+                className="min-w-0 flex-1 border-none bg-transparent p-0 text-right font-heading text-[22px] tabular-nums text-foreground caret-primary outline-none disabled:cursor-not-allowed"
                 value={amount}
+                disabled={transferBlocked}
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="0,00"
@@ -654,10 +658,16 @@ export function CheckoutForm({
           ) : null}
         </div>
 
+        {/* Loud, because every field above it is dead: a quiet grey line under a
+            form that silently refuses to be typed into reads as a bug. The
+            danger token is the one red in the palette. */}
         {transferBlocked && (
-          <p className="m-0 rounded-md bg-foreground/[0.05] px-3 py-2.5 text-[13px] text-muted-foreground">
-            {selectedAccount?.bankName ?? 'Este banco'} no acepta transferencias en esta caja: no
-            tiene ninguna cuenta receptora registrada. Se agregan en Bancos.
+          <p className="m-0 flex items-start gap-2 rounded-md border border-destructive bg-destructive/[0.12] px-3 py-2.5 text-[13px] text-destructive">
+            <Icon name="warning-circle" className="mt-0.5 shrink-0" />
+            <span>
+              {selectedAccount?.bankName ?? 'Este banco'} no acepta transferencias en esta caja: no
+              tiene ninguna cuenta receptora registrada. Se agregan en Bancos.
+            </span>
           </p>
         )}
 

@@ -30,6 +30,7 @@ import {
 import type {
   BankCredentialGroup,
   BankEnvironment,
+  BankReceivingAccountRule,
 } from '../../../application/ports/bank-gateway.ts';
 import { Icon } from '../../_components/icon.tsx';
 import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
@@ -41,6 +42,7 @@ import {
 } from './credential-fields.tsx';
 import { requiredCredentialsFilled } from './credentials.ts';
 import { CHANGE_CREDENTIALS_INITIAL, type ChangeCredentialsState } from './form-state.ts';
+import { ReceivingAccountsField } from './receiving-accounts-field.tsx';
 
 type ChangeCredentialsButtonProps = {
   /** The server action — `changeCredentialsAction` (company) or the admin one. */
@@ -52,6 +54,10 @@ type ChangeCredentialsButtonProps = {
   bankLabel: string;
   environment: BankEnvironment;
   credentialGroups: readonly BankCredentialGroup[];
+  /** How this bank spells a receiving account, or null if it asks for none. */
+  receivingAccountRule: BankReceivingAccountRule | null;
+  /** The accounts stored on this connection, as the field opens with them. */
+  receivingAccounts: readonly string[];
 };
 
 export function ChangeCredentialsButton({
@@ -62,10 +68,13 @@ export function ChangeCredentialsButton({
   bankLabel,
   environment,
   credentialGroups,
+  receivingAccountRule,
+  receivingAccounts,
 }: ChangeCredentialsButtonProps) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(action, CHANGE_CREDENTIALS_INITIAL);
   const [values, setValues] = useState<CredentialValues>({});
+  const [accounts, setAccounts] = useState<string[]>([...receivingAccounts]);
   const setField = (key: string, value: string) =>
     setValues((previous) => ({ ...previous, [key]: value }));
 
@@ -77,18 +86,27 @@ export function ChangeCredentialsButton({
   const canSave = requiredCredentialsFilled(credentialGroups, values);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Re-opening starts from what is stored, never from a half-finished
+        // edit somebody walked away from.
+        if (next) setAccounts([...receivingAccounts]);
+        setOpen(next);
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
-          Cambiar credenciales
+          Editar conexión
         </Button>
       </DialogTrigger>
       <DialogContent className="w-[min(470px,calc(100%-2rem))]">
         <DialogHeader>
-          <DialogTitle>Cambiar credenciales · {bankLabel}</DialogTitle>
+          <DialogTitle>Editar {bankLabel}</DialogTitle>
           <DialogDescription>
-            Verificamos las credenciales nuevas contra el banco antes de guardarlas. El banco y el
-            entorno no cambian; para eso conecta una cuenta nueva.
+            Las cuentas que reciben transferencias y las credenciales. Verificamos las credenciales
+            contra el banco antes de guardarlas; el banco y el entorno no cambian, para eso conecta
+            una cuenta nueva.
           </DialogDescription>
         </DialogHeader>
 
@@ -110,6 +128,16 @@ export function ChangeCredentialsButton({
             bankId={bankId}
             environment={environment}
             disabled={pending}
+          />
+
+          {/* The very field the alta renders, pre-filled — one component for
+              both sides of the app and for both flows (§11). */}
+          <ReceivingAccountsField
+            rule={receivingAccountRule}
+            accounts={accounts}
+            onChange={setAccounts}
+            disabled={pending}
+            idPrefix={`chg-${accountId}`}
           />
 
           <CredentialGroupFields

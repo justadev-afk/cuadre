@@ -12,11 +12,10 @@ import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
-import { changeCredentialsAction, setReceivingAccountsAction } from './actions.ts';
+import { changeCredentialsAction } from './actions.ts';
 import { BanksPanel } from './banks-panel.tsx';
 import { ChangeCredentialsButton } from './change-credentials-button.tsx';
 import { DeactivateBankButton } from './deactivate-bank-button.tsx';
-import { ReceivingAccountsButton } from './receiving-accounts-button.tsx';
 
 export const metadata = pageMeta('Bancos');
 
@@ -60,15 +59,6 @@ export default async function BanksPage() {
               action={
                 <>
                   {info && (
-                    <ReceivingAccountsButton
-                      action={setReceivingAccountsAction}
-                      accountId={account.id}
-                      bankLabel={name}
-                      rule={info.receivingAccountRule}
-                      accounts={account.receivingAccounts}
-                    />
-                  )}
-                  {info && (
                     <ChangeCredentialsButton
                       action={changeCredentialsAction}
                       accountId={account.id}
@@ -76,6 +66,8 @@ export default async function BanksPage() {
                       bankLabel={name}
                       environment={account.environment}
                       credentialGroups={info.credentialGroups}
+                      receivingAccountRule={info.receivingAccountRule}
+                      receivingAccounts={account.receivingAccounts}
                     />
                   )}
                   <DeactivateBankButton accountId={account.id} name={name} label={account.label} />

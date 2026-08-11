@@ -31,6 +31,7 @@ describe('getCompany', () => {
         environment: 'production',
         status: 'active',
         label: 'Caja principal',
+        receivingAccounts: [],
         clientIdLast6: 'a91c2f',
         verifiedAt: 1_760_000_500,
         credsExpireAt: null,

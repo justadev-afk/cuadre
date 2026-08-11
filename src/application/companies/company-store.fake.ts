@@ -113,6 +113,7 @@ export type FakeBankAccountRow = {
   readonly status: 'active' | 'needs_reverify' | 'removed';
   readonly label: string | null;
   readonly clientIdLast6: string | null;
+  readonly receivingAccounts: readonly string[];
   readonly verifiedAt: number | null;
   readonly credsExpireAt: number | null;
   readonly createdAt: number;
@@ -164,6 +165,7 @@ function bankAccountRow(overrides: Partial<FakeBankAccountRow>): FakeBankAccount
     status: 'active',
     label: 'Caja principal',
     clientIdLast6: 'a91c2f',
+    receivingAccounts: [],
     verifiedAt: 1_760_000_500,
     credsExpireAt: null,
     createdAt: 1_760_000_000,

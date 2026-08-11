@@ -21,6 +21,13 @@ import type { ChangeCredentialsState } from './form-state.ts';
  * Runs the change for a company already resolved by the caller's guard.
  * Revalidation is the caller's — a company revalidates `/banks`, an admin the
  * company-detail path — so this stays free of the route it was reached from.
+ *
+ * The dialog edits two things, so this writes two: the credentials (which cost
+ * a bank round trip to prove) and the accounts that receive transferencias
+ * (which cost nothing — they are the merchant's own numbers). The accounts are
+ * written first and on their own terms: a merchant who only came to fix a
+ * mistyped account should not have their edit thrown away because the bank was
+ * having a bad minute.
  */
 export async function changeBankCredentialsCore(
   companyId: string,
@@ -28,6 +35,14 @@ export async function changeBankCredentialsCore(
 ): Promise<ChangeCredentialsState> {
   const accountId = textField(form, 'accountId');
   if (accountId === '') return { ok: false, error: 'Cuenta inválida.' };
+
+  const stored = await container().banking.setReceivingAccounts({
+    companyId,
+    bankAccountId: accountId,
+    // One per line, as the chips field posts them.
+    accounts: textField(form, 'receivingAccounts').split(/[\n,]/),
+  });
+  if (!stored.ok) return { ok: false, error: 'No se pudieron guardar las cuentas.' };
 
   // The action does not know the bank — the use case resolves it from the
   // account — so every pair the form carried is harvested and judged there.

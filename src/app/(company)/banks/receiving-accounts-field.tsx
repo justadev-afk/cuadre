@@ -47,12 +47,15 @@ export function ReceivingAccountsField({
   accounts,
   onChange,
   disabled = false,
+  idPrefix = 'receiving',
 }: {
   /** The bank's own shape. Null hides the field: this bank asks for none. */
   rule: BankReceivingAccountRule | null;
   accounts: readonly string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  /** One editor per connected bank can sit on a page; ids must not collide. */
+  idPrefix?: string;
 }) {
   const [typed, setTyped] = useState('');
 
@@ -74,14 +77,14 @@ export function ReceivingAccountsField({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor="receiving-account">{rule.label}</Label>
+      <Label htmlFor={`${idPrefix}-account`}>{rule.label}</Label>
 
       {/* The list travels as one value; the chips below are what a person sees. */}
       <input type="hidden" name={RECEIVING_ACCOUNTS_FIELD} value={accounts.join('\n')} />
 
       <div className="flex gap-2">
         <Input
-          id="receiving-account"
+          id={`${idPrefix}-account`}
           value={typed}
           onChange={(event) => setTyped(event.target.value)}
           onKeyDown={(event) => {
