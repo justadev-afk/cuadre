@@ -41,6 +41,7 @@ export default async function ValidationsPage({
   const { companyId } = await requireCompany();
   const companyDetail = await container().companies.getCompany({ companyId });
   const merchantName = companyDetail.ok ? companyDetail.value.company.name : undefined;
+  const merchantRif = companyDetail.ok ? companyDetail.value.company.rif : undefined;
   const params = await searchParams;
   const environment = readEnv(queryValue(params, 'environment'));
   const search = queryValue(params, 'q') ?? undefined;
@@ -146,6 +147,7 @@ export default async function ValidationsPage({
           nowSeconds={nowSeconds}
           showCashier
           merchantName={merchantName}
+          merchantRif={merchantRif}
         />
       )}
     </ContentLayout>

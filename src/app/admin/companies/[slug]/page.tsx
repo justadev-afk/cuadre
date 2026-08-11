@@ -226,6 +226,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             nowSeconds={now}
             showCashier
             merchantName={company.name}
+            merchantRif={company.rif}
           />
         )}
       </div>

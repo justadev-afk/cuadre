@@ -27,6 +27,7 @@ export function ValidationList({
   nowSeconds,
   showCashier = false,
   merchantName,
+  merchantRif,
 }: {
   items: readonly Validation[];
   nowSeconds: number;
@@ -34,6 +35,8 @@ export function ValidationList({
   showCashier?: boolean;
   /** Printed at the top of a re-opened receipt, under "CUADRE". */
   merchantName?: string;
+  /** And their RIF, under the name. */
+  merchantRif?: string;
 }) {
   const [viewing, setViewing] = useState<Validation | null>(null);
 
@@ -165,6 +168,7 @@ export function ValidationList({
             isSandbox: viewing.isSandbox,
             receipt: {
               merchantName,
+              merchantRif,
               controlCode: viewing.controlCode,
               kind: viewing.kind,
               reference: viewing.reference,

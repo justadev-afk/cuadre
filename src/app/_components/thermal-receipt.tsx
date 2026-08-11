@@ -21,6 +21,8 @@ import { Icon } from './icon.tsx';
 
 export type ReceiptData = {
   readonly merchantName?: string | null;
+  /** The merchant's RIF, under their name — a receipt without one is not one. */
+  readonly merchantRif?: string | null;
   readonly controlCode: string;
   readonly reference: string;
   readonly amountCents: number;
@@ -53,6 +55,9 @@ export function ThermalReceipt({ data }: { data: ReceiptData }) {
       <div className="w-full bg-white px-3 py-4 text-center font-mono text-[12px] leading-tight text-black">
         <div className="text-[20px] font-bold tracking-[0.35em]">CUADRE</div>
         {data.merchantName ? <div className="mt-0.5 text-[11px]">{data.merchantName}</div> : null}
+        {data.merchantRif ? (
+          <div className="text-[11px] tabular-nums">RIF {data.merchantRif}</div>
+        ) : null}
 
         <Rule />
         <div className="text-[11px] font-bold">COMPROBANTE DE PAGO</div>

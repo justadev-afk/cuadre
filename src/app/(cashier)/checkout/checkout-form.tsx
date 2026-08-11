@@ -65,10 +65,16 @@ import type { ChargeOutcome, ConfirmedCharge, ReceivingAccountView } from './cha
 /** A confirmed charge as the thermal receipt states it. */
 function chargeReceipt(
   charge: ConfirmedCharge,
-  extra?: { bankName?: string; merchantName?: string; cashierName?: string },
+  extra?: {
+    bankName?: string;
+    merchantName?: string;
+    merchantRif?: string;
+    cashierName?: string;
+  },
 ): ReceiptData {
   return {
     merchantName: extra?.merchantName,
+    merchantRif: extra?.merchantRif,
     controlCode: charge.controlCode,
     kind: charge.kind,
     reference: charge.reference,
@@ -120,6 +126,8 @@ type CheckoutFormProps = {
   turnoCents: number;
   /** Printed on the receipt — the shop and who is at the till. */
   merchantName?: string;
+  /** And their RIF, printed under the name. */
+  merchantRif?: string;
   cashierName?: string;
   /** The sidebar-less express till: fill the height and drop the "ver todas" exit. */
   express?: boolean;
@@ -220,6 +228,7 @@ export function CheckoutForm({
   turnoCount,
   turnoCents,
   merchantName,
+  merchantRif,
   cashierName,
   express = false,
   shiftDue = false,
@@ -684,6 +693,7 @@ export function CheckoutForm({
           onRetry={() => void send()}
           onEdit={backToForm}
           merchantName={merchantName}
+          merchantRif={merchantRif}
           cashierName={cashierName}
         />
       )}
@@ -693,6 +703,7 @@ export function CheckoutForm({
           charge={viewing}
           accounts={accounts}
           merchantName={merchantName}
+          merchantRif={merchantRif}
           cashierName={cashierName}
           onClose={() => setViewing(null)}
         />
@@ -997,6 +1008,7 @@ function ChargeModal({
   onRetry,
   onEdit,
   merchantName,
+  merchantRif,
   cashierName,
 }: {
   busy: boolean;
@@ -1011,6 +1023,7 @@ function ChargeModal({
   onRetry: () => void;
   onEdit: () => void;
   merchantName?: string;
+  merchantRif?: string;
   cashierName?: string;
 }) {
   // Enter closes an answer, with the action that answer already marks as its
@@ -1047,6 +1060,7 @@ function ChargeModal({
             onCopy={onCopy}
             onNewCharge={onNewCharge}
             merchantName={merchantName}
+            merchantRif={merchantRif}
             cashierName={cashierName}
           />
         ) : (
@@ -1104,6 +1118,7 @@ function ConfirmedContent({
   onCopy,
   onNewCharge,
   merchantName,
+  merchantRif,
   cashierName,
 }: {
   charge: ConfirmedCharge;
@@ -1112,6 +1127,7 @@ function ConfirmedContent({
   onCopy: (code: string) => void | Promise<void>;
   onNewCharge: () => void;
   merchantName?: string;
+  merchantRif?: string;
   cashierName?: string;
 }) {
   return (
@@ -1149,7 +1165,7 @@ function ConfirmedContent({
         </Button>
       </div>
 
-      <ThermalReceipt data={chargeReceipt(charge, { merchantName, cashierName })} />
+      <ThermalReceipt data={chargeReceipt(charge, { merchantName, merchantRif, cashierName })} />
     </>
   );
 }
@@ -1218,12 +1234,14 @@ function ValidatedModal({
   charge,
   accounts,
   merchantName,
+  merchantRif,
   cashierName,
   onClose,
 }: {
   charge: ConfirmedCharge;
   accounts: readonly CheckoutAccount[];
   merchantName?: string;
+  merchantRif?: string;
   cashierName?: string;
   onClose: () => void;
 }) {
@@ -1246,7 +1264,7 @@ function ValidatedModal({
         paidAt: charge.paidAt,
         chargedAt: charge.createdAt,
         isSandbox: charge.isSandbox,
-        receipt: chargeReceipt(charge, { bankName, merchantName, cashierName }),
+        receipt: chargeReceipt(charge, { bankName, merchantName, merchantRif, cashierName }),
       }}
       onClose={onClose}
     />

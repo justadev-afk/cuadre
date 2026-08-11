@@ -71,6 +71,7 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
   // company-less session, or if the company vanished under us.
   const detail = companyId ? await container().companies.getCompany({ companyId }) : null;
   const merchantName = detail?.ok === true ? detail.value.company.name : undefined;
+  const merchantRif = detail?.ok === true ? detail.value.company.rif : undefined;
 
   // The "mi turno" pane on the right: today's charges by whoever is signed in.
   const mine = companyId
@@ -105,6 +106,7 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
       turnoCount={turnoCount}
       turnoCents={turnoCents}
       merchantName={merchantName}
+      merchantRif={merchantRif}
       cashierName={session.name}
       express={express}
       shiftDue={shiftDue}

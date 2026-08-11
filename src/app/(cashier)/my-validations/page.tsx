@@ -19,6 +19,7 @@ export default async function MyValidationsPage() {
     ? await container().companies.getCompany({ companyId: session.companyId })
     : null;
   const merchantName = detail?.ok ? detail.value.company.name : undefined;
+  const merchantRif = detail?.ok ? detail.value.company.rif : undefined;
 
   const list =
     session.companyId === null
@@ -35,6 +36,7 @@ export default async function MyValidationsPage() {
       initialNextCursor={list.nextCursor}
       initialNowSeconds={list.to}
       merchantName={merchantName}
+      merchantRif={merchantRif}
     />
   );
 }

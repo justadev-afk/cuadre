@@ -61,6 +61,7 @@ type MyValidationsViewProps = {
   initialNextCursor: PageCursor | null;
   initialNowSeconds: number;
   merchantName?: string;
+  merchantRif?: string;
 };
 
 export function MyValidationsView({
@@ -68,6 +69,7 @@ export function MyValidationsView({
   initialNextCursor,
   initialNowSeconds,
   merchantName,
+  merchantRif,
 }: MyValidationsViewProps) {
   const [range, setRange] = useState<NamedRange>('today');
   const [searchInput, setSearchInput] = useState('');
@@ -200,7 +202,12 @@ export function MyValidationsView({
             />
           )
         ) : (
-          <ValidationList items={items} nowSeconds={nowSeconds} merchantName={merchantName} />
+          <ValidationList
+            items={items}
+            nowSeconds={nowSeconds}
+            merchantName={merchantName}
+            merchantRif={merchantRif}
+          />
         )}
 
         {hasPages && (
