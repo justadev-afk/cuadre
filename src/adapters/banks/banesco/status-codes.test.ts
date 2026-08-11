@@ -8,7 +8,7 @@ import { classifyStatus, failureForHttpStatus, isNoResults } from './status-code
  * `status-codes.ts` that is not also a change here is a change nobody agreed to.
  */
 const FAILURES: ReadonlyArray<[string, BankFailure]> = [
-  ['204', 'no_accounts'],
+  ['204', 'unavailable'],
   ['VDE01', 'invalid_input'],
   ['VDE02', 'invalid_input'],
   ['VRN01', 'rejected_credentials'],

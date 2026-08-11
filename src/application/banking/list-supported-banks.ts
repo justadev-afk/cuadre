@@ -17,6 +17,7 @@ import type {
   BankEnvironment,
   BankId,
   BankPaymentKind,
+  BankReceivingAccountRule,
 } from '../ports/bank-gateway.ts';
 
 /**
@@ -31,6 +32,7 @@ type BankCatalogue = {
     readonly environments: readonly BankEnvironment[];
     readonly credentialGroups: readonly BankCredentialGroup[];
     readonly paymentKinds: readonly BankPaymentKind[];
+    readonly receivingAccountRule: BankReceivingAccountRule | null;
   }[];
 };
 
@@ -51,6 +53,11 @@ export type SupportedBank = {
    * arrive from the bank rather than being decided on the screen.
    */
   readonly paymentKinds: readonly BankPaymentKind[];
+  /**
+   * How this bank spells the accounts that receive a transferencia — the field
+   * that collects them reads its length, its prefix and its copy from here.
+   */
+  readonly receivingAccountRule: BankReceivingAccountRule | null;
 };
 
 export type ListSupportedBanks = () => readonly SupportedBank[];
@@ -63,5 +70,6 @@ export function makeListSupportedBanks({ banks }: ListSupportedBanksDeps): ListS
       environments: bank.environments,
       credentialGroups: bank.credentialGroups,
       paymentKinds: bank.paymentKinds,
+      receivingAccountRule: bank.receivingAccountRule,
     }));
 }

@@ -228,14 +228,11 @@ function fakeBanks(script: GatewayScript = {}) {
     environments: ['production', 'sandbox'],
     credentialGroups: [{ key: 'main', label: 'Principal', required: true, fields: [] }],
     operateKey: 'main',
-    discoverKey: 'main',
+    receivingAccountRule: null,
     paymentKinds: [
       { ...PAGO_MOVIL, referenceDigits: script.referenceDigits ?? 6 },
       { ...TRANSFERENCIA, referenceDigits: script.referenceDigits ?? 6 },
     ],
-    async listAccounts() {
-      return ok([]);
-    },
 
     async authenticate() {
       calls.authenticate++;

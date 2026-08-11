@@ -8,6 +8,7 @@
  * unconfirmed row), so there is no status column; the sandbox tag is the only
  * badge and it reads the flag copied onto the row, never a join.
  */
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge.tsx';
@@ -208,7 +209,7 @@ export function NoValidations({
       <span className="max-w-[28ch] text-xs text-muted-foreground">{hint}</span>
       {cta && (
         <Button asChild className="mt-2">
-          <a href={cta.href}>{cta.label}</a>
+          <Link href={cta.href}>{cta.label}</Link>
         </Button>
       )}
     </div>

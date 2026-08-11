@@ -11,7 +11,6 @@
  * unsealed.
  */
 import type {
-  BankAccountSummary,
   BankCredentialGroup,
   BankCredentials,
   BankEnvironment,
@@ -28,7 +27,6 @@ import { sameReference } from '../../../domain/payment-match.ts';
 import { AppError } from '../../../shared/errors.ts';
 import { logger, maskReference } from '../../../shared/logger.ts';
 import { err, ok, type Result } from '../../../shared/result.ts';
-import { BanescoAccountsClient } from './accounts.client.ts';
 import {
   type BanescoConfirmationCall,
   BanescoConfirmationClient,
@@ -49,32 +47,24 @@ export class BanescoGateway implements BankGateway {
   readonly environments: readonly BankEnvironment[] = ['production', 'sandbox'];
 
   /**
-   * Two services, two credential pairs — and in QA two *different RIFs*, which
-   * is why the Confirmación client 403s on Consulta's endpoint and why the
-   * accounts Consulta lists are not the ones Confirmación reports movements on.
+   * One pair, and only one.
    *
-   * Confirmación is required: it is what the counter validates with. Consulta is
-   * optional, and all it buys is the list of accounts offered to the merchant
-   * when they register which one receives — a merchant who has only one client
-   * (the likely production shape) leaves it blank and that single pair does
-   * both jobs.
+   * Banesco publishes a second service — Consulta de Saldo, on its own client
+   * under its own RIF — and it is deliberately not asked for. It answers with
+   * the account numbers already masked (`0134************5306`), and
+   * Confirmación de Transacciones refuses a masked `accountId` with a 400,
+   * whether it is passed through as reported or stripped of its asterisks
+   * (both probed against QA on 2026-08-11). It cannot produce the one thing a
+   * transferencia search needs, so asking a merchant for it would be asking
+   * for a credential that buys them nothing. The accounts that receive
+   * transferencias are typed on the connection instead, and stay editable.
    */
   readonly credentialGroups: readonly BankCredentialGroup[] = [
     {
       key: 'confirmation',
       label: 'Confirmación de Transacciones',
-      hint: 'Con estas credenciales validamos cada pago en la caja. Son obligatorias.',
+      hint: 'Con estas credenciales validamos cada pago en la caja.',
       required: true,
-      fields: [
-        { name: 'clientId', label: 'Client ID (OAuth 2.0)', secret: false },
-        { name: 'clientSecret', label: 'Client Secret', secret: true },
-      ],
-    },
-    {
-      key: 'consulta',
-      label: 'Consulta de Saldo',
-      hint: 'Opcional. Si las das, listamos tus cuentas al registrar las que reciben transferencias. Si tienes una sola credencial, deja esto vacío.',
-      required: false,
       fields: [
         { name: 'clientId', label: 'Client ID (OAuth 2.0)', secret: false },
         { name: 'clientSecret', label: 'Client Secret', secret: true },
@@ -83,7 +73,6 @@ export class BanescoGateway implements BankGateway {
   ];
 
   readonly operateKey = 'confirmation';
-  readonly discoverKey = 'consulta';
 
   /**
    * What each kind of payment takes — every flag probed against QA on
@@ -117,9 +106,21 @@ export class BanescoGateway implements BankGateway {
     },
   ];
 
+  /**
+   * A Venezuelan account number is twenty digits and Banesco's own begin with
+   * its Sudeban code. The merchant types them once, because the bank will not
+   * tell us: Consulta de Saldo answers with them masked and the payment search
+   * refuses a masked one.
+   */
+  readonly receivingAccountRule = {
+    digits: 20,
+    prefix: '0134',
+    label: 'Cuentas que reciben transferencias',
+    placeholder: '01340804108041005394',
+  };
+
   private readonly device: BanescoDevice;
   private readonly oauth: BanescoOauthClient;
-  private readonly accounts: BanescoAccountsClient;
   private readonly confirmation: BanescoConfirmationClient;
 
   /**
@@ -133,7 +134,6 @@ export class BanescoGateway implements BankGateway {
   constructor(private readonly deps: BankGatewayDeps) {
     this.device = serverDevice(this.deps.egressIp);
     this.oauth = new BanescoOauthClient(this.deps.tokens, this.deps.userAgent, this.deps.debug);
-    this.accounts = new BanescoAccountsClient(this.device, this.deps.userAgent);
     this.confirmation = new BanescoConfirmationClient(
       this.device,
       this.deps.userAgent,
@@ -173,16 +173,6 @@ export class BanescoGateway implements BankGateway {
     this.active.set(correlationId, { environment, accessToken: token.value });
 
     return ok({ bank: BANESCO_ID, environment, correlationId });
-  }
-
-  async listAccounts(session: BankSession): Promise<Result<BankAccountSummary[], BankFailure>> {
-    const resumed = this.resume(session);
-    if (!resumed.ok) return resumed;
-
-    return this.accounts.listProducts({
-      environment: resumed.value.environment,
-      accessToken: resumed.value.accessToken,
-    });
   }
 
   /**

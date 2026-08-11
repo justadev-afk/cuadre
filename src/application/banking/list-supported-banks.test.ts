@@ -39,6 +39,12 @@ const BANESCO = {
       needsDate: true,
     },
   ],
+  receivingAccountRule: {
+    digits: 20,
+    prefix: '0134',
+    label: 'Cuentas que reciben transferencias',
+    placeholder: '01340804108041005394',
+  },
 } as const;
 
 describe('list supported banks', () => {
@@ -54,6 +60,7 @@ describe('list supported banks', () => {
         environments: ['production', 'sandbox'],
         credentialGroups: GROUPS,
         paymentKinds: BANESCO.paymentKinds,
+        receivingAccountRule: BANESCO.receivingAccountRule,
       },
     ]);
   });

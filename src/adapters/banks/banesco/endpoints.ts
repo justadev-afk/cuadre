@@ -18,16 +18,12 @@ export type BanescoEndpoints = {
   token: string;
   /** Confirmation of Transactions — the endpoint both search modalities post to. */
   payment: string;
-  /** Account Inquiry — the merchant's own accounts, for the alta. */
-  products: string;
 };
 
 const SANDBOX_HOSTS = {
   sso: 'https://sso-sso-project.apps.desplakur3.desintra.banesco.com',
   confirmation:
     'https://sid-validador-consulta-de-transacciones-api-qa-production.apps.desplakur3.desintra.banesco.com',
-  accounts:
-    'https://consulta-de-transacciones-y-productos-nac-api-qa-production.apps.desplakur3.desintra.banesco.com',
 } as const;
 
 const SANDBOX_PATHS = {
@@ -44,15 +40,11 @@ const SANDBOX_PATHS = {
   payment: '/transactions/financial-account/transactions',
   // VERIFIED live against QA (2026-08-11) with the Consulta client: returns the
   // affiliation's accounts, **masked** (`0134************5306`). The alias
-  // `/me/customer/products` additionally demands `device.sid` and 400s without
-  // it, so this explicit path is the one we call.
-  products: '/customer/products',
 } as const;
 
 const SANDBOX_ENDPOINTS: BanescoEndpoints = {
   token: `${SANDBOX_HOSTS.sso}${SANDBOX_PATHS.token}`,
   payment: `${SANDBOX_HOSTS.confirmation}${SANDBOX_PATHS.payment}`,
-  products: `${SANDBOX_HOSTS.accounts}${SANDBOX_PATHS.products}`,
 };
 
 /**

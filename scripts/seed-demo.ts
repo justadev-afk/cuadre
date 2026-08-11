@@ -33,23 +33,13 @@ const CONFIRMATION = {
   username: '0fedfa00',
   password: '93da683469162053068ec67f35b0020c',
 };
-// Consulta de Saldo — a *different RIF* in QA (J500769300 against Confirmación's
-// J003075523), which is why the accounts it lists are not the ones Confirmación
-// reports movements on. It is seeded so the alta and the dropdown exercise the
-// two-credential path; the accounts that actually validate are the registered
-// ones above.
-const CONSULTA = {
-  clientId: '17a43e72',
-  clientSecret: '527f8f9f41cceb18631979e444264be1',
-  username: '17a43e72',
-  password: '527f8f9f41cceb18631979e444264be1',
-};
 // What the merchant calls this connection — the counter's "banco receptor".
 const LABEL = 'Caja principal';
 // The account the QA transferencia landed in (ref 00000150496 → CR Bs 525,08).
 // It has to be the full twenty digits: the bank refuses a masked one with a 400,
-// and Consulta de Cuentas only ever reports masked — which is exactly why this
-// is something the merchant registers rather than something we discover.
+// and Consulta de Saldo only ever reports masked — which is exactly why this is
+// something the merchant registers (and can edit) rather than something we
+// discover, and why that service is not asked for at all.
 const RECEIVING_ACCOUNTS = ['01340804108041005394'];
 
 const COMPANY_ID = 'dona-aurora';
@@ -73,7 +63,7 @@ const nowIso = epochToIso(now); // timestamp columns are ISO-8601 UTC text (migr
 
 // The credential map — keyed by the adapter's own credential-group key — sealed
 // as one JSON value, then base64. Exactly what `connect-bank-account.ts` writes.
-const sealedCreds = await seal(credsKey, { confirmation: CONFIRMATION, consulta: CONSULTA });
+const sealedCreds = await seal(credsKey, { confirmation: CONFIRMATION });
 const clientIdLast6 = CONFIRMATION.clientId.slice(-6);
 
 // Stable ids, not random ones. `INSERT OR REPLACE` only means "re-seed" if the

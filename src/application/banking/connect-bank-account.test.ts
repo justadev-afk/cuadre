@@ -60,7 +60,7 @@ function fakeGateway(options: { rejects?: BankFailure } = {}) {
     environments: ['production', 'sandbox'],
     credentialGroups: [CONFIRMATION],
     operateKey: 'confirmation',
-    discoverKey: 'confirmation',
+    receivingAccountRule: null,
     paymentKinds: [
       {
         kind: 'pago_movil',
@@ -71,9 +71,6 @@ function fakeGateway(options: { rejects?: BankFailure } = {}) {
         needsDate: true,
       },
     ],
-    async listAccounts() {
-      return ok([]);
-    },
     async authenticate(
       environment: BankEnvironment,
       credentials: BankCredentials,

@@ -89,10 +89,5 @@ export async function receivingAccountsAction(
     companyId: session.companyId,
     bankAccountId,
   });
-  return accounts.map((account) => ({
-    number: account.number,
-    masked: account.masked,
-    type: account.type,
-    balanceCents: account.balanceCents,
-  }));
+  return accounts.map((account) => ({ number: account.number, masked: account.masked }));
 }

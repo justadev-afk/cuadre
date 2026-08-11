@@ -107,6 +107,7 @@ export interface BankAccountRepository {
   ): Promise<Result<BankAccount, BankAccountWriteFailure>>;
   /** A soft delete. See the note at the top of this file. */
   remove(id: string): Promise<Result<BankAccount, BankAccountWriteFailure>>;
+
   /** Replaces the connection's receiving accounts with the merchant's new set. */
   setReceivingAccounts(
     id: string,

@@ -90,12 +90,10 @@ export type ChargeOutcome =
     }
   | { readonly status: 'failed'; readonly failure: ValidatePaymentFailure };
 
-/** One row of the transferencia form's "cuenta receptora" dropdown. */
+/** One row of the transferencia form's "cuenta" dropdown. */
 export type ReceivingAccountView = {
   /** The full number, sent back with the claim — the bank refuses a masked one. */
   readonly number: string;
-  /** What the cashier reads: the bank's masking, or ours. */
+  /** What the cashier reads: '···· 5394'. */
   readonly masked: string;
-  readonly type: string | null;
-  readonly balanceCents: number | null;
 };

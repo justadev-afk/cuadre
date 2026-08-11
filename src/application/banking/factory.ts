@@ -14,7 +14,7 @@
 import type { BankAccountRepository } from '../../adapters/d1/bank-account.repository.ts';
 import type { Clock } from '../../shared/clock.ts';
 import type { IdGen } from '../../shared/id.ts';
-import type { BankAccountSummary, BankGateway, BankId } from '../ports/bank-gateway.ts';
+import type { BankGateway, BankId } from '../ports/bank-gateway.ts';
 import {
   type ChangeBankCredentials,
   makeChangeBankCredentials,
@@ -28,6 +28,7 @@ import {
 import { type ListSupportedBanks, makeListSupportedBanks } from './list-supported-banks.ts';
 import { makeRemoveBankAccount, type RemoveBankAccount } from './remove-bank-account.ts';
 import { makeReverifyBankAccount, type ReverifyBankAccount } from './reverify-bank-account.ts';
+import { makeSetReceivingAccounts, type SetReceivingAccounts } from './set-receiving-accounts.ts';
 
 export type BankingDeps = {
   /** `BankRegistry`: the strategy selector, built per request. */
@@ -36,11 +37,6 @@ export type BankingDeps = {
     list(): readonly BankGateway[];
   };
   readonly accounts: BankAccountRepository;
-  /** The bank's own account list, cached a day (`KvBankListingCache`). */
-  readonly listings: {
-    get(bankAccountId: string): Promise<readonly BankAccountSummary[] | null>;
-    put(bankAccountId: string, accounts: readonly BankAccountSummary[]): Promise<void>;
-  };
   /** The AES-GCM master key. Read from `env` once, in the container. */
   readonly credsKey: string;
   readonly clock: Clock;
@@ -55,6 +51,7 @@ export type BankingUseCases = {
   readonly removeBankAccount: RemoveBankAccount;
   readonly reverifyBankAccount: ReverifyBankAccount;
   readonly changeBankCredentials: ChangeBankCredentials;
+  readonly setReceivingAccounts: SetReceivingAccounts;
 };
 
 export function makeBankingUseCases(deps: BankingDeps): BankingUseCases {
@@ -66,5 +63,6 @@ export function makeBankingUseCases(deps: BankingDeps): BankingUseCases {
     removeBankAccount: makeRemoveBankAccount(deps),
     reverifyBankAccount: makeReverifyBankAccount(deps),
     changeBankCredentials: makeChangeBankCredentials(deps),
+    setReceivingAccounts: makeSetReceivingAccounts(deps),
   };
 }

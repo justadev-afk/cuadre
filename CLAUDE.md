@@ -391,19 +391,27 @@ full reference alone. Adding either means putting a receiving account number
 back on `bank_accounts` — which is exactly what 0007 removed, so it is a
 migration and a form field, not a switch.
 
-### The two-client problem (resolved: the second client is gone)
+### Consulta de Saldo is not used, and that is a decision with evidence
 
-**Banesco splits its two APIs across two separate OAuth clients that cannot call
-each other's service** (each 403s on the other): Consulta de Cuentas is
-`17a43e72`, Confirmación de Transacciones is `0fedfa00`, with different RIFs.
+**Banesco splits its two APIs across two OAuth clients that cannot call each
+other's service** (each 403s on the other): Consulta de Saldo is `17a43e72`,
+Confirmación de Transacciones is `0fedfa00`, under *different RIFs* (J500769300
+against J003075523). Only Confirmación is asked for.
 
-That mattered while onboarding listed accounts through **Consulta** and the
-counter validated through **Confirmación** — a bank account connected with one
-client could not be validated with it, and the fix was a credentials table with
-a `usage` per pair. Dropping the account picker dissolved the problem instead of
-managing it: nothing lists accounts any more, so only Confirmación is ever asked
-for, the wizard is one field-set and one submit, and `operateKey` on the gateway
-names the pair the counter runs on. `scripts/seed-demo.ts` seeds the demo
+The second client is not merely inconvenient, it is **useless for the one job it
+looked right for**. Probed against QA on 2026-08-11 with both pairs in hand:
+Consulta returns the merchant's accounts **masked** — `0134************5306`,
+with type and balance — and the payment search answers **400** to every one of
+them, passed through as reported *and* stripped of its asterisks. Only the full
+twenty digits answer (`01340804108041005394` → ref 150496, CR Bs 525,08). A
+credential that cannot produce a usable account number is a credential not worth
+asking a merchant for, so the group is gone from the gateway, the client and its
+endpoint are deleted, and the bank has been told we do not need it in production.
+
+What replaces it is the merchant's own list: the accounts that receive
+transferencias are typed on the connection, one at a time, checked as they are
+added against the bank's own `receivingAccountRule` (length, prefix, copy), and
+**editable afterwards** from the bank card. `scripts/seed-demo.ts` seeds the demo
 connection exactly as `connect` writes one.
 
 ### Still open with Banesco

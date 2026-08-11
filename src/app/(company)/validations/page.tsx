@@ -10,6 +10,8 @@
  * because there are no unconfirmed rows: a row here is a confirmed payment.
  */
 
+import Link from 'next/link';
+
 import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
@@ -73,7 +75,7 @@ export default async function ValidationsPage({
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex items-stretch overflow-hidden rounded-md border border-border">
             {ENV_TABS.map((tab) => (
-              <a
+              <Link
                 key={tab.value}
                 href={hrefFor(tab.value, search)}
                 className={cn(
@@ -84,7 +86,7 @@ export default async function ValidationsPage({
               >
                 {tab.icon && <Icon name={tab.icon} />}
                 {tab.label}
-              </a>
+              </Link>
             ))}
           </div>
           <form>
@@ -113,10 +115,10 @@ export default async function ValidationsPage({
             </span>
           </div>
           <Button asChild className="whitespace-nowrap">
-            <a href="/banks">
+            <Link href="/banks">
               <Icon name="plus" />
               Conectar banco
-            </a>
+            </Link>
           </Button>
         </div>
       )}

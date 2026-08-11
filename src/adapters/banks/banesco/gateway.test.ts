@@ -127,13 +127,11 @@ describe('BanescoGateway', () => {
     // everything leaves the second blank — `discoverCredential` falls back.
     const gateway = new BanescoGateway(deps());
 
-    expect(gateway.credentialGroups.map((group) => group.key)).toEqual([
-      'confirmation',
-      'consulta',
-    ]);
-    expect(gateway.credentialGroups.map((group) => group.required)).toEqual([true, false]);
+    // One pair. Consulta de Saldo is deliberately not asked for: it answers
+    // with masked account numbers the payment search then refuses with a 400.
+    expect(gateway.credentialGroups.map((group) => group.key)).toEqual(['confirmation']);
+    expect(gateway.credentialGroups.map((group) => group.required)).toEqual([true]);
     expect(gateway.operateKey).toBe('confirmation');
-    expect(gateway.discoverKey).toBe('consulta');
   });
 
   it('offers both kinds, each with what it actually takes', () => {

@@ -14,7 +14,12 @@ import { container } from '../../_lib/current-session.ts';
 import { textField } from '../../_lib/inputs.ts';
 import { changeBankCredentialsCore } from './change-credentials-core.ts';
 import { connectBankCore } from './connect-core.ts';
-import type { ChangeCredentialsState, ConnectState, RemoveBankState } from './form-state.ts';
+import type {
+  ChangeCredentialsState,
+  ConnectState,
+  ReceivingAccountsState,
+  RemoveBankState,
+} from './form-state.ts';
 
 export async function connectBankAction(
   _previous: ConnectState,
@@ -59,4 +64,32 @@ export async function changeCredentialsAction(
   const result = await changeBankCredentialsCore(companyId, form);
   if (result.ok) revalidatePath('/banks');
   return result;
+}
+
+/**
+ * Replacing the accounts a connection receives transferencias in. No bank is
+ * called: these are the merchant's own numbers, and the use case drops anything
+ * that does not match the bank's rule before it writes.
+ */
+export async function setReceivingAccountsAction(
+  _previous: ReceivingAccountsState,
+  form: FormData,
+): Promise<ReceivingAccountsState> {
+  const { companyId } = await requireCompany();
+  const accountId = textField(form, 'accountId');
+  if (accountId === '') return { ok: false, error: 'Cuenta inválida.' };
+
+  const result = await container().banking.setReceivingAccounts({
+    companyId,
+    bankAccountId: accountId,
+    // One per line, as the field posts them.
+    accounts: textField(form, 'receivingAccounts').split(/[\n,]/),
+  });
+  if (!result.ok) return { ok: false, error: 'No se pudieron guardar las cuentas.' };
+
+  revalidatePath('/banks');
+  // The till reads this list to fill its dropdown, so it has to see the change.
+  revalidatePath('/checkout');
+  revalidatePath('/checkout-express');
+  return { ok: true, error: null };
 }

@@ -59,8 +59,6 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
         receivingAccounts: receivingAccounts.map((account) => ({
           number: account.number,
           masked: account.masked,
-          type: account.type,
-          balanceCents: account.balanceCents,
         })),
       };
     }),

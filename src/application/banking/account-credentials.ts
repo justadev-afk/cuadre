@@ -34,24 +34,6 @@ export function operateCredential(
   return lone(opened, operateKey);
 }
 
-/**
- * The pair that lists the merchant's accounts, or `null` when there is none.
- *
- * Falls back to the operate pair, and that fallback is the production case
- * rather than an edge one: Banesco QA issues two clients that cannot call each
- * other's service, but a merchant may well be given a single client for
- * everything, and nothing above this line should have to know which. If the one
- * pair turns out not to be authorised for the listing service, the bank says so
- * and the caller carries on without the list — see `list-receiving-accounts`.
- */
-export function discoverCredential(
-  opened: AccountCredentials,
-  discoverKey: string,
-  operateKey: string,
-): BankCredentials | null {
-  return opened[discoverKey] ?? lone(opened, operateKey);
-}
-
 /** The pair under `key`, or — for a connection holding exactly one — that one. */
 function lone(opened: AccountCredentials, key: string): BankCredentials | null {
   const named = opened[key];

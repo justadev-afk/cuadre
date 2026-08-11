@@ -103,15 +103,15 @@ export type BankCredentialField = {
 
 /**
  * A bank may split its API across more than one credential pair, so the
- * onboarding form asks for credentials in **groups**, one per service. Two of
- * those groups are named by the gateway: `operateKey` is the pair the counter
- * validates with, `discoverKey` the pair that lists the merchant's accounts.
+ * onboarding form asks for credentials in **groups**, one per service, and the
+ * gateway names the one the counter validates with (`operateKey`).
  *
- * They are frequently the same string, and that is the point. Banesco QA issues
- * two separate clients (each 403s on the other's service, under different RIFs
- * at that), but production may well hand a merchant one client for everything —
- * so a connection that stored a single pair uses it for both, and nothing
- * upstream branches on how many there were.
+ * Banesco needs exactly one. It offers a second service, Consulta de Saldo, on
+ * a separate client — and that service answers with the account numbers already
+ * masked (`0134************5394`), which the payment search then refuses with a
+ * 400 (probed against QA, 2026-08-11, as reported and with the asterisks
+ * stripped). A credential that cannot produce a usable answer is a credential
+ * not worth asking a merchant for, so it is not in the form.
  */
 export type BankCredentialGroup = {
   /**
@@ -143,23 +143,25 @@ export type BankSession = {
 };
 
 /**
- * One account the bank reports for a set of credentials.
+ * How a bank spells the accounts that receive a transferencia — the shape the
+ * merchant's own numbers have to match.
  *
- * `accountId` is **whatever the bank gives us**, which for Banesco's Consulta de
- * Cuentas is the number already masked (`0134************5394`) — usable as a
- * label and not as a handle. What a payment search needs is the full number, so
- * the merchant completes it once and it is stored on the connection; this type
- * exists to *offer* the merchant that list, never to search with it.
+ * It is on the port for the same reason `referenceDigits` is: the screen that
+ * collects them must not know that a Venezuelan account is twenty digits
+ * beginning with the bank's own four. A second bank arrives with its own
+ * numbers, its own length and its own prefix, and the field, its placeholder,
+ * its helper line and the refusal that guards it all move with it. `null` is a
+ * bank that has no such concept, and its transferencia form asks for nothing.
  */
-export type BankAccountSummary = {
-  accountId: string;
-  /** Safe to render: the bank's own masking, or ours if it does not mask. */
-  masked: string;
-  /** Free-form per bank ('DDA', 'Corriente', 'Ahorro'). Display only. */
-  type: string | null;
-  balanceCents: number | null;
-  /** The account holder's national id or RIF, when the bank reports it. */
-  holderId: string | null;
+export type BankReceivingAccountRule = {
+  /** Exact number of digits. Venezuelan accounts: 20. */
+  readonly digits: number;
+  /** The digits every one of this bank's accounts starts with ('0134'), if any. */
+  readonly prefix: string | null;
+  /** Spanish, on the field. */
+  readonly label: string;
+  /** A real one of this bank's numbers, so the shape is obvious. */
+  readonly placeholder: string;
 };
 
 /**
@@ -212,8 +214,6 @@ export type BankMovement = {
  */
 export type BankFailure =
   | 'rejected_credentials'
-  /** The credentials work and report no accounts at all. */
-  | 'no_accounts'
   | 'invalid_input'
   | 'maintenance'
   | 'unavailable'
@@ -280,31 +280,23 @@ export interface BankGateway {
    */
   readonly operateKey: string;
   /**
-   * Which group lists the merchant's accounts. May equal `operateKey`; a
-   * connection holding only one pair uses that pair here regardless (see
-   * `discoverCredential`).
-   */
-  readonly discoverKey: string;
-  /**
    * The kinds of payment this bank can be asked about, and what each one takes.
    * The counter renders one form per entry and the selector beside "Validar
    * pago" is this list; a bank that only does pago móvil declares one, and its
    * selector disappears on its own.
    */
   readonly paymentKinds: readonly BankPaymentKind[];
+  /**
+   * The shape of a receiving account at this bank, or `null` if it never asks
+   * for one. Read by the connect form, by the editor on a connected bank and by
+   * the use case that stores them — one rule, three readers, no third spelling.
+   */
+  readonly receivingAccountRule: BankReceivingAccountRule | null;
 
   authenticate(
     environment: BankEnvironment,
     credentials: BankCredentials,
   ): Promise<Result<BankSession, BankFailure>>;
-
-  /**
-   * The accounts these credentials can see — offered to the merchant so they
-   * can say which one receives, never used as a search handle (see
-   * `BankAccountSummary`). Asked at onboarding and refreshed on demand, never on
-   * the checkout path: the counter reads the accounts the merchant confirmed.
-   */
-  listAccounts(session: BankSession): Promise<Result<BankAccountSummary[], BankFailure>>;
 
   /**
    * Finds the one payment matching the query, or `null` when the bank simply

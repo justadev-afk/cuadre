@@ -56,11 +56,8 @@ function fakeBanks(authenticate?: Result<BankSession, BankFailure>) {
     environments: ['production', 'sandbox'],
     credentialGroups: [{ key: 'main', label: 'Principal', required: true, fields: [] }],
     operateKey: 'main',
-    discoverKey: 'main',
+    receivingAccountRule: null,
     paymentKinds: [PAGO_MOVIL],
-    async listAccounts() {
-      return ok([]);
-    },
     async authenticate() {
       return authenticate ?? ok(SESSION);
     },

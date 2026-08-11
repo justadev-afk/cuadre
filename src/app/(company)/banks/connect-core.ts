@@ -19,6 +19,7 @@
  * a bank, so the same code serves whatever the catalogue declares.
  */
 import type { AccountCredentials } from '../../../application/banking/account-credentials.ts';
+import { keepValidReceivingAccounts } from '../../../application/banking/receiving-accounts.ts';
 import { logger } from '../../../shared/logger.ts';
 import { container } from '../../_lib/current-session.ts';
 import { textField } from '../../_lib/inputs.ts';
@@ -72,13 +73,15 @@ export async function connectBankCore(companyId: string, form: FormData): Promis
       bank: bank.id,
       environment,
       label: textField(form, 'label'),
-      // One per line, because a merchant with three receiving accounts should
-      // not have to add three fields. Empty is a merchant who only takes pago
-      // móvil, which is a normal shape rather than a missing answer.
-      receivingAccounts: textField(form, 'receivingAccounts')
-        .split(/[\n,]/)
-        .map((account) => account.trim())
-        .filter((account) => account !== ''),
+      // One per line, as the chips field posts them. Checked again here against
+      // the bank's own rule — the field already refused what it could, and this
+      // is the boundary that makes a hand-built form post no different. Empty is
+      // a merchant who only takes pago móvil, which is a normal shape rather
+      // than a missing answer.
+      receivingAccounts: keepValidReceivingAccounts(
+        bank.receivingAccountRule,
+        textField(form, 'receivingAccounts').split(/[\n,]/),
+      ),
       credentials,
     });
 

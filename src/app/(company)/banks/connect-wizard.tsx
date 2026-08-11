@@ -38,6 +38,7 @@ import {
 } from './credential-fields.tsx';
 import { requiredCredentialsFilled } from './credentials.ts';
 import { CONNECT_INITIAL, type ConnectState } from './form-state.ts';
+import { ReceivingAccountsField } from './receiving-accounts-field.tsx';
 
 type ConnectBankAction = (previous: ConnectState, form: FormData) => Promise<ConnectState>;
 
@@ -70,7 +71,7 @@ export function ConnectWizard({
     banks[0]?.environments[0] ?? 'production',
   );
   const [label, setLabel] = useState('');
-  const [receiving, setReceiving] = useState('');
+  const [receiving, setReceiving] = useState<string[]>([]);
   const [values, setValues] = useState<CredentialValues>({});
   const setField = (key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value }));
 
@@ -144,29 +145,16 @@ export function ConnectWizard({
         </span>
       </div>
 
-      {/* Only a transferencia needs one, and only the merchant can give it: the
-          bank reports its accounts masked and refuses a masked one back, so the
-          twenty digits are typed once here rather than discovered. Left blank,
-          the connection validates pago móvil and the till says so. */}
-      {selectedBank.paymentKinds.some((kind) => kind.needsReceivingAccount) && (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="receiving-accounts">Cuentas que reciben transferencias (opcional)</Label>
-          <textarea
-            id="receiving-accounts"
-            name="receivingAccounts"
-            value={receiving}
-            onChange={(event) => setReceiving(event.target.value)}
-            rows={2}
-            spellCheck={false}
-            placeholder="01340804108041005394"
-            disabled={pending}
-            className="rounded-md border border-input bg-card px-3 py-2 font-mono text-[13px] tabular-nums text-foreground outline-none transition-colors focus-visible:border-primary"
-          />
-          <span className="text-[11px] text-muted-foreground">
-            El número completo, 20 dígitos. Una por línea si son varias.
-          </span>
-        </div>
-      )}
+      {/* Only a transferencia needs one, and only the merchant can give it:
+          Consulta de Saldo reports the numbers masked and the payment search
+          refuses a masked one, so the whole number is typed here — one at a
+          time, checked as it is added. */}
+      <ReceivingAccountsField
+        rule={selectedBank.receivingAccountRule}
+        accounts={receiving}
+        onChange={setReceiving}
+        disabled={pending}
+      />
 
       <CredentialGroupFields
         groups={selectedBank.credentialGroups}

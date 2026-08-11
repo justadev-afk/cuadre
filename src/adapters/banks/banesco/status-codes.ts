@@ -31,9 +31,11 @@ export type BanescoStatus =
  * to recognise the same condition when the body is unreadable.
  */
 const FAILURE_BY_STATUS: Readonly<Record<string, BankFailure | undefined>> = {
-  // The Account Inquiry's "this affiliation reports no accounts". On the
-  // confirmation endpoint it never appears, so mapping it here costs nothing.
-  '204': 'no_accounts',
+  // '204' was the Account Inquiry's "this affiliation reports no accounts".
+  // That service is no longer asked (its account numbers come back masked and
+  // the payment search refuses them), so a 204 here is the bank declining to
+  // answer a question we did ask, and 'unavailable' is the honest reading.
+  '204': 'unavailable',
   // 70005 is "split the date range", which only ever applied to the range
   // listing. Reaching it from a single-day pago móvil search means the bank
   // answered a question we did not ask, so it falls through to 'unavailable'.

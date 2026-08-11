@@ -70,11 +70,8 @@ function fakeBanks(script: Script = {}) {
     environments: ['production', 'sandbox'],
     credentialGroups: [{ key: 'main', label: 'Principal', required: true, fields: [] }],
     operateKey: 'main',
-    discoverKey: 'main',
+    receivingAccountRule: null,
     paymentKinds: [PAGO_MOVIL],
-    async listAccounts() {
-      return ok([]);
-    },
 
     async authenticate(environment: BankEnvironment, credentials: BankCredentials) {
       asked.push({ environment, credentials });

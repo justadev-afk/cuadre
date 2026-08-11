@@ -526,7 +526,6 @@ export function CheckoutForm({
                 options={receivable.map((account) => ({
                   value: account.number,
                   label: account.masked,
-                  hint: account.type ?? undefined,
                 }))}
                 value={receivingAccount}
                 onChange={(value) => {
