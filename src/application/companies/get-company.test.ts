@@ -9,8 +9,8 @@ function detail() {
     { id: 'el-molino', name: 'Molino del Valle', rif: 'J-00002961-0' },
   ]);
   const bankAccounts = makeFakeBankAccounts([
-    { id: 'espiga-banesco', companyId: 'la-espiga', accountLast4: '4471' },
-    { id: 'molino-banesco', companyId: 'el-molino', accountLast4: '9902' },
+    { id: 'espiga-banesco', companyId: 'la-espiga', label: 'Caja principal' },
+    { id: 'molino-banesco', companyId: 'el-molino', label: null },
   ]);
   return { companies, bankAccounts, getCompany: makeGetCompany({ companies, bankAccounts }) };
 }
@@ -30,8 +30,7 @@ describe('getCompany', () => {
         bank: 'banesco',
         environment: 'production',
         status: 'active',
-        accountLast4: '4471',
-        accountType: 'Corriente',
+        label: 'Caja principal',
         clientIdLast6: 'a91c2f',
         verifiedAt: 1_760_000_500,
         credsExpireAt: null,

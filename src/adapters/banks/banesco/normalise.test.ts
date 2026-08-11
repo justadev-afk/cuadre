@@ -89,6 +89,25 @@ describe('venezuelaLocalToEpochSeconds', () => {
     );
   });
 
+  it('accepts the dots QA sends instead of colons', () => {
+    // Recorded from QA (2026-08-11): a pago-móvil row comes back with
+    // `"trnTime": "00.00.00"`. Refusing it failed the whole reply, and the
+    // counter reported "el banco no pudo responder" for a payment the bank had
+    // just handed us — the separator is punctuation, the numbers are the fact.
+    expect(venezuelaLocalToEpochSeconds('2026-07-10', '00.00.00')).toBe(
+      Date.parse('2026-07-10T04:00:00Z') / 1000,
+    );
+    expect(venezuelaLocalToEpochSeconds('2026-08-06', '10.30.00')).toBe(
+      Date.parse('2026-08-06T14:30:00Z') / 1000,
+    );
+  });
+
+  it('still refuses a time whose parts are not numbers', () => {
+    // Leniency about the separator is not leniency about the value.
+    expect(venezuelaLocalToEpochSeconds('2026-07-10', 'aa.bb.cc')).toBeNull();
+    expect(venezuelaLocalToEpochSeconds('2026-07-10', '25.00.00')).toBeNull();
+  });
+
   it('does not roll a late-evening payment into the next day', () => {
     // 23:30 local is 03:30 UTC the following day — the day the counter means is
     // still the sixth.

@@ -33,6 +33,7 @@ import { sha256Hex } from '../../../shared/crypto.ts';
 import { logger } from '../../../shared/logger.ts';
 import { err, ok, type Result } from '../../../shared/result.ts';
 import { bankFetch, parseJsonBody } from '../http.ts';
+import { debugBanescoCall } from './debug.ts';
 import { BANESCO_ID, banescoEndpoints } from './endpoints.ts';
 import { failureForHttpStatus } from './status-codes.ts';
 
@@ -77,6 +78,8 @@ export class BanescoOauthClient implements OauthClient {
   constructor(
     private readonly tokens: KVNamespace,
     private readonly userAgent: string,
+    /** `BANESCO_DEBUG`. The body printed here is redacted — see below. */
+    private readonly debug = false,
   ) {}
 
   /** The cached path. Everything on the checkout route uses this one. */
@@ -120,6 +123,17 @@ export class BanescoOauthClient implements OauthClient {
       client_secret: clientSecret,
       username: clientId,
       password: clientSecret,
+    });
+
+    // The debug switch prints every call we make to the bank, and this one's
+    // body is four fields of credential. It is printed **redacted** rather than
+    // skipped: seeing that the token call went out, and to which realm, is half
+    // of debugging an auth failure — and §8 does not have a "unless a flag is
+    // set" clause about secrets reaching a log.
+    debugBanescoCall(this.debug, {
+      method: 'POST',
+      url: endpoints.token,
+      body: redactedGrant(clientId),
     });
 
     const outcome = await bankFetch(endpoints.token, {
@@ -169,6 +183,11 @@ export class BanescoOauthClient implements OauthClient {
       expiresInSeconds: parsed.data.expires_in,
     });
   }
+}
+
+/** The grant as it goes out, with everything secret replaced by `***`. */
+function redactedGrant(clientId: string): string {
+  return `grant_type=password&client_id=${clientId}&client_secret=***&username=${clientId}&password=***`;
 }
 
 /**

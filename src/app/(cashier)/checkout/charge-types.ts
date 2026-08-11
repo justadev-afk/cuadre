@@ -4,7 +4,7 @@
  * RSC build. The `chargeAction` in `actions.ts` returns `ChargeOutcome`; the
  * form imports these to render it.
  */
-import type { BankEnvironment } from '../../../application/ports/bank-gateway.ts';
+import type { PaymentKind } from '../../../application/ports/bank-gateway.ts';
 import type { ValidatePaymentFailure } from '../../../application/validations/validate-payment.ts';
 import type { RejectionReason } from '../../../domain/payment-match.ts';
 
@@ -17,15 +17,23 @@ import type { RejectionReason } from '../../../domain/payment-match.ts';
  * form field somebody can retype.
  */
 export type ChargeInput = {
+  /** Which form was submitted. The bank decides what each kind may carry. */
+  readonly kind: PaymentKind;
+  /** The last digits of the reference — as many as the kind asks for. */
   readonly reference: string;
-  /**
-   * `null` when the cashier left the field empty, which is a claim about a
-   * transferencia rather than a pago móvil — the till only offers the choice
-   * for a bank that declares it can find one.
-   */
+  /** A pago móvil is made from a phone; a transferencia carries none. */
   readonly payerPhone: string | null;
+  /** A transferencia's receiving account, full; a pago móvil carries none. */
+  readonly receivingAccount: string | null;
   readonly sourceBankId: string;
   readonly amountCents: number;
+  /**
+   * The day the customer made the payment, `YYYY-MM-DD`, for a kind that takes
+   * one — a pago móvil is searched within it, so a payment made last night and
+   * presented this morning is only findable because this field exists. Null for
+   * a transferencia, where sending a date makes the bank find nothing.
+   */
+  readonly paymentDate: string | null;
   /**
    * One per submission, minted in the browser. *Reintentar* on the same typed
    * data reuses it, so a payment that lands between two attempts is charged
@@ -33,33 +41,34 @@ export type ChargeInput = {
    */
   readonly idempotencyKey: string;
   /**
-   * Which of the company's accounts answers. The page resolves it (production
-   * when there is one, sandbox otherwise) and it is safe to carry through the
-   * client: the use case scopes by `companyId`, so the worst a tampered value
-   * reaches is this company's *own* sandbox account — which never holds the
-   * customer's real payment, so nothing false can be confirmed with it.
+   * Which of the company's connected banks receives — the "banco receptor"
+   * dropdown. Safe to carry through the client: the use case scopes by
+   * `companyId`, so a tampered id reaches at worst this company's own
+   * connection, and a sandbox one never holds a customer's real payment.
    */
-  readonly environment: BankEnvironment;
-  /**
-   * Optional: scope the search to one of the company's accounts. Absent — the
-   * default — asks every connected account for the environment in turn. Safe
-   * through the client for the same reason as `environment`: the use case scopes
-   * by `companyId`, so a tampered id reaches at worst this company's own account.
-   */
-  readonly accountId?: string;
+  readonly bankAccountId: string;
 };
 
 /** The confirmed payment, as the receipt on screen 17 states it. */
 export type ConfirmedCharge = {
   readonly controlCode: string;
+  readonly kind: PaymentKind;
+  /** The bank's own reference — normally fuller than what the cashier typed. */
   readonly reference: string;
   readonly amountCents: number;
-  /** `null` for a transferencia — there is no phone to print on the receipt. */
+  /** Null for a transferencia: there is no payer phone to print. */
   readonly payerPhone: string | null;
+  /**
+   * When the **bank** says the payment happened, epoch seconds — not when it was
+   * charged. The two differ by design: a customer pays at night and presents the
+   * receipt in the morning, and the day that settles an argument is theirs, so
+   * the counter and the printed ticket both state it.
+   */
+  readonly paidAt: number;
   readonly createdAt: number;
   readonly isSandbox: boolean;
   readonly latencyMs: number | null;
-  /** Which of the company's accounts the bank reported it on — the counter shows it. */
+  /** Which connected bank received it — the counter shows the name beside it. */
   readonly bankAccountId: string;
 };
 
@@ -80,3 +89,13 @@ export type ChargeOutcome =
       readonly at: number;
     }
   | { readonly status: 'failed'; readonly failure: ValidatePaymentFailure };
+
+/** One row of the transferencia form's "cuenta receptora" dropdown. */
+export type ReceivingAccountView = {
+  /** The full number, sent back with the claim — the bank refuses a masked one. */
+  readonly number: string;
+  /** What the cashier reads: the bank's masking, or ours. */
+  readonly masked: string;
+  readonly type: string | null;
+  readonly balanceCents: number | null;
+};

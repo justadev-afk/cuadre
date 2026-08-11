@@ -35,6 +35,8 @@ export default function Loading() {
         <table className="table">
           <thead>
             <tr>
+              {/* The unlabelled kind column — see ValidationList. */}
+              <th className="w-5" />
               <th>Control</th>
               <th>Hora</th>
               <th>Referencia</th>
@@ -47,6 +49,9 @@ export default function Loading() {
           <tbody>
             {ROWS.map((k) => (
               <tr key={k}>
+                <td className="pr-0">
+                  <SkeletonLine width="20px" height={20} />
+                </td>
                 <td>
                   <SkeletonLine width="58px" />
                 </td>

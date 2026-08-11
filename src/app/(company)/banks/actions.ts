@@ -1,12 +1,11 @@
 'use server';
 
 /**
- * The company's bank actions. The onboarding pair (verify, then connect) and the
- * two levers on an existing account (deactivate, cambiar credenciales). The
- * `/banks` area is company-only — a cashier never reaches it — so `requireCompany`
- * is the whole permission check, and everything is scoped to the session's
- * company. The verify/connect bodies live in `connect-core.ts`, shared with the
- * admin's copy of the flow.
+ * The company's bank actions: connecting one, and the two levers on an existing
+ * connection (deactivate, cambiar credenciales). The `/banks` area is
+ * company-only — a cashier never reaches it — so `requireCompany` is the whole
+ * permission check, and everything is scoped to the session's company. The
+ * connect body lives in `connect-core.ts`, shared with the admin's copy.
  */
 import { revalidatePath } from 'next/cache';
 
@@ -14,21 +13,8 @@ import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { textField } from '../../_lib/inputs.ts';
 import { changeBankCredentialsCore } from './change-credentials-core.ts';
-import { connectBankCore, verifyBankCore } from './connect-core.ts';
-import type {
-  ChangeCredentialsState,
-  ConnectState,
-  RemoveBankState,
-  VerifyState,
-} from './form-state.ts';
-
-export async function verifyBankAction(
-  _previous: VerifyState,
-  form: FormData,
-): Promise<VerifyState> {
-  const { companyId } = await requireCompany();
-  return verifyBankCore(companyId, form);
-}
+import { connectBankCore } from './connect-core.ts';
+import type { ChangeCredentialsState, ConnectState, RemoveBankState } from './form-state.ts';
 
 export async function connectBankAction(
   _previous: ConnectState,
@@ -36,15 +22,15 @@ export async function connectBankAction(
 ): Promise<ConnectState> {
   const { companyId } = await requireCompany();
   const result = await connectBankCore(companyId, form);
-  if (result.step === 'done') revalidatePath('/banks');
+  if (result.ok) revalidatePath('/banks');
   return result;
 }
 
 /**
- * Deactivating a connected account. A company can turn an account off but never
- * edit the number or the bank; "off" is a soft state (`removeBankAccount` sets
+ * Deactivating a connected bank. A company can turn a connection off but never
+ * edit the bank it points at; "off" is a soft state (`removeBankAccount` sets
  * the status, never deletes), so the validation history keeps resolving and the
- * account can be connected again later.
+ * bank can be connected again later.
  */
 export async function removeBankAccountAction(
   _previous: RemoveBankState,
@@ -55,7 +41,7 @@ export async function removeBankAccountAction(
   if (accountId === '') return { ok: false, error: 'Cuenta inválida.' };
 
   const result = await container().banking.removeBankAccount({ companyId, accountId });
-  if (!result.ok) return { ok: false, error: 'No se pudo desactivar la cuenta.' };
+  if (!result.ok) return { ok: false, error: 'No se pudo desactivar el banco.' };
 
   revalidatePath('/banks');
   return { ok: true, error: null };

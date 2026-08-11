@@ -1,44 +1,21 @@
 /**
- * State shapes for the bank-onboarding wizard. Split from `actions.ts` because
- * a `'use server'` module may only export async functions — a type or a
- * constant beside the actions makes the whole file fail the RSC build.
+ * State shapes for the bank forms. Split from `actions.ts` because a
+ * `'use server'` module may only export async functions — a type or a constant
+ * beside the actions makes the whole file fail the RSC build.
  */
 import { ACTION_INITIAL, type ActionState } from '../../_lib/action-state.ts';
 
-export type SelectableAccountView = {
-  readonly accountId: string;
-  readonly masked: string;
-  readonly type: string | null;
-  readonly balanceCents: number | null;
+/**
+ * Connecting a bank is one submit now: the credentials are proven and the row
+ * is written in the same request, so there is no intermediate step to model and
+ * the state is the same `{ ok, error }` every other action answers with (§11).
+ */
+export type ConnectState = ActionState & {
+  /** The `credentialGroups` key a refusal belongs to, so the form can point at it. */
+  readonly groupKey?: string;
 };
 
-export type VerifyState =
-  | { readonly step: 'idle' }
-  | {
-      readonly step: 'error';
-      /** The `credentialGroups` key the refusal belongs to, so the form points at it. */
-      readonly groupKey: string;
-      readonly message: string;
-    }
-  | {
-      readonly step: 'accounts';
-      readonly verifyId: string;
-      readonly environment: 'production' | 'sandbox';
-      /**
-       * From a discover pair. Empty when the merchant gave none — the next step
-       * is then a field to type the receiving number in rather than a picker.
-       */
-      readonly accounts: readonly SelectableAccountView[];
-    };
-
-export const VERIFY_INITIAL: VerifyState = { step: 'idle' };
-
-export type ConnectState =
-  | { readonly step: 'idle' }
-  | { readonly step: 'error'; readonly message: string }
-  | { readonly step: 'done' };
-
-export const CONNECT_INITIAL: ConnectState = { step: 'idle' };
+export const CONNECT_INITIAL: ConnectState = ACTION_INITIAL;
 
 /** The deactivate confirm dialog's action state. */
 export type RemoveBankState = ActionState;

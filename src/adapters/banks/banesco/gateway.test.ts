@@ -10,14 +10,27 @@ const CREDENTIALS = {
   clientSecret: 'super-secret-value',
 };
 
+/** What the counter asks with: the reference *tail*, never the whole number. */
 const QUERY = {
-  accountId: '01340123450123458514',
-  reference: '000123456789',
+  kind: 'pago_movil',
+  reference: '456789',
   payerPhone: '584143125566',
+  receivingAccount: null,
   sourceBankId: '0134',
   onDate: '2026-08-06',
   sessionId: 'cashier-session-1',
-};
+} as const;
+
+/** The transferencia claim: an account instead of a phone, and no date at all. */
+const TRANSFER_QUERY = {
+  kind: 'transferencia',
+  reference: '150496',
+  payerPhone: null,
+  receivingAccount: '01340804108041005394',
+  sourceBankId: '0134',
+  onDate: null,
+  sessionId: 'cashier-session-1',
+} as const;
 
 function detail(overrides: Record<string, unknown> = {}) {
   return {
@@ -49,16 +62,10 @@ const confirmationReply = (statusCode: string, details?: Array<Record<string, un
 const NO_RESULTS = confirmationReply('70001');
 const rows = (...details: Array<Record<string, unknown>>) => confirmationReply('200', details);
 
-/** Consulta de Cuentas V2.0 §V.b — `dataResponse` is the account array itself. */
-const accountsReply = (statusCode: string, dataResponse: unknown = null) => ({
-  httpStatus: { statusCode, statusDesc: 'OK' },
-  dataResponse,
-});
-
 type Sent = { url: string; body: string };
 
 /** Routes by URL: one stub stands in for the whole bank. */
-function stubBank(payments: unknown[], products: unknown = accountsReply('204')): Sent[] {
+function stubBank(payments: unknown[]): Sent[] {
   const queue = [...payments];
   const sent: Sent[] = [];
 
@@ -66,9 +73,6 @@ function stubBank(payments: unknown[], products: unknown = accountsReply('204'))
     sent.push({ url, body: String(init.body) });
 
     if (url.includes('/token')) return new Response(JSON.stringify(TOKEN), { status: 200 });
-    if (url.includes('/customer/products')) {
-      return new Response(JSON.stringify(products), { status: 200 });
-    }
     return new Response(JSON.stringify(queue.shift() ?? NO_RESULTS), { status: 200 });
   });
 
@@ -86,7 +90,12 @@ function fakeTokens(): KVNamespace {
 }
 
 function deps(): BankGatewayDeps {
-  return { tokens: fakeTokens(), egressIp: '200.11.22.33', userAgent: 'cuadre/1.0' };
+  return {
+    tokens: fakeTokens(),
+    egressIp: '200.11.22.33',
+    userAgent: 'cuadre/1.0',
+    debug: false,
+  };
 }
 
 async function authenticated() {
@@ -110,6 +119,42 @@ describe('BanescoGateway', () => {
     expect(gateway.id).toBe('banesco');
     expect(gateway.displayName).toBe('Banesco');
     expect(gateway.environments).toEqual(['production', 'sandbox']);
+  });
+
+  it('asks for both pairs, and names what each one is for', () => {
+    // Confirmación is required and is what the counter validates with; Consulta
+    // is optional and only lists accounts. A merchant given a single client for
+    // everything leaves the second blank — `discoverCredential` falls back.
+    const gateway = new BanescoGateway(deps());
+
+    expect(gateway.credentialGroups.map((group) => group.key)).toEqual([
+      'confirmation',
+      'consulta',
+    ]);
+    expect(gateway.credentialGroups.map((group) => group.required)).toEqual([true, false]);
+    expect(gateway.operateKey).toBe('confirmation');
+    expect(gateway.discoverKey).toBe('consulta');
+  });
+
+  it('offers both kinds, each with what it actually takes', () => {
+    const kinds = new BanescoGateway(deps()).paymentKinds;
+
+    expect(kinds.map((kind) => kind.kind)).toEqual(['pago_movil', 'transferencia']);
+    // Six for a pago móvil; the whole reference for a transferencia, which is
+    // what the customer's receipt carries.
+    expect(kinds.map((kind) => kind.referenceDigits)).toEqual([6, null]);
+    // The asymmetry is the point, and it is what QA answers to: a pago móvil
+    // needs a phone and a date, a transferencia an account and no date.
+    expect(kinds[0]).toMatchObject({
+      needsPayerPhone: true,
+      needsReceivingAccount: false,
+      needsDate: true,
+    });
+    expect(kinds[1]).toMatchObject({
+      needsPayerPhone: false,
+      needsReceivingAccount: true,
+      needsDate: false,
+    });
   });
 });
 
@@ -147,7 +192,7 @@ describe('authenticate', () => {
       correlationId: 'not-ours',
     };
 
-    expect(await gateway.listAccounts(forged)).toEqual({ ok: false, error: 'unavailable' });
+    expect(await gateway.findPayment(forged, QUERY)).toEqual({ ok: false, error: 'unavailable' });
   });
 
   it('fails cleanly for production instead of throwing, since its hosts are unpublished', async () => {
@@ -167,80 +212,73 @@ describe('authenticate', () => {
   });
 });
 
+describe('findPayment · transferencia', () => {
+  it('asks by the whole reference and the receiving account, and sends NO date', async () => {
+    // The omission is load-bearing: sending `startDt` turns a movement the bank
+    // had just returned into `70001 · sin resultados`, verified against QA on
+    // the transferencia's own reported date.
+    const sent = stubBank([rows(detail({ referenceNumber: '150496', concept: 'TRANS.CTAS' }))]);
+    const { gateway, session } = await authenticated();
+
+    const found = await gateway.findPayment(session, {
+      ...TRANSFER_QUERY,
+      reference: '00000150496',
+    });
+
+    expect(paymentCalls(sent)).toHaveLength(1);
+    const body = paymentCalls(sent)[0].body;
+    // Whole, not trimmed to a tail — and the bank answers with its own unpadded
+    // spelling regardless, which `sameReference` folds.
+    expect(body).toContain('"referenceNumber":"00000150496"');
+    expect(body).toContain('"accountId":"01340804108041005394"');
+    expect(body).not.toContain('startDt');
+    expect(body).not.toContain('phoneNum');
+    expect(found).toMatchObject({
+      ok: true,
+      value: { strategy: 'reference_tail_and_account', movement: { reference: '150496' } },
+    });
+  });
+
+  it('answers "not yet" rather than an error when the bank has nothing', async () => {
+    stubBank([NO_RESULTS]);
+    const { gateway, session } = await authenticated();
+
+    expect(await gateway.findPayment(session, TRANSFER_QUERY)).toEqual({ ok: true, value: null });
+  });
+});
+
 describe('findPayment', () => {
-  it('finds it by the whole reference and says so', async () => {
+  it('asks once, carrying the phone, the payer’s bank and the date', async () => {
+    // The bank's complaint on 2026-08-11 was that it was not receiving the bank
+    // code or the phone, because the old flow tried an exact-reference search
+    // first and only fell back to the shape that carries them. There is one
+    // call now and it always carries all four.
     const sent = stubBank([rows(detail())]);
     const { gateway, session } = await authenticated();
 
     const found = await gateway.findPayment(session, QUERY);
 
     expect(paymentCalls(sent)).toHaveLength(1);
+    expect(paymentCalls(sent)[0].body).toContain('"phoneNum":"584143125566"');
+    expect(paymentCalls(sent)[0].body).toContain('"bankId":"0134"');
+    expect(paymentCalls(sent)[0].body).toContain('"startDt":"2026-08-06"');
     expect(found).toMatchObject({
       ok: true,
       value: {
-        strategy: 'exact_reference',
+        strategy: 'reference_tail_and_phone',
         movement: { reference: '000123456789', amountCents: 124_000, isCredit: true },
       },
     });
   });
 
-  it('falls back to the tail search when the reference is not settled yet', async () => {
-    const sent = stubBank([NO_RESULTS, rows(detail())]);
-    const { gateway, session } = await authenticated();
-
-    const found = await gateway.findPayment(session, QUERY);
-
-    expect(paymentCalls(sent)).toHaveLength(2);
-    expect(paymentCalls(sent)[1].body).toContain('"phoneNum":"584143125566"');
-    expect(found).toMatchObject({ ok: true, value: { strategy: 'reference_tail_and_phone' } });
-  });
-
-  it('finds a transferencia with no phone, on the exact reference alone', async () => {
-    // Recorded from QA (2026-08-10): a transferencia comes back under the
-    // reference *without* its leading zeros, which `sameReference` folds.
-    const transfer = detail({
-      referenceNumber: '150496',
-      amount: 525.08,
-      concept: 'TRANS.CTAS',
-      destBankId: '  ',
-    });
-    const sent = stubBank([rows(transfer)]);
-    const { gateway, session } = await authenticated();
-
-    const found = await gateway.findPayment(session, {
-      ...QUERY,
-      reference: '00000150496',
-      payerPhone: null,
-    });
-
-    expect(found).toMatchObject({
-      ok: true,
-      value: { strategy: 'exact_reference', movement: { amountCents: 52_508, isCredit: true } },
-    });
-    expect(paymentCalls(sent)[0].body).not.toContain('phoneNum');
-  });
-
-  it('does not fall back to the tail search when the claim has no phone', async () => {
-    // The fallback matches on phone, bank and date; without a phone the bank
-    // answers "sin resultados" however real the payment is (verified in QA), so
-    // a second call would only add latency at the counter to be told nothing.
-    const sent = stubBank([NO_RESULTS, rows(detail())]);
-    const { gateway, session } = await authenticated();
-
-    const found = await gateway.findPayment(session, { ...QUERY, payerPhone: null });
-
-    expect(found).toEqual({ ok: true, value: null });
-    expect(paymentCalls(sent)).toHaveLength(1);
-  });
-
-  it('answers "not yet" rather than an error when neither route finds it', async () => {
-    stubBank([NO_RESULTS, NO_RESULTS]);
+  it('answers "not yet" rather than an error when the bank has nothing', async () => {
+    stubBank([NO_RESULTS]);
     const { gateway, session } = await authenticated();
 
     expect(await gateway.findPayment(session, QUERY)).toEqual({ ok: true, value: null });
   });
 
-  it('stops at the first real failure instead of falling back', async () => {
+  it('reports a real failure as a failure', async () => {
     const sent = stubBank([confirmationReply('VRN04')]);
     const { gateway, session } = await authenticated();
 
@@ -249,7 +287,7 @@ describe('findPayment', () => {
   });
 
   it('never takes a debit for a payment received', async () => {
-    stubBank([rows(detail({ trnType: 'DB' })), rows(detail({ trnType: 'DB' }))]);
+    stubBank([rows(detail({ trnType: 'DB' }))]);
     const { gateway, session } = await authenticated();
 
     expect(await gateway.findPayment(session, QUERY)).toEqual({ ok: true, value: null });
@@ -257,35 +295,46 @@ describe('findPayment', () => {
 
   it('matches the merchant’s payment whatever account it settled on', async () => {
     // The Confirmación search is scoped to the merchant by its credentials, so a
-    // credit it returns for this reference is theirs even when it landed on an
-    // account other than the one connected — a pago móvil settles on whatever
-    // account its receiving phone maps to. The account is not a filter, and the
-    // request never carried one.
-    const other = detail({ accountId: '1340************9999' });
-    stubBank([rows(other)]);
+    // credit it returns for this reference is theirs whichever of their accounts
+    // it landed on — a pago móvil settles on whatever account its receiving
+    // phone maps to. The account is not a filter, and the request never carried
+    // one even before it stopped being stored.
+    stubBank([rows(detail({ accountId: '1340************9999' }))]);
     const { gateway, session } = await authenticated();
 
     expect(await gateway.findPayment(session, QUERY)).toMatchObject({
       ok: true,
-      value: { strategy: 'exact_reference', movement: { isCredit: true } },
+      value: { strategy: 'reference_tail_and_phone', movement: { isCredit: true } },
     });
   });
 
   it('ignores a credit with a different reference', async () => {
-    const other = detail({ referenceNumber: '000987654321' });
-    stubBank([rows(other), rows(other)]);
+    stubBank([rows(detail({ referenceNumber: '000987654321' }))]);
     const { gateway, session } = await authenticated();
 
     expect(await gateway.findPayment(session, QUERY)).toEqual({ ok: true, value: null });
   });
 
-  it('accepts the reference the bank returns without its leading zeros', async () => {
+  it('accepts the tail echoed back as the whole reference the bank knows', async () => {
+    // We ask with six digits; the bank normally answers with the full number.
+    // `sameReference` folds the two, which is what lets the row record the
+    // bank's spelling rather than the cashier's.
     stubBank([rows(detail({ referenceNumber: '123456789' }))]);
     const { gateway, session } = await authenticated();
 
     expect(await gateway.findPayment(session, QUERY)).toMatchObject({
       ok: true,
-      value: { strategy: 'exact_reference' },
+      value: { movement: { reference: '123456789' } },
+    });
+  });
+
+  it('accepts the bare six digits when that is all the bank returns', async () => {
+    stubBank([rows(detail({ referenceNumber: '456789' }))]);
+    const { gateway, session } = await authenticated();
+
+    expect(await gateway.findPayment(session, QUERY)).toMatchObject({
+      ok: true,
+      value: { movement: { reference: '456789' } },
     });
   });
 
@@ -304,24 +353,43 @@ describe('findPayment', () => {
 });
 
 /**
- * The live QA payment, pinned as a regression. Ref 12346090431 → CR Bs 630, on
- * DOÑA AURORA's account ending 5394, was validated end to end against Banesco QA
- * (control code 582422). These replay the RECORDED response shape — never the
- * live bank (§12) — so a change to the envelope parse, the cents/direction
- * normalisation, or the account filter that would have broken that sale fails
- * here instead of at a counter.
+ * The live QA pago móvil, pinned **exactly as the bank sends it**.
+ *
+ * This is the row copied out of a real QA reply on 2026-08-11 (ref 12346090431 →
+ * CR Bs 630, the bank's own certification test data), and every oddity in it is
+ * deliberate, because each one broke us once:
+ *
+ *   trnTime "00.00.00"   dots, not the colons the manual documents. The parser
+ *                        refused it, which failed the whole reply, which the
+ *                        counter read out as "el banco no pudo responder" for a
+ *                        payment the bank had just handed over.
+ *   currencyCode "Bs"    mixed case, no padding — the manual says 'BS '.
+ *   referenceNumber      only the **six digits we asked with**, not the twelve
+ *                        the merchant's receipt shows. This is what makes
+ *                        `paymentKey` fold the date in.
+ *   sourceBankId "134"   unpadded; the Sudeban code is four digits.
+ *   customerIdBen        padded with trailing spaces.
+ *
+ * Replayed from the recording, never against the live bank (§12).
  */
-describe('regression: the confirmed QA pago móvil (ref 12346090431)', () => {
-  const QaDetail = detail({
-    referenceNumber: '12346090431',
-    amount: '630.00',
-    accountId: '1340************5394',
+describe('regression: the QA pago móvil as the bank actually sends it', () => {
+  const QaDetail = {
+    referenceNumber: '090431',
+    amount: 630,
+    currencyCode: 'Bs',
+    exchangeRate: 0,
+    accountId: '5841************5031',
+    trnDate: '2026-07-10',
+    trnTime: '00.00.00',
+    sourceBankId: '134',
+    destBankId: '134',
+    concept: 'Banesco Pago Movil                 ',
+    customerIdBen: 'J003075523     ',
     trnType: 'CR',
-  });
-  // The full receiving account the payment landed on — last four 5394.
-  const QaQuery = { ...QUERY, reference: '12346090431', accountId: '01340804108041005394' };
+  };
+  const QaQuery = { ...QUERY, reference: '090431', onDate: '2026-07-10' };
 
-  it('validates it: exact reference, Bs 630 as 63 000 cents, a credit', async () => {
+  it('validates it: Bs 630 as 63 000 cents, a credit', async () => {
     const sent = stubBank([rows(QaDetail)]);
     const { gateway, session } = await authenticated();
 
@@ -331,73 +399,26 @@ describe('regression: the confirmed QA pago móvil (ref 12346090431)', () => {
     expect(found).toMatchObject({
       ok: true,
       value: {
-        strategy: 'exact_reference',
-        movement: { reference: '12346090431', amountCents: 63_000, isCredit: true },
+        strategy: 'reference_tail_and_phone',
+        movement: {
+          reference: '090431',
+          amountCents: 63_000,
+          currency: 'BS',
+          sourceBankId: '0134',
+          isCredit: true,
+        },
       },
     });
   });
 
-  it('validates it even when the counter is on a different account (…5306, the prod fix)', async () => {
-    // The exact prod incident, now fixed. Creds correct, payment on …5394, the
-    // counter connected to …5306. The Confirmación is scoped to the merchant by
-    // its credentials, so the payment is theirs and validates whatever account
-    // it entered — this is precisely why …5306 used to see "todavía no aparece".
+  it('dates it at the local midnight the bank reported, not at the epoch', async () => {
     stubBank([rows(QaDetail)]);
     const { gateway, session } = await authenticated();
 
-    const found = await gateway.findPayment(session, {
-      ...QaQuery,
-      accountId: '01340804108041005306',
-    });
+    const found = await gateway.findPayment(session, QaQuery);
 
-    expect(found).toMatchObject({
-      ok: true,
-      value: {
-        strategy: 'exact_reference',
-        movement: { reference: '12346090431', amountCents: 63_000, isCredit: true },
-      },
-    });
-  });
-});
-
-describe('listAccounts', () => {
-  it('maps the bank’s products', async () => {
-    stubBank([], accountsReply('200', [{ accountId: '0134************8514', accountType: 'DDA' }]));
-    const { gateway, session } = await authenticated();
-
-    expect(await gateway.listAccounts(session)).toMatchObject({
-      ok: true,
-      // Masked at the source: this service never returns a full number.
-      value: [{ accountId: '0134************8514', masked: '0134************8514' }],
-    });
-  });
-});
-
-describe('listMovements', () => {
-  it('returns the day’s credits and debits alike', async () => {
-    stubBank([rows(detail(), detail({ trnType: 'DB', referenceNumber: '999' }))]);
-    const { gateway, session } = await authenticated();
-
-    const listed = await gateway.listMovements(session, {
-      accountId: QUERY.accountId,
-      from: '2026-08-06',
-      to: '2026-08-06',
-    });
-
-    expect(listed).toMatchObject({ ok: true });
-    expect(listed.ok && listed.value).toHaveLength(2);
-  });
-
-  it('reports an empty day as an empty list, not as an error', async () => {
-    stubBank([NO_RESULTS]);
-    const { gateway, session } = await authenticated();
-
-    const listed = await gateway.listMovements(session, {
-      accountId: QUERY.accountId,
-      from: '2026-08-06',
-      to: '2026-08-06',
-    });
-
-    expect(listed).toEqual({ ok: true, value: [] });
+    expect(found.ok && found.value?.movement.occurredAt).toBe(
+      Date.parse('2026-07-10T04:00:00Z') / 1000,
+    );
   });
 });

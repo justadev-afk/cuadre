@@ -10,12 +10,8 @@ import { revalidatePath } from 'next/cache';
 import { requireArea } from '../../../_lib/area-guard.ts';
 import { textField } from '../../../_lib/inputs.ts';
 import { changeBankCredentialsCore } from '../../../(company)/banks/change-credentials-core.ts';
-import { connectBankCore, verifyBankCore } from '../../../(company)/banks/connect-core.ts';
-import type {
-  ChangeCredentialsState,
-  ConnectState,
-  VerifyState,
-} from '../../../(company)/banks/form-state.ts';
+import { connectBankCore } from '../../../(company)/banks/connect-core.ts';
+import type { ChangeCredentialsState, ConnectState } from '../../../(company)/banks/form-state.ts';
 
 export async function changeCredentialsAdminAction(
   _previous: ChangeCredentialsState,
@@ -31,32 +27,20 @@ export async function changeCredentialsAdminAction(
 }
 
 /**
- * The admin's copy of the onboarding pair — connect a bank FOR a company during
- * initial setup. Guarded by the admin area (a cashier or a company never reaches
- * `/admin/**`) and scoped to the target company carried in the form. The bodies
- * are the same `connect-core` the company flow runs.
+ * The admin's copy of the alta — connect a bank FOR a company during initial
+ * setup. Guarded by the admin area (a cashier or a company never reaches
+ * `/admin/**`) and scoped to the target company carried in the form. The body is
+ * the same `connect-core` the company flow runs.
  */
-export async function verifyBankAdminAction(
-  _previous: VerifyState,
-  form: FormData,
-): Promise<VerifyState> {
-  await requireArea('admin');
-  const companyId = textField(form, 'companyId');
-  if (companyId === '') {
-    return { step: 'error', groupKey: 'bank', message: 'Empresa inválida.' };
-  }
-  return verifyBankCore(companyId, form);
-}
-
 export async function connectBankAdminAction(
   _previous: ConnectState,
   form: FormData,
 ): Promise<ConnectState> {
   await requireArea('admin');
   const companyId = textField(form, 'companyId');
-  if (companyId === '') return { step: 'error', message: 'Empresa inválida.' };
+  if (companyId === '') return { ok: false, error: 'Empresa inválida.' };
 
   const result = await connectBankCore(companyId, form);
-  if (result.step === 'done') revalidatePath(`/admin/companies/${companyId}`);
+  if (result.ok) revalidatePath(`/admin/companies/${companyId}`);
   return result;
 }

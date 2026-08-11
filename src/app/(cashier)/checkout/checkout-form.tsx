@@ -16,34 +16,51 @@
  * it. Re-implementing either here is how the counter and the use case start
  * disagreeing about what a valid claim is — so the Validar button is disabled
  * until they all pass, and a field that is typed-but-wrong turns its border red.
+ *
+ * Five fields, all required, because they are exactly what a pago móvil search
+ * takes (Banesco, 2026-08-11): the last digits of the reference, the payer's
+ * phone, their bank, the amount and the **day it was paid**. How many digits of
+ * the reference is the receiving bank's own answer — `referenceDigits` — so
+ * nothing here says "six".
  */
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { Calendar } from '@/components/ui/calendar.tsx';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
 import { cn } from '@/lib/utils.ts';
+import type { BankPaymentKind, PaymentKind } from '../../../application/ports/bank-gateway.ts';
 import { formatBolivares, parseAmountToCents } from '../../../domain/money.ts';
 import { formatPhoneForDisplay, normalisePhone } from '../../../domain/phone.ts';
 import { findBank, SUDEBAN_BANKS } from '../../../domain/sudeban.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
+import { PaymentKindMark } from '../../_components/payment-kind-mark.tsx';
 import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
 import { BankSpinner, ButtonSpinner } from '../../_components/skeleton.tsx';
 import { type ReceiptData, ThermalReceipt } from '../../_components/thermal-receipt.tsx';
 import { ValidatedPaymentModal } from '../../_components/validated-payment-modal.tsx';
-import { maskCurrency } from '../../_lib/masks.ts';
+import { maskCurrency, maskDate, readTypedDate } from '../../_lib/masks.ts';
+import { kindLabel } from '../../_lib/payment-kind.ts';
 import {
   formatClock,
   formatDateTime,
+  formatIsoDay,
   formatRelativeTime,
   formatSeconds,
+  fromIsoDay,
+  toIsoDay,
+  venezuelaToday,
+  yesterdayInVenezuela,
 } from '../../_lib/venezuela-format.ts';
 import { chargeAction } from './actions.ts';
-import type { ChargeOutcome, ConfirmedCharge } from './charge-types.ts';
+import type { ChargeOutcome, ConfirmedCharge, ReceivingAccountView } from './charge-types.ts';
 
 /** A confirmed charge as the thermal receipt states it. */
 function chargeReceipt(
@@ -53,11 +70,13 @@ function chargeReceipt(
   return {
     merchantName: extra?.merchantName,
     controlCode: charge.controlCode,
+    kind: charge.kind,
     reference: charge.reference,
     amountCents: charge.amountCents,
     payerPhone: charge.payerPhone,
     bankName: extra?.bankName,
     cashierName: extra?.cashierName,
+    paidAt: charge.paidAt,
     atSeconds: charge.createdAt,
     isSandbox: charge.isSandbox,
   };
@@ -69,26 +88,32 @@ export type RecentCharge = ConfirmedCharge & {
   readonly sourceBankId: string;
 };
 
-/** One connected receiving account, as the counter's selector shows it. */
+/** One connected bank, as the counter's "banco receptor" dropdown shows it. */
 export type CheckoutAccount = {
   readonly id: string;
-  readonly last4: string;
+  /** 'Banesco'. */
   readonly bankName: string;
+  /** What the merchant named this connection, when they named it. */
+  readonly label: string | null;
+  readonly isSandbox: boolean;
   /**
-   * Whether this account's bank can find a payment with no payer phone — a
-   * transferencia. It is what makes the phone field optional, so the rule
-   * arrives from the bank rather than being written into this screen.
+   * What this bank can be asked about and what each kind takes. The selector
+   * beside "Validar pago" is this list, and every field below it — which ones
+   * appear, how long the reference is, what is required — is read off the chosen
+   * entry. Nothing on this screen decides any of it.
    */
-  readonly findsTransfers: boolean;
+  readonly paymentKinds: readonly BankPaymentKind[];
+  /**
+   * The accounts this connection receives transferencias in, already resolved on
+   * the server. Empty means the merchant registered none, and the Transferencia
+   * tab says this bank cannot take them here.
+   */
+  readonly receivingAccounts: readonly ReceivingAccountView[];
 };
 
 type CheckoutFormProps = {
-  /** The bank that answers — one name when the accounts share it, else generic. */
-  bankName: string;
-  /** Every connected account for the environment; the counter asks each in turn. */
+  /** Every connected bank. The cashier picks which one receives. */
   accounts: readonly CheckoutAccount[];
-  /** Which of the company's accounts answer. Sandbox only when there is no other. */
-  environment: 'production' | 'sandbox';
   /** The last few charges on this till, for the right pane. */
   recent: readonly RecentCharge[];
   turnoCount: number;
@@ -116,6 +141,14 @@ const BANK_OPTIONS: readonly SelectOption[] = SUDEBAN_BANKS.map((bank) => ({
 
 /** Where the last-chosen payer bank is remembered between charges. */
 const LAST_BANK_KEY = 'cuadre.last-bank';
+
+/**
+ * The bounds on a whole reference, matching the use case's. Wide on purpose:
+ * Banesco's run 11 and 12 digits and other banks will differ, so the field only
+ * refuses what nobody could have read off a receipt.
+ */
+const MIN_FULL_REFERENCE = 6;
+const MAX_FULL_REFERENCE = 20;
 
 // Shared Nocturne shapes as utility strings.
 const BOX_LG = 'flex flex-col gap-3.5 rounded-xl border border-border bg-card p-[26px]';
@@ -158,13 +191,14 @@ function formatPhoneLoose(raw: string): string {
   return digits.length <= 4 ? digits : `${digits.slice(0, 4)}-${digits.slice(4)}`;
 }
 
-/** "Banesco ···· 5394" for the account a charge landed on, or undefined if unknown. */
+/** "Banesco · Caja principal" for the bank a charge landed on, or undefined. */
 function accountLabel(
   accounts: readonly CheckoutAccount[],
   bankAccountId: string,
 ): string | undefined {
   const account = accounts.find((a) => a.id === bankAccountId);
-  return account ? `${account.bankName} ···· ${account.last4}` : undefined;
+  if (account === undefined) return undefined;
+  return account.label === null ? account.bankName : `${account.bankName} · ${account.label}`;
 }
 
 /**
@@ -181,9 +215,7 @@ function modalBorderTone(busy: boolean, outcome: ChargeOutcome | null): string {
 }
 
 export function CheckoutForm({
-  bankName,
   accounts,
-  environment,
   recent,
   turnoCount,
   turnoCents,
@@ -194,28 +226,55 @@ export function CheckoutForm({
 }: CheckoutFormProps) {
   const referenceId = useId();
   const phoneId = useId();
-  const phoneHintId = useId();
   const bankId = useId();
   const amountId = useId();
+  const dateId = useId();
   const accountSelectId = useId();
+  const receivingId = useId();
 
+  /** Which form is on screen. Pago móvil is the common case, so it opens. */
+  const [kind, setKind] = useState<PaymentKind>('pago_movil');
   const [reference, setReference] = useState('');
   const [phone, setPhone] = useState('');
+  /** The transferencia's receiving account — one of the connection's own. */
+  const [receivingAccount, setReceivingAccount] = useState('');
   const [bankCode, setBankCode] = useState('');
   const [amount, setAmount] = useState('');
+  /**
+   * The day the customer paid, or `null` for "hoy". Null rather than today's
+   * date, so a till left open overnight still means *today* in the morning
+   * instead of silently asking the bank about yesterday. Resolved at submit.
+   */
+  const [paymentDate, setPaymentDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ChargeOutcome | null>(null);
   const [copied, setCopied] = useState(false);
   /** A past charge the cashier tapped in "mi turno", shown read-only in a modal. */
   const [viewing, setViewing] = useState<ConfirmedCharge | null>(null);
 
-  // Which receiving account to ask. One account → that one; several → null, the
-  // "todas las cuentas" default, and the counter asks each until the bank
-  // reports the payment. The optional selector below narrows it to one.
-  const [accountId, setAccountId] = useState<string | null>(
-    accounts.length === 1 ? (accounts[0]?.id ?? null) : null,
-  );
-  const selectedAccount = accounts.find((a) => a.id === accountId) ?? null;
+  // Which connected bank receives. Always one, defaulting to the first the
+  // server listed (production before sandbox, most recently verified first).
+  const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? '');
+  const selectedAccount = accounts.find((a) => a.id === accountId) ?? accounts[0] ?? null;
+
+  // Everything about the shape of this form is the bank's answer, not this
+  // screen's: which fields exist, how many digits the reference takes, whether a
+  // phone or an account is required. A bank that offers one kind renders no
+  // selector at all.
+  const kinds = selectedAccount?.paymentKinds ?? [];
+  const spec = kinds.find((candidate) => candidate.kind === kind) ?? kinds[0] ?? null;
+  /**
+   * How the reference field behaves for the chosen kind. `null` digits means the
+   * bank wants the whole reference — the number the customer's receipt shows —
+   * so the field stops counting and only asks that it look like a reference.
+   */
+  const referenceDigits = spec?.referenceDigits ?? null;
+  const wholeReference = referenceDigits === null;
+  const receivable = selectedAccount?.receivingAccounts ?? [];
+  /** Which kinds ask which account the money landed in — a transferencia does. */
+  const needsAccount = spec?.needsReceivingAccount === true;
+  /** A transferencia needs an account, and this bank has none registered. */
+  const transferBlocked = needsAccount && receivable.length === 0;
 
   /**
    * One key per *submission*, not per request: a retry of the same typed data
@@ -236,37 +295,47 @@ export function CheckoutForm({
   }, []);
 
   // The reference is the first thing typed, so focus it whenever the form is the
-  // thing on screen — on load and after a modal closes — without reaching for
-  // the mouse.
+  // thing on screen — on load, after a modal closes, and after a tab change —
+  // without reaching for the mouse. It has to be an effect rather than a line in
+  // the tab handler: the click that changes the tab focuses the trigger itself,
+  // so a `focus()` called inside `onValueChange` is undone a moment later and the
+  // next keystrokes land nowhere.
   const referenceRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (!busy && outcome === null) referenceRef.current?.focus();
-  }, [busy, outcome]);
+    if (spec === null || busy || outcome !== null) return;
+    // On the next frame, not now: the tab strip is a Radix roving-focus group
+    // that pulls the focus onto the clicked trigger from an effect of its own,
+    // and whichever of the two runs last wins. A frame later is after both.
+    const frame = requestAnimationFrame(() => referenceRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [busy, outcome, spec]);
 
   const bank = findBank(bankCode);
   const amountCents = parseAmountToCents(amount);
 
-  // May this till validate without a phone? That is the receiving bank's answer,
-  // not this screen's: the chosen account's when one is chosen, and otherwise
-  // any account that could take the question — the use case asks exactly those.
-  const transfersOk =
-    selectedAccount !== null
-      ? selectedAccount.findsTransfers
-      : accounts.some((account) => account.findsTransfers);
-
   // ── realtime validity — the Validar button reads these, and each typed-but-
   //    wrong field turns red. Empty is never red: a field you have not filled is
   //    not a field you got wrong.
-  const refValid = reference.trim().length > 0;
-  const phoneTyped = phone.trim() !== '';
-  // Blank is valid where a transferencia can be looked up: it is not a field
-  // left out, it is the cashier saying this payment has no phone behind it.
-  const phoneValid = phoneTyped ? normalisePhone(phone) !== null : transfersOk;
+  const refValid = wholeReference
+    ? reference.length >= MIN_FULL_REFERENCE && reference.length <= MAX_FULL_REFERENCE
+    : reference.length === referenceDigits;
+  // Each of these is only asked about when the kind says it exists, so a phone
+  // left over from the other tab never gates — or reaches — a transferencia.
+  const phoneValid = spec?.needsPayerPhone !== true || normalisePhone(phone) !== null;
+  const accountValid = spec?.needsReceivingAccount !== true || receivingAccount !== '';
   const bankValid = bank !== null;
   const amountValid = amountCents !== null && amountCents > 0;
-  const canSubmit = refValid && phoneValid && bankValid && amountValid;
+  const canSubmit =
+    spec !== null &&
+    refValid &&
+    phoneValid &&
+    accountValid &&
+    bankValid &&
+    amountValid &&
+    accountId !== '';
 
-  const phoneInvalid = phoneTyped && normalisePhone(phone) === null;
+  const refInvalid = reference !== '' && !refValid;
+  const phoneInvalid = spec?.needsPayerPhone === true && phone.trim() !== '' && !phoneValid;
   const amountInvalid = amount !== '' && !amountValid;
 
   function edited(): void {
@@ -279,7 +348,11 @@ export function CheckoutForm({
     edited();
   }
 
-  /** Clears the per-charge fields (the bank stays — it repeats all shift). */
+  /**
+   * Clears the per-charge fields. The payer's bank stays — it repeats all shift
+   * — and so does the date: a cashier working through last night's payments
+   * would otherwise reset to today on every single one.
+   */
   function clearFields(): void {
     idempotencyKey.current = null;
     setReference('');
@@ -287,16 +360,37 @@ export function CheckoutForm({
     setAmount('');
   }
 
+  /**
+   * Switching tabs empties the fields rather than carrying them across.
+   *
+   * The two kinds are two claims about two different payments, and a reference
+   * typed for one is not a head start on the other — but more than that, a value
+   * left behind can *reach the bank*: a `startDt` on a transferencia is what
+   * turns a movement it would have returned into "sin resultados". The use case
+   * drops what the kind does not take, and this makes sure the screen never
+   * shows it either.
+   */
+  function chooseKind(next: PaymentKind): void {
+    if (next === kind) return;
+    setKind(next);
+    clearFields();
+    setReceivingAccount('');
+    setPaymentDate(null);
+    // The focus goes back to the reference, but from the effect above: switching
+    // tabs is the start of a new charge, and a till is worked with two hands and
+    // no mouse — leaving the focus on the tab strip costs a reach for the mouse
+    // on every claim.
+  }
+
   async function send(): Promise<void> {
     const cents = parseAmountToCents(amount);
-    // Empty is a transferencia, not a missing field — but a phone that *was*
-    // typed still has to be a real one.
-    const payerPhone = phoneTyped ? normalisePhone(phone) : null;
+    const payerPhone = spec?.needsPayerPhone === true ? normalisePhone(phone) : null;
     // The button gates this, but Enter can still fire a form: the same rules,
     // once more, silently — a disabled path, not an error message.
-    if (reference.trim() === '' || bank === null || cents === null) return;
-    if (payerPhone === null && !transfersOk) return;
-    if (phoneTyped && payerPhone === null) return;
+    if (spec === null || !refValid || bank === null || cents === null) return;
+    if (spec.needsPayerPhone && payerPhone === null) return;
+    if (spec.needsReceivingAccount && receivingAccount === '') return;
+    if (accountId === '') return;
 
     const key = idempotencyKey.current ?? crypto.randomUUID();
     idempotencyKey.current = key;
@@ -307,13 +401,19 @@ export function CheckoutForm({
     setBusy(true);
 
     const answer = await chargeAction({
-      reference: reference.trim(),
+      kind: spec.kind,
+      reference,
       payerPhone,
+      // Only ever sent for a kind that takes one. The bank is unforgiving about
+      // the extras: a date on a transferencia finds nothing.
+      receivingAccount: spec.needsReceivingAccount ? receivingAccount : null,
       sourceBankId: bank.code,
       amountCents: cents,
+      // Resolved here rather than held in state: "hoy" has to mean the day this
+      // is being sent, not the day the page was opened.
+      paymentDate: spec.needsDate ? (paymentDate ?? venezuelaToday()) : null,
       idempotencyKey: key,
-      environment,
-      accountId: accountId ?? undefined,
+      bankAccountId: accountId,
     });
 
     // A cancelled attempt is not an answer anybody is waiting for any more.
@@ -353,7 +453,27 @@ export function CheckoutForm({
   );
 
   return (
-    <ContentLayout title="Validar pago" aside={aside} asideTitle="Mi turno" fill={express}>
+    <ContentLayout
+      title="Validar pago"
+      aside={aside}
+      asideTitle="Mi turno"
+      fill={express}
+      actions={
+        // Rendered from the bank's own list, so a bank that only answers about
+        // pago móvil shows no selector at all rather than a tab that refuses.
+        kinds.length > 1 ? (
+          <Tabs value={kind} onValueChange={(next) => chooseKind(next as PaymentKind)}>
+            <TabsList>
+              {kinds.map((candidate) => (
+                <TabsTrigger key={candidate.kind} value={candidate.kind} disabled={busy}>
+                  {candidate.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        ) : undefined
+      }
+    >
       <form
         className={cn(BOX_LG, express && 'h-full')}
         onSubmit={(event) => {
@@ -361,48 +481,111 @@ export function CheckoutForm({
           void send();
         }}
       >
+        {/* First, because it decides the rest: which bank receives is what says
+            how many digits of the reference the field below even takes. A
+            transferencia also has to say *into which account*, and the two are
+            one answer — where the money landed — so they share the row. */}
+        <div className={cn('grid gap-3', needsAccount ? 'grid-cols-2' : 'grid-cols-1')}>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={accountSelectId}>Banco receptor</Label>
+            <SearchableSelect
+              id={accountSelectId}
+              options={accounts.map((account) => ({
+                value: account.id,
+                label:
+                  account.label === null
+                    ? account.bankName
+                    : `${account.bankName} · ${account.label}`,
+                hint: account.isSandbox ? 'sandbox' : undefined,
+              }))}
+              value={accountId}
+              onChange={(value) => {
+                setAccountId(value);
+                edited();
+              }}
+              searchPlaceholder="Buscar banco…"
+            />
+          </div>
+
+          {needsAccount && (
+            <div className="flex flex-col gap-1.5">
+              {/* Just "Cuenta": it sits beside the bank that owns it, and the
+                  merchant's own account is the only one this form asks for. */}
+              <Label htmlFor={receivingId}>Cuenta</Label>
+              <SearchableSelect
+                id={receivingId}
+                options={receivable.map((account) => ({
+                  value: account.number,
+                  label: account.masked,
+                  hint: account.type ?? undefined,
+                }))}
+                value={receivingAccount}
+                onChange={(value) => {
+                  setReceivingAccount(value);
+                  edited();
+                }}
+                placeholder={transferBlocked ? 'Sin cuentas registradas' : 'Elige la cuenta'}
+                searchPlaceholder="Buscar cuenta…"
+                disabled={transferBlocked}
+              />
+            </div>
+          )}
+        </div>
+
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={referenceId}>Referencia completa</Label>
+          <Label htmlFor={referenceId}>
+            {wholeReference
+              ? 'Referencia completa'
+              : `Últimos ${referenceDigits} dígitos de la referencia`}
+          </Label>
           <Input
             ref={referenceRef}
             id={referenceId}
-            className="h-[66px] text-center text-[30px] tracking-[0.06em] tabular-nums max-[899px]:h-[58px] max-[899px]:text-[26px]"
+            aria-invalid={refInvalid}
+            className="h-[66px] text-center text-[30px] tracking-[0.16em] tabular-nums max-[899px]:h-[58px] max-[899px]:text-[26px]"
             value={reference}
             inputMode="numeric"
             autoComplete="off"
             spellCheck={false}
-            maxLength={20}
-            placeholder="0000000000"
+            maxLength={wholeReference ? MAX_FULL_REFERENCE : referenceDigits}
+            placeholder={'0'.repeat(wholeReference ? 11 : referenceDigits)}
             onChange={(event) => {
-              setReference(event.target.value.replace(/\D/g, ''));
+              const digits = event.target.value.replace(/\D/g, '');
+              // Where the bank wants a tail, pasting the whole reference keeps
+              // its end rather than being refused — the tail is the question
+              // either way. Where it wants the whole thing, nothing is trimmed.
+              setReference(
+                wholeReference
+                  ? digits.slice(0, MAX_FULL_REFERENCE)
+                  : digits.slice(-referenceDigits),
+              );
               edited();
             }}
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={phoneId}>Teléfono del pagador</Label>
-            <Input
-              id={phoneId}
-              aria-invalid={phoneInvalid}
-              aria-describedby={transfersOk ? phoneHintId : undefined}
-              value={phone}
-              inputMode="tel"
-              autoComplete="off"
-              maxLength={12}
-              placeholder="0414-3125566"
-              onChange={(event) => {
-                setPhone(formatPhoneLoose(event.target.value));
-                edited();
-              }}
-            />
-            {transfersOk && (
-              <span id={phoneHintId} className="block text-[11px] text-muted-foreground">
-                Si lo dejas vacío, validamos una transferencia.
-              </span>
-            )}
-          </div>
+        {/* A pago móvil is made from a phone, so it asks for one beside the
+            payer's bank; a transferencia asked for its account up top, and the
+            bank is left alone on the row. */}
+        <div className={cn('grid gap-3', spec?.needsPayerPhone ? 'grid-cols-2' : 'grid-cols-1')}>
+          {spec?.needsPayerPhone && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={phoneId}>Teléfono del pagador</Label>
+              <Input
+                id={phoneId}
+                aria-invalid={phoneInvalid}
+                value={phone}
+                inputMode="tel"
+                autoComplete="off"
+                maxLength={12}
+                placeholder="0414-3125566"
+                onChange={(event) => {
+                  setPhone(formatPhoneLoose(event.target.value));
+                  edited();
+                }}
+              />
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={bankId}>Banco emisor</Label>
@@ -417,48 +600,57 @@ export function CheckoutForm({
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={amountId}>Monto del cobro</Label>
-          <div
-            className={cn(
-              'flex h-[52px] items-center rounded-md border border-input bg-card px-3 transition-colors focus-within:border-primary',
-              amountInvalid && 'border-destructive focus-within:border-destructive',
-            )}
-          >
-            <span className="mr-2 font-heading text-muted-foreground">Bs</span>
-            <input
-              id={amountId}
-              className="min-w-0 flex-1 border-none bg-transparent p-0 text-right font-heading text-[22px] tabular-nums text-foreground caret-primary outline-none"
-              value={amount}
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="0,00"
-              onChange={(event) => {
-                setAmount(maskCurrency(event.target.value));
+        {/* The amount shares its row with the date only where there is one — a
+            transferencia takes no date, and a half-width amount beside nothing
+            reads as a field that lost its neighbour. */}
+        <div className={cn('grid gap-3', spec?.needsDate ? 'grid-cols-2' : 'grid-cols-1')}>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={amountId}>Monto del cobro</Label>
+            <div
+              className={cn(
+                'flex h-[52px] items-center rounded-md border border-input bg-card px-3 transition-colors focus-within:border-primary',
+                amountInvalid && 'border-destructive focus-within:border-destructive',
+              )}
+            >
+              <span className="mr-2 font-heading text-muted-foreground">Bs</span>
+              <input
+                id={amountId}
+                className="min-w-0 flex-1 border-none bg-transparent p-0 text-right font-heading text-[22px] tabular-nums text-foreground caret-primary outline-none"
+                value={amount}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="0,00"
+                onChange={(event) => {
+                  setAmount(maskCurrency(event.target.value));
+                  edited();
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Only where the kind takes a date. For a pago móvil the bank
+              searches a single day, so this is not decoration: a customer who
+              paid last night and turns up this morning is findable only because
+              the cashier can move it back. For a transferencia the bank finds
+              nothing when a date is sent at all, so the field is absent rather
+              than ignored. */}
+          {spec?.needsDate ? (
+            <PaymentDateField
+              id={dateId}
+              value={paymentDate}
+              onChange={(next) => {
+                setPaymentDate(next);
                 edited();
               }}
             />
-          </div>
+          ) : null}
         </div>
 
-        {accounts.length > 1 && (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={accountSelectId}>Cuenta receptora</Label>
-            <SearchableSelect
-              id={accountSelectId}
-              options={[
-                { value: '', label: `Todas las cuentas (${accounts.length})` },
-                ...accounts.map((account) => ({
-                  value: account.id,
-                  label: `${account.bankName} ···· ${account.last4}`,
-                  hint: account.last4,
-                })),
-              ]}
-              value={accountId ?? ''}
-              onChange={(value) => setAccountId(value === '' ? null : value)}
-              searchPlaceholder="Buscar cuenta…"
-            />
-          </div>
+        {transferBlocked && (
+          <p className="m-0 rounded-md bg-foreground/[0.05] px-3 py-2.5 text-[13px] text-muted-foreground">
+            {selectedAccount?.bankName ?? 'Este banco'} no acepta transferencias en esta caja: no
+            tiene ninguna cuenta receptora registrada. Se agregan en Bancos.
+          </p>
         )}
 
         {/* Last, and pinned to the floor of the card: the till fills the window,
@@ -499,7 +691,6 @@ export function CheckoutForm({
       {!shiftDue && viewing !== null && (
         <ValidatedModal
           charge={viewing}
-          bankName={bankName}
           accounts={accounts}
           merchantName={merchantName}
           cashierName={cashierName}
@@ -507,6 +698,155 @@ export function CheckoutForm({
         />
       )}
     </ContentLayout>
+  );
+}
+
+/**
+ * The day the customer paid — **typed or picked**, both in one control.
+ *
+ * A calendar alone is one tap for yesterday and four for last month; typing
+ * alone is eight keystrokes for today. So the field is an input the cashier can
+ * type `10/07` or `10/07/2026` into, with the calendar on the button beside it
+ * for the days that are easier to point at than to spell. `maskDate` formats as
+ * you type and `readTypedDate` is the authority on what it means, exactly as the
+ * amount and phone fields already work.
+ *
+ * Future days are refused because a payment cannot have happened tomorrow — the
+ * same rule the use case enforces, so the field never offers a submission the
+ * server will turn away. A half-typed date is not wrong yet, so it only turns
+ * the border red once it is complete and still impossible.
+ *
+ * **"Hoy" is `null`, not a date**, and that is the whole design of this field. A
+ * till is left open all night; a date resolved when the page rendered would
+ * still say "Hoy" at 8am and quietly ask the bank about yesterday, which reads
+ * as a bug and is one. Holding "unset" instead means the day is worked out at
+ * the moment of asking, so "Hoy" is true whenever it is read. Typing or picking
+ * today sets it back to `null` for the same reason: a cashier who writes today's
+ * date means today.
+ */
+function PaymentDateField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  /** `null` is "hoy, whatever hoy turns out to be". */
+  value: string | null;
+  onChange: (iso: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  /**
+   * What is in the box while it is being typed. `null` means "show the value",
+   * so the field reads "Hoy" or `10/07/2026` until a keystroke takes it over and
+   * blur hands it back.
+   */
+  const [typing, setTyping] = useState<string | null>(null);
+
+  const shown =
+    typing ??
+    (value === null ? 'Hoy' : formatIsoDay(value, venezuelaToday(), yesterdayInVenezuela()));
+  // Only judged once the day, month and year are all there: a date half typed is
+  // not a date typed wrong.
+  const typedInvalid =
+    typing !== null && typing.length === 10 && readTypedDate(typing, venezuelaToday()) === null;
+
+  /** Commits what was typed, or reverts to the value when it means nothing. */
+  const commit = (): void => {
+    if (typing === null) return;
+    const today = venezuelaToday();
+    const iso = readTypedDate(typing, today);
+    if (iso !== null) onChange(iso === today ? null : iso);
+    setTyping(null);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>Fecha del pago</Label>
+      <div
+        className={cn(
+          'flex h-[52px] items-center rounded-md border border-input bg-card pl-3 transition-colors focus-within:border-primary',
+          typedInvalid && 'border-destructive focus-within:border-destructive',
+        )}
+      >
+        <input
+          id={id}
+          className="min-w-0 flex-1 border-none bg-transparent p-0 font-heading text-[15px] tabular-nums text-foreground caret-primary outline-none"
+          value={shown}
+          inputMode="numeric"
+          autoComplete="off"
+          spellCheck={false}
+          maxLength={10}
+          aria-invalid={typedInvalid}
+          onChange={(event) => setTyping(maskDate(event.target.value))}
+          // Typing over "Hoy" should replace it, not append to it.
+          onFocus={(event) => event.target.select()}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
+            // Enter belongs to the form — it sends the charge — so commit the
+            // date first and let it through, rather than swallowing the key.
+            commit();
+          }}
+        />
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mr-1 shrink-0 text-muted-foreground hover:text-primary"
+              aria-label="Elegir la fecha en el calendario"
+            >
+              <Icon name="calendar-blank" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end">
+            <CalendarBody
+              value={value}
+              onChange={(next) => {
+                setTyping(null);
+                onChange(next);
+              }}
+              onDone={() => setOpen(false)}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Split out because Radix only mounts a popover's children while it is open —
+ * which is what keeps `venezuelaToday()` off the server render, and what makes
+ * "today" fresh every time the calendar is opened rather than once per page.
+ */
+function CalendarBody({
+  value,
+  onChange,
+  onDone,
+}: {
+  value: string | null;
+  onChange: (iso: string | null) => void;
+  onDone: () => void;
+}) {
+  const today = venezuelaToday();
+  const selected = fromIsoDay(value ?? today);
+
+  return (
+    <Calendar
+      mode="single"
+      required
+      selected={selected}
+      defaultMonth={selected}
+      disabled={{ after: fromIsoDay(today) }}
+      onSelect={(next: Date) => {
+        const iso = toIsoDay(next);
+        // Today goes back to "unset" so it keeps following the clock.
+        onChange(iso === today ? null : iso);
+        onDone();
+      }}
+    />
   );
 }
 
@@ -566,8 +906,11 @@ function MiTurno({
               title="Ver este cobro"
             >
               <div className="min-w-0 flex-1 text-left">
-                <div className="font-heading text-[15px] tabular-nums">
-                  {formatBolivares(row.amountCents)}
+                <div className="flex items-center gap-1.5">
+                  <PaymentKindMark kind={row.kind} payerPhone={row.payerPhone} />
+                  <span className="font-heading text-[15px] tabular-nums">
+                    {formatBolivares(row.amountCents)}
+                  </span>
                 </div>
                 <span className="text-[11px] text-muted-foreground">
                   {formatClock(row.createdAt)} · ref {row.reference} ·{' '}
@@ -873,19 +1216,23 @@ function VerdictContent({
 // ── the "mi turno" re-open modal — the shared "cobro validado" modal ─────────
 function ValidatedModal({
   charge,
-  bankName,
   accounts,
   merchantName,
   cashierName,
   onClose,
 }: {
   charge: ConfirmedCharge;
-  bankName: string;
   accounts: readonly CheckoutAccount[];
   merchantName?: string;
   cashierName?: string;
   onClose: () => void;
 }) {
+  // The bank that received it is the connection the charge landed on, read back
+  // from the list rather than passed down as one name for the whole till: a
+  // merchant can have two connected, and they are not interchangeable.
+  const received = accounts.find((account) => account.id === charge.bankAccountId);
+  const bankName = received?.bankName ?? 'el banco';
+
   return (
     <ValidatedPaymentModal
       view={{
@@ -896,7 +1243,8 @@ function ValidatedModal({
         bankName,
         cashierName,
         accountLabel: accountLabel(accounts, charge.bankAccountId),
-        atSeconds: charge.createdAt,
+        paidAt: charge.paidAt,
+        chargedAt: charge.createdAt,
         isSandbox: charge.isSandbox,
         receipt: chargeReceipt(charge, { bankName, merchantName, cashierName }),
       }}
@@ -946,13 +1294,19 @@ function ChargeRows({
   return (
     <div className="flex flex-col gap-2.5 text-[13px]">
       <Row label="Monto" strong value={formatBolivares(charge.amountCents)} />
+      <Row label="Tipo" value={kindLabel(charge.kind)} />
       <Row label="Referencia" mono value={charge.reference} />
-      {/* A transferencia has no phone to show; the row is absent, not empty. */}
+      {/* A transferencia has no payer phone; the row is absent, not empty. */}
       {charge.payerPhone !== null && (
         <Row label="Teléfono" value={formatPhoneForDisplay(charge.payerPhone)} />
       )}
-      {account !== undefined && <Row label="Cuenta" value={account} />}
-      <Row label="Fecha" value={formatDateTime(charge.createdAt)} />
+      {account !== undefined && <Row label="Banco" value={account} />}
+      {/* The bank's date first: it is the customer's, it is what their receipt
+          says, and on a payment made last night it is not today. "Cobrado" is
+          the shop's own — the two are different facts and the counter states
+          both rather than picking one and calling it "Fecha". */}
+      <Row label="Fecha del pago" value={formatDateTime(charge.paidAt)} />
+      <Row label="Cobrado" value={formatDateTime(charge.createdAt)} />
     </div>
   );
 }

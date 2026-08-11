@@ -2,14 +2,14 @@
  * One company and the banks it has connected — the admin's "bancos de una
  * empresa" screen.
  *
- * **Nothing here decrypts anything.** The repository hands back each account
- * with its two AES-GCM envelopes attached, and this file copies out the fields
- * the screen renders and leaves the rest behind. That is a deliberate map
- * rather than a lazy pass-through: a use case that returned the row as it
- * arrived would put the sealed client secret and the sealed account number one
- * `JSON.stringify` away from a response body. `CREDS_KEY` is not a dependency
- * of this use case and must not become one — the only reason to unseal a
- * client secret is to call the bank, and that lives in the banking use cases.
+ * **Nothing here decrypts anything.** The repository hands back each connection
+ * with its AES-GCM envelope attached, and this file copies out the fields the
+ * screen renders and leaves the rest behind. That is a deliberate map rather
+ * than a lazy pass-through: a use case that returned the row as it arrived would
+ * put the sealed client secret one `JSON.stringify` away from a response body.
+ * `CREDS_KEY` is not a dependency of this use case and must not become one — the
+ * only reason to unseal a client secret is to call the bank, and that lives in
+ * the banking use cases.
  *
  * The read is scoped by construction: the caller names one company and gets
  * that company's accounts, because `companyId` is the only key either query
@@ -21,9 +21,9 @@ import type { Company } from './company.ts';
 export type BankAccountStatus = 'active' | 'needs_reverify' | 'removed';
 
 /**
- * What the screen shows about an affiliation, and the whole of it. The last 4
- * of the account and the last 6 of the client id are the clear-text remains of
- * two sealed columns; everything else here is metadata.
+ * What the screen shows about an affiliation, and the whole of it. The last 6
+ * of the client id is the clear-text remains of the sealed credentials;
+ * everything else here is metadata.
  */
 export type CompanyBankAccount = {
   readonly id: string;
@@ -31,8 +31,8 @@ export type CompanyBankAccount = {
   readonly bank: string;
   readonly environment: 'production' | 'sandbox';
   readonly status: BankAccountStatus;
-  readonly accountLast4: string;
-  readonly accountType: string | null;
+  /** The merchant's own name for the connection, when they gave one. */
+  readonly label: string | null;
   readonly clientIdLast6: string | null;
   readonly verifiedAt: number | null;
   /** QA credentials expire; the panel warns seven days out. */
@@ -91,8 +91,7 @@ function toSummary(account: CompanyBankAccount): CompanyBankAccount {
     bank: account.bank,
     environment: account.environment,
     status: account.status,
-    accountLast4: account.accountLast4,
-    accountType: account.accountType,
+    label: account.label,
     clientIdLast6: account.clientIdLast6,
     verifiedAt: account.verifiedAt,
     credsExpireAt: account.credsExpireAt,

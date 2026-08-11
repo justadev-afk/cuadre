@@ -17,6 +17,7 @@ import type { Validation } from '../../adapters/d1/validation.repository.ts';
 import { formatBolivares } from '../../domain/money.ts';
 import { amountDigits, formatClock, formatDayClock } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
+import { PaymentKindMark } from './payment-kind-mark.tsx';
 import { ValidatedPaymentModal } from './validated-payment-modal.tsx';
 
 const BANK_NAMES: Record<string, string> = { banesco: 'Banesco' };
@@ -45,6 +46,10 @@ export function ValidationList({
         <table className="table">
           <thead>
             <tr>
+              {/* No heading: the column is one glyph wide and its meaning is
+                  under the pointer. The word still reaches a screen reader,
+                  from the mark's own aria-label. */}
+              <th className="w-5" />
               <th>Control</th>
               <th>Hora</th>
               <th>Referencia</th>
@@ -68,6 +73,13 @@ export function ValidationList({
                 }}
                 className="cursor-pointer"
               >
+                <td className="pr-0">
+                  <PaymentKindMark
+                    kind={v.kind}
+                    searchMode={v.searchMode}
+                    payerPhone={v.payerPhone}
+                  />
+                </td>
                 <td className="font-heading tabular-nums text-[var(--color-accent-300)]">
                   {v.controlCode}
                 </td>
@@ -108,6 +120,9 @@ export function ValidationList({
             className="flex cursor-pointer flex-col gap-1 rounded-md bg-card px-3.5 py-3 text-left shadow-[var(--shadow-sm)] transition-colors hover:bg-foreground/[0.04]"
           >
             <div className="flex items-center gap-1.5">
+              {/* On a phone the mark carries no tooltip worth tapping — the card
+                  itself opens the receipt, which spells the kind out. */}
+              <PaymentKindMark kind={v.kind} searchMode={v.searchMode} payerPhone={v.payerPhone} />
               <div className="font-heading text-base">{formatBolivares(v.amountCents)}</div>
               <span className="font-heading text-xs tabular-nums text-[var(--color-accent-300)]">
                 {v.controlCode}
@@ -145,17 +160,20 @@ export function ValidationList({
             payerPhone: viewing.payerPhone,
             bankName: BANK_NAMES[viewing.bank] ?? viewing.bank,
             cashierName: viewing.cashierName,
-            atSeconds: viewing.trnAt,
+            paidAt: viewing.trnAt,
+            chargedAt: viewing.createdAt,
             isSandbox: viewing.isSandbox,
             receipt: {
               merchantName,
               controlCode: viewing.controlCode,
+              kind: viewing.kind,
               reference: viewing.reference,
               amountCents: viewing.amountCents,
               payerPhone: viewing.payerPhone,
               bankName: BANK_NAMES[viewing.bank] ?? viewing.bank,
               cashierName: viewing.cashierName,
-              atSeconds: viewing.trnAt,
+              paidAt: viewing.trnAt,
+              atSeconds: viewing.createdAt,
               isSandbox: viewing.isSandbox,
             },
           }}

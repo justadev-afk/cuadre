@@ -16,9 +16,9 @@ export const BANESCO_ID = 'banesco';
 export type BanescoEndpoints = {
   /** Keycloak. The realm is part of the path, so this is per-environment too. */
   token: string;
-  /** Confirmation of Transactions — the endpoint every search mode posts to. */
+  /** Confirmation of Transactions — the endpoint both search modalities post to. */
   payment: string;
-  /** Account Inquiry. */
+  /** Account Inquiry — the merchant's own accounts, for the alta. */
   products: string;
 };
 
@@ -42,20 +42,12 @@ const SANDBOX_PATHS = {
   // transactions`. The debris was what produced the OpenShift router's
   // "Resource not found"; this path answers 200.
   payment: '/transactions/financial-account/transactions',
-  // VERIFIED live against QA: returns DOÑA AURORA's four accounts, masked, in
-  // the `httpStatus`/`dataResponse` envelope. `/me/customer/products` (below)
-  // additionally demands `device.sid` and 400s without it — so this explicit
-  // path, not the alias, is the one we call.
+  // VERIFIED live against QA (2026-08-11) with the Consulta client: returns the
+  // affiliation's accounts, **masked** (`0134************5306`). The alias
+  // `/me/customer/products` additionally demands `device.sid` and 400s without
+  // it, so this explicit path is the one we call.
   products: '/customer/products',
 } as const;
-
-/**
- * The same service also answers on `/me/customer/products`, which resolves the
- * customer from the token instead of from the request. We call the explicit
- * path so the request says what it is asking for; this is recorded because it
- * is the first thing to try if `/customer/products` starts refusing us.
- */
-export const SANDBOX_PRODUCTS_ALIAS_PATH = '/me/customer/products';
 
 const SANDBOX_ENDPOINTS: BanescoEndpoints = {
   token: `${SANDBOX_HOSTS.sso}${SANDBOX_PATHS.token}`,

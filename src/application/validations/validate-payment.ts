@@ -1,6 +1,6 @@
 /**
- * The counter. A cashier types a reference; we ask the bank whether that
- * payment landed; only the bank's answer approves it.
+ * The counter. A cashier types the last digits of a reference; we ask the bank
+ * whether that pago móvil landed; only the bank's answer approves it.
  *
  * ─────────────────────────────────────────────────────────────────────────
  *  Everything in the input is a claim. The only evidence in this file is the
@@ -9,23 +9,33 @@
  *  instant. What was typed is used to *ask the question*, never to answer it.
  * ─────────────────────────────────────────────────────────────────────────
  *
- * Four things happen in a fixed order, and the order is the design:
+ * Six things happen in a fixed order, and the order is the design:
  *
  *  1. **Idempotency first.** A retried submission returns the same validation
  *     and the same control code without the bank being asked again. A cashier
  *     on a bad connection tapping "confirmar" twice must not produce two
  *     questions, two answers, or two receipts.
- *  2. **The account, then the secrets.** The company's active account for the
- *     environment decides which bank is asked and with whose credentials —
- *     unsealed here, used for one call, never logged and never returned.
- *  3. **The verdict is the domain's.** `matchPayment` compares the movement
+ *  2. **The connection, then the secrets.** The cashier picked which of the
+ *     company's banks receives; that connection decides which bank is asked,
+ *     with whose credentials — unsealed here, used for one call, never logged
+ *     and never returned.
+ *  3. **Already charged? — on the claim's own key, before the bank.** The key a
+ *     payment is charged under is a composition of what was typed (the
+ *     reference tail and the day), so it can be built here. It is allowed to
+ *     miss and never to hit falsely; step 6 says exactly why.
+ *  4. **Then the bank is asked.** Nothing is concluded from the claim: six typed
+ *     digits are a question, not an answer, and only the movement approves.
+ *  5. **The verdict is the domain's.** `matchPayment` compares the movement
  *     against the claim. `ok(null)` from the gateway is *not_found* — "todavía
  *     no aparece", an answer with a *Reintentar* next to it — and a rejection
  *     writes no row at all.
- *  4. **The row is the charge.** Approved payments are inserted with a control
- *     code, and the three unique indexes decide the rest: another cashier who
- *     already charged this reference wins, and our own control-code collision
- *     is redrawn.
+ *  6. **The row is the charge.** It is keyed by `paymentKey` on the **bank's**
+ *     reference, which is the key of record — the one in step 3 is that key
+ *     predicted from the claim, and it is exact for a bank that answers with the
+ *     tail it was asked with. Where the bank answers with more, the two differ,
+ *     the prediction misses, and this one catches it. The unique indexes decide
+ *     the rest: another cashier who already charged this payment wins, and our
+ *     own control-code collision is redrawn.
  *
  * An attempt that finds nothing leaves no row anywhere, so the single metrics
  * data point recorded per attempt is the only trace it leaves at all — the
@@ -43,7 +53,12 @@ import type {
   ValidationAttempt,
 } from '../../adapters/metrics/attempt.metrics.ts';
 import { CONTROL_CODE_MAX_ATTEMPTS, generateControlCode } from '../../domain/control-code.ts';
-import { matchPayment, type RejectionReason } from '../../domain/payment-match.ts';
+import {
+  fullestReference,
+  matchPayment,
+  paymentKey,
+  type RejectionReason,
+} from '../../domain/payment-match.ts';
 import { normalisePhone } from '../../domain/phone.ts';
 import { findBank } from '../../domain/sudeban.ts';
 import { type Clock, venezuelaDate } from '../../shared/clock.ts';
@@ -52,15 +67,39 @@ import { AppError, forbidden } from '../../shared/errors.ts';
 import type { IdGen } from '../../shared/id.ts';
 import { logger, maskReference } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
-import { type OpenedCredential, operateCredential } from '../banking/account-credentials.ts';
+import { type AccountCredentials, operateCredential } from '../banking/account-credentials.ts';
 import type {
-  BankCredentials,
-  BankEnvironment,
   BankFailure,
   BankGateway,
   BankId,
+  BankPaymentKind,
   FoundPayment,
+  PaymentKind,
 } from '../ports/bank-gateway.ts';
+
+/** `YYYY-MM-DD`. The bank's `startDt` format, and the till's date field. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The day-half of a payment key for a kind that has no day. `paymentKey` folds
+ * the date in only when the bank answers with a bare tail; where there is no
+ * date at all, a bare tail is all the identity there is, and this constant says
+ * so out loud instead of letting an empty string look like an oversight.
+ */
+const UNDATED = 'sin-fecha';
+
+/**
+ * The bounds on a whole reference. Wide on purpose: Banesco's are 11 and 12
+ * digits, other banks will differ, and the only thing worth refusing here is a
+ * value nobody could have read off a receipt.
+ */
+const MIN_FULL_REFERENCE = 6;
+const MAX_FULL_REFERENCE = 20;
+
+/** How many digits the question actually carried. See `paymentKey`. */
+function askedDigits(reference: string): number {
+  return reference.replace(/\D/g, '').length;
+}
 
 /**
  * The ports, declared here and structurally.
@@ -73,19 +112,15 @@ import type {
  * classes that produce them are not.
  */
 type BankAccountReader = {
-  listActiveForCompany(
-    companyId: string,
-    environment: BankEnvironment,
-  ): Promise<readonly BankAccount[]>;
+  listActiveForCompany(companyId: string): Promise<readonly BankAccount[]>;
 };
 
 type ValidationWriter = {
   findByIdempotencyKey(key: string): Promise<Validation | null>;
-  /** The pre-flight "already cobrado?" — a charge for this reference on one of
-   *  these accounts, carrying the cashier's name. Answered before the bank. */
+  /** The "already cobrado?" check, on the key the bank's answer produced. */
   findChargedPayment(
     bankAccountIds: readonly string[],
-    reference: string,
+    referenceKey: string,
   ): Promise<Validation | null>;
   insert(input: NewValidation): Promise<InsertResult>;
 };
@@ -114,27 +149,41 @@ export type ValidatePaymentInput = {
   readonly cashierId: string;
   /** The cashier's session, forwarded so the bank's support can correlate. */
   readonly sessionId: string;
-  readonly reference: string;
   /**
-   * Blank or `null` is not a missing field: it is a claim with no payer phone
-   * behind it — a transferencia — and it is asked only of the banks that
-   * declare `findsTransfers`. A phone that *was* typed still has to be a real
-   * pago móvil number.
+   * The digits the customer read off their receipt. How many of them the bank
+   * wants is the bank's own `referenceDigits` — six for Banesco — and anything
+   * longer is trimmed to that tail rather than refused, since the tail is what
+   * the search uses either way.
    */
+  readonly reference: string;
+  /** Which of the bank's kinds this claim is. The till's selector. */
+  readonly kind: PaymentKind;
+  /** Required for a pago móvil, absent for a transferencia. */
   readonly payerPhone: string | null;
+  /**
+   * Which of the connection's registered receiving accounts the transferencia
+   * landed in — the full 20 digits. Absent for a pago móvil, which never
+   * carries one.
+   */
+  readonly receivingAccount: string | null;
   /** Sudeban code of the payer's bank, four digits. */
   readonly sourceBankId: string;
   readonly amountCents: number;
+  /**
+   * The day the customer made the payment, `YYYY-MM-DD` Venezuela local. The
+   * till defaults it to today and lets the cashier move it back — a customer
+   * who paid last night and turns up this morning was, until the bank asked for
+   * this field, simply unfindable. Absent for a kind that does not take one.
+   */
+  readonly paymentDate: string | null;
   /** One per submission. A retry of the same submission reuses it. */
   readonly idempotencyKey: string;
-  /** Which of the company's accounts answers. Production unless asked. */
-  readonly environment?: BankEnvironment;
   /**
-   * Scope the search to one of the company's accounts. Absent — the default —
-   * asks every usable account for the environment in turn. Scoped by `companyId`
-   * either way, so a tampered id reaches at worst this company's own account.
+   * Which of the company's bank connections receives — the counter's "banco
+   * receptor". Scoped by `companyId`, so a tampered id reaches at worst this
+   * company's own connection.
    */
-  readonly accountId?: string;
+  readonly bankAccountId: string;
 };
 
 /**
@@ -162,14 +211,19 @@ export type ValidatePayment = (
   input: ValidatePaymentInput,
 ) => Promise<Result<ValidatePaymentOutcome, ValidatePaymentFailure>>;
 
-/** What the request means once the domain has read it. */
+/** What the request means once the domain has read it, for one kind. */
 type Claim = {
+  readonly kind: PaymentKind;
+  /** Trimmed to the kind's `referenceDigits`. */
   readonly reference: string;
-  /** Canonical `584143125566`, whatever the customer read out — or `null` for
-   *  a transferencia, which has no phone to give. */
+  /** Canonical `584143125566`, or null where the kind takes no phone. */
   readonly payerPhone: string | null;
+  /** The full receiving account, or null where the kind takes none. */
+  readonly receivingAccount: string | null;
   readonly sourceBankId: string;
   readonly amountCents: number;
+  /** `YYYY-MM-DD`, or null where the kind takes no date. */
+  readonly paymentDate: string | null;
   readonly idempotencyKey: string;
 };
 
@@ -187,12 +241,11 @@ export function makeValidatePayment({
     // dashboard has to answer is how long the cashier waited.
     const startedMs = clock.nowMillis();
 
-    const read = readClaim(input);
-    if (!read.ok) return read;
-    const claim = read.value;
-
     // ── 1. idempotency ────────────────────────────────────────────────────
-    const replay = await validations.findByIdempotencyKey(claim.idempotencyKey);
+    const idempotencyKey = input.idempotencyKey.trim();
+    if (idempotencyKey === '') return err('invalid_input');
+
+    const replay = await validations.findByIdempotencyKey(idempotencyKey);
     if (replay !== null) {
       // The key is unique across the whole table, so a row under someone else's
       // company means the key was not minted by this caller.
@@ -205,49 +258,45 @@ export function makeValidatePayment({
       return outcome({ kind: 'confirmed', validation: replay });
     }
 
-    // ── 2. the accounts, then the secrets ─────────────────────────────────
-    const environment = input.environment ?? 'production';
-    const usable = await accounts.listActiveForCompany(input.companyId, environment);
-    // An explicit choice scopes to one account; otherwise the counter asks each
-    // usable account in turn. A stale chosen id — the account was removed since
-    // the till loaded — narrows to nothing and reads as "no account", the same
-    // as none connected.
-    const scoped = input.accountId ? usable.filter((a) => a.id === input.accountId) : usable;
-    if (scoped.length === 0) {
+    // ── 2. the connection, then the secrets ───────────────────────────────
+    // Scoped by company first and only then narrowed to the chosen id, so a
+    // tampered `bankAccountId` finds nothing rather than another merchant's row.
+    const usable = await accounts.listActiveForCompany(input.companyId);
+    const account = usable.find((candidate) => candidate.id === input.bankAccountId) ?? null;
+    if (account === null) {
       // Deliberately unrecorded: the metrics point is keyed by bank and
       // environment, and there is no bank in this story to attribute it to.
-      logger.warn('validation_no_bank_account', { companyId: input.companyId, environment });
+      logger.warn('validation_no_bank_account', {
+        companyId: input.companyId,
+        chosen: input.bankAccountId,
+      });
       return err('no_bank_account');
     }
 
-    // A claim with no phone is a transferencia, and only a bank that can find
-    // one may be asked about it — anywhere else the question has no answer, and
-    // asking it anyway spends a round trip at the counter to be told nothing.
-    // The till keeps the field required for such a bank, so reaching this is
-    // either a second bank connected since the screen loaded or a hand-made
-    // request; both get the same refusal rather than a false "no aparece".
-    const candidates =
-      claim.payerPhone === null
-        ? scoped.filter((account) => banks.get(account.bank).findsTransfers)
-        : scoped;
-    if (candidates.length === 0) {
-      logger.warn('validation_phone_required', { companyId: input.companyId, environment });
+    const gateway = banks.get(account.bank);
+
+    // What this kind takes is the bank's declaration, so a claim is read against
+    // it rather than against a shape written here. A kind this bank does not
+    // offer is a screen out of step with the catalogue, refused like any other
+    // malformed claim.
+    const spec = gateway.paymentKinds.find((candidate) => candidate.kind === input.kind) ?? null;
+    if (spec === null) {
+      logger.warn('validation_kind_unsupported', { bank: account.bank, kind: input.kind });
       return err('invalid_input');
     }
 
-    // One metric per attempt. The loop below finds the account the bank reports
-    // the movement on (or the last bank that would not answer), and the single
-    // point is recorded once, after — attributed to that account.
-    const record = (
-      account: BankAccount,
-      point: {
-        outcome: AttemptOutcome;
-        strategy: SearchStrategy;
-        bankStatus?: string | null;
-        /** Only ever the bank's own figure, and only when a movement matched. */
-        amountCents?: number;
-      },
-    ): void => {
+    const read = readClaim(input, spec, venezuelaDate(clock.nowSeconds()));
+    if (!read.ok) return read;
+    const claim = read.value;
+
+    // One metric per attempt, attributed to the connection that was asked.
+    const record = (point: {
+      outcome: AttemptOutcome;
+      strategy: SearchStrategy;
+      bankStatus?: string | null;
+      /** Only ever the bank's own figure, and only when a movement matched. */
+      amountCents?: number;
+    }): void => {
       metrics.record({
         companyId: input.companyId,
         bank: account.bank,
@@ -260,101 +309,100 @@ export function makeValidatePayment({
       });
     };
 
-    // ── already charged? the pre-flight check ─────────────────────────────
-    // Before a single bank call: if this reference is already a charge on one
-    // of these accounts, answer now. Re-scanning a cobrado payment must not
-    // spend a bank round trip at the counter to be told what the table already
-    // knows — and the answer carries who charged it and when.
-    const existingCharge = await validations.findChargedPayment(
-      candidates.map((a) => a.id),
-      claim.reference,
-    );
-    if (existingCharge !== null) {
-      const account =
-        candidates.find((a) => a.id === existingCharge.bankAccountId) ?? candidates[0];
-      record(account, {
+    // ── 3. already charged? the pre-flight, on the claim's own key ────────
+    //
+    // The key is a composition of what the cashier typed — the reference tail
+    // and the day — so it can be built without asking anyone. For a bank that
+    // answers with the tail it was asked with (Banesco does; verified against
+    // five QA payments on 2026-08-11) this is *character for character* the key
+    // the stored row carries, because the movement's date is the day that was
+    // searched and its reference is the tail that was sent.
+    //
+    // Safe precisely because it can only be **wrong by missing**. A bank that
+    // answers with the fuller reference stores its rows under that instead, so
+    // this lookup finds nothing and the post-bank check below still catches it —
+    // one wasted round trip, never a wrong answer. It cannot hit falsely: a row
+    // under this exact key on this exact connection *is* this payment, by the
+    // same definition `ux_validations_payment` enforces.
+    //
+    // What it buys is the counter's worst case: re-scanning a receipt that was
+    // already cobrado now answers instantly instead of spending a bank round
+    // trip in front of a customer to be told what the table already knew.
+    // A kind with no date has nothing to pair a bare tail with, so its key is
+    // the canonical reference alone — which is also why a transferencia the bank
+    // answers by tail is deduped across days rather than within one. That is the
+    // honest reading of what the bank told us, not a shortcut.
+    const claimKey = paymentKey({
+      reference: claim.reference,
+      occurredOn: claim.paymentDate ?? UNDATED,
+      askedDigits: askedDigits(claim.reference),
+    });
+    const chargedBefore = await validations.findChargedPayment([account.id], claimKey);
+    if (chargedBefore !== null) {
+      record({
         outcome: 'already_charged',
+        // No search happened — that is the difference from the check after the
+        // bank answers, and it is what makes the two tellable apart in the data.
         strategy: 'none',
-        amountCents: existingCharge.amountCents,
+        amountCents: chargedBefore.amountCents,
       });
       logger.warn('payment_already_charged', {
         companyId: input.companyId,
+        bank: account.bank,
         reference: maskReference(claim.reference),
+        preflight: true,
       });
       return outcome({
         kind: 'already_charged',
-        by: existingCharge.cashierName ?? null,
-        at: existingCharge.createdAt,
+        by: chargedBefore.cashierName ?? null,
+        at: chargedBefore.createdAt,
       });
     }
 
-    // Walk the accounts until one reports the movement. A payment lands in a
-    // single receiving account, so at most one answers with a movement and the
-    // rest answer null; the first hit wins and the loop stops — no extra round
-    // trips at the counter once the payment is found. A bank that will not
-    // answer at all is remembered, and surfaced only if no account has the
-    // payment: a bank being down outranks "todavía no aparece".
-    let deciding: { account: BankAccount; payment: FoundPayment } | null = null;
-    let failure: { account: BankAccount; error: BankFailure } | null = null;
-
-    for (const account of candidates) {
-      const secrets = await openAccount(credsKey, account);
-      const gateway = banks.get(account.bank);
-
-      // The counter runs on the operate pair — Banesco's Confirmación. A bank
-      // with a single stored pair uses it whatever its usage; the other pairs,
-      // if any, only listed accounts at onboarding and have no business here.
-      const operate = operateCredential(secrets.credentials);
-      if (operate === null) {
-        throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
-      }
-
-      const session = await gateway.authenticate(account.environment, operate);
-      if (!session.ok) {
-        failure = { account, error: session.error };
-        continue;
-      }
-
-      const found = await gateway.findPayment(session.value, {
-        accountId: secrets.accountNumber,
-        reference: claim.reference,
-        payerPhone: claim.payerPhone,
-        sourceBankId: claim.sourceBankId,
-        onDate: venezuelaDate(clock.nowSeconds()),
-        sessionId: input.sessionId,
-      });
-      if (!found.ok) {
-        failure = { account, error: found.error };
-        continue;
-      }
-
-      if (found.value !== null) {
-        deciding = { account, payment: found.value };
-        break;
-      }
+    // ── 4. ask the bank ───────────────────────────────────────────────────
+    // The counter runs on the operate pair — Banesco's Confirmación. Other
+    // pairs, if a bank ever has any, have no business here.
+    const secrets = await openCredentials(credsKey, account);
+    const operate = operateCredential(secrets, gateway.operateKey);
+    if (operate === null) {
+      throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
     }
 
-    // ── 3. the verdict ────────────────────────────────────────────────────
-    if (deciding === null) {
-      if (failure !== null) {
-        record(failure.account, {
-          outcome: 'bank_failure',
-          strategy: 'none',
-          bankStatus: failure.error,
-        });
-        return err(toCounterFailure(failure.error));
-      }
-      record(candidates[0], { outcome: 'not_found', strategy: 'none' });
+    const session = await gateway.authenticate(account.environment, operate);
+    if (!session.ok) {
+      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: session.error });
+      return err(toCounterFailure(session.error));
+    }
+
+    const found = await gateway.findPayment(session.value, {
+      kind: claim.kind,
+      reference: claim.reference,
+      payerPhone: claim.payerPhone,
+      receivingAccount: claim.receivingAccount,
+      sourceBankId: claim.sourceBankId,
+      onDate: claim.paymentDate,
+      sessionId: input.sessionId,
+    });
+    if (!found.ok) {
+      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: found.error });
+      return err(toCounterFailure(found.error));
+    }
+
+    if (found.value === null) {
+      record({ outcome: 'not_found', strategy: 'none' });
       logger.info('payment_not_found', {
         companyId: input.companyId,
+        bank: account.bank,
         reference: maskReference(claim.reference),
       });
       return outcome({ kind: 'not_found' });
     }
 
-    const { account, payment } = deciding;
+    // ── 5. the verdict ────────────────────────────────────────────────────
+    const payment: FoundPayment = found.value;
+    const movement = payment.movement;
     const verdict = matchPayment({
-      movement: payment.movement,
+      movement,
       expected: { reference: claim.reference, amountCents: claim.amountCents },
       now: clock.nowSeconds(),
     });
@@ -369,7 +417,7 @@ export function makeValidatePayment({
       // the dataset without inventing a code the schema does not have:
       // `outcome = 'not_found' AND search_strategy <> 'none'` is exactly the
       // set of attempts where the bank had a movement and it did not match.
-      record(account, { outcome: 'not_found', strategy: payment.strategy, bankStatus: reason });
+      record({ outcome: 'not_found', strategy: payment.strategy, bankStatus: reason });
       logger.info('payment_rejected', {
         companyId: input.companyId,
         bank: account.bank,
@@ -379,8 +427,46 @@ export function makeValidatePayment({
       return outcome(reason === null ? { kind: 'not_found' } : { kind: 'rejected', reason });
     }
 
-    // ── 4. the row ────────────────────────────────────────────────────────
-    const movement = payment.movement;
+    // ── 6. the row ────────────────────────────────────────────────────────
+    // The identity of the payment, from the bank's answer and never from the
+    // claim: its reference, or — when the bank echoes back only the digits it
+    // was asked with — that tail plus the day the movement happened.
+    const referenceKey = paymentKey({
+      reference: movement.reference,
+      occurredOn: spec.needsDate ? venezuelaDate(movement.occurredAt) : UNDATED,
+      // What we actually sent, not what the kind declares: a transferencia is
+      // asked with the whole reference and answered with the bank's own
+      // six-digit spelling, and it is that comparison — answer against ask —
+      // that decides whether the reply is a tail needing the day folded in.
+      askedDigits: askedDigits(claim.reference),
+    });
+
+    // The same question again, now on the bank's own key. Usually identical to
+    // the pre-flight one above and so a certain miss; it earns its round trip
+    // for the bank that answers with a fuller reference than it was asked with,
+    // whose rows are keyed on that instead and which the pre-flight cannot see.
+    const existingCharge =
+      referenceKey === claimKey
+        ? null
+        : await validations.findChargedPayment([account.id], referenceKey);
+    if (existingCharge !== null) {
+      record({
+        outcome: 'already_charged',
+        strategy: payment.strategy,
+        amountCents: existingCharge.amountCents,
+      });
+      logger.warn('payment_already_charged', {
+        companyId: input.companyId,
+        bank: account.bank,
+        reference: maskReference(movement.reference),
+      });
+      return outcome({
+        kind: 'already_charged',
+        by: existingCharge.cashierName ?? null,
+        at: existingCharge.createdAt,
+      });
+    }
+
     const row = {
       // Minted once: a control-code collision redraws the code, not the row.
       id: ids.uuid(),
@@ -388,19 +474,20 @@ export function makeValidatePayment({
       cashierId: input.cashierId,
       bankAccountId: account.id,
       bank: account.bank,
-      // Copied from the account, never joined back. Delete the sandbox account
-      // tomorrow and this row still knows it was a test.
+      kind: claim.kind,
+      // Copied from the connection, never joined back. Delete the sandbox
+      // connection tomorrow and this row still knows it was a test.
       isSandbox: account.environment === 'sandbox',
-      // The reference exactly as it was typed, zeros and all: it is what the
-      // customer's receipt says, and a charge a customer cannot find on their
-      // phone is a charge nobody can settle an argument with. The banks do not
-      // agree on the padding — Banesco answers '00000150496' as '150496' and
-      // pads others the other way — so the *identity* of the payment cannot live
-      // in this column. It lives in `reference_key` beside it, which the
-      // repository derives with the domain's `canonicalReference` and which
-      // `ux_validations_payment` is unique over: two spellings of one payment
-      // still collide, and the anti-double-charge mechanism is untouched.
-      reference: claim.reference,
+      // The fuller of the two spellings, exactly as one of them arrived. Usually
+      // the bank's — it answers a six-digit pago móvil question with the whole
+      // eleven, and a charge printed with six digits is a charge nobody can
+      // settle an argument with. But not always: a transferencia is asked with
+      // the receipt's `00000150496` and Banesco answers `150496`, and storing
+      // that would delete zeros the customer is looking at. Identity lives beside
+      // it in `referenceKey`, which canonicalises either spelling to the same
+      // thing.
+      reference: fullestReference(movement.reference, claim.reference),
+      referenceKey,
       // Equal to the claim by the verdict above; taken from the movement
       // because the movement is the evidence and the claim never was.
       amountCents: movement.amountCents,
@@ -429,7 +516,7 @@ export function makeValidatePayment({
       });
 
       if (written.outcome === 'inserted') {
-        record(account, {
+        record({
           outcome: 'confirmed',
           strategy: payment.strategy,
           amountCents: movement.amountCents,
@@ -445,9 +532,10 @@ export function makeValidatePayment({
       }
 
       // Another cashier charged this payment first. There is nothing to retry:
-      // the index refused the payment, not the code.
+      // the index refused the payment, not the code. The check above missed it
+      // only because a second cashier committed in the same instant.
       if (written.outcome === 'duplicate_payment') {
-        record(account, {
+        record({
           outcome: 'already_charged',
           strategy: payment.strategy,
           amountCents: movement.amountCents,
@@ -457,10 +545,7 @@ export function makeValidatePayment({
           bank: account.bank,
           reference: maskReference(row.reference),
         });
-        // The pre-check missed it — the bank padded the reference differently,
-        // or a second cashier committed in the same instant. Read who charged
-        // it on the bank's canonical reference so the counter can still say so.
-        const charged = await validations.findChargedPayment([account.id], row.reference);
+        const charged = await validations.findChargedPayment([account.id], referenceKey);
         return outcome({
           kind: 'already_charged',
           by: charged?.cashierName ?? null,
@@ -506,66 +591,100 @@ function outcome(
 }
 
 /**
- * Reads the claim through the domain before a single byte reaches the bank.
+ * Reads the claim through the domain before a single byte reaches the bank,
+ * **against the kind the bank declared**.
  *
  * Not defensive duplication of the HTTP layer's parsing: these are the rules
  * that make the question askable at all. A phone that is not a Venezuelan
  * mobile has no pago móvil wallet behind it, a Sudeban code that is not in the
- * table joins against nothing in `validations.source_bank_id`, and a
- * non-positive amount is refused by the schema's own CHECK — asking the bank
- * any of those questions spends a round trip to be told no.
+ * table joins against nothing in `validations.source_bank_id`, a non-positive
+ * amount is refused by the schema's own CHECK, and a date the bank will not
+ * parse is a round trip spent to be told `VDE02`.
  *
- * The one field that may be absent is the phone, and absent is a *meaning*
- * rather than a gap: no phone is a transferencia. It is only the typed-and-
- * wrong phone that is refused here — a blank one is a different question, not
- * a broken one.
+ * A field the kind does not take is **dropped, not merely ignored**. That is
+ * the difference that matters: sending Banesco a `startDt` on a transferencia
+ * turns a movement it would have returned into "sin resultados", so a stale
+ * value left on the form by a cashier switching tabs must not reach the wire.
+ *
+ * The reference is *trimmed*, not refused, when it is longer than the bank
+ * asks for: a cashier who pasted the whole number gave us more than we needed,
+ * and its tail is exactly the question. Shorter is a refusal — there is no way
+ * to invent the digits that are missing.
  */
-function readClaim(input: ValidatePaymentInput): Result<Claim, 'invalid_input'> {
-  const reference = input.reference.trim();
-  const idempotencyKey = input.idempotencyKey.trim();
-  const typedPhone = input.payerPhone?.trim() ?? '';
-  const payerPhone = typedPhone === '' ? null : normalisePhone(typedPhone);
+function readClaim(
+  input: ValidatePaymentInput,
+  spec: BankPaymentKind,
+  today: string,
+): Result<Claim, 'invalid_input'> {
+  const digits = input.reference.replace(/\D/g, '');
+  // A tail is an exact count the counter must have collected; a whole reference
+  // is whatever the receipt says, bounded only enough to catch a slip of the
+  // keyboard — Banesco's run 11 and 12 digits, and refusing one over the other
+  // would turn a real payment away.
+  const reference = spec.referenceDigits === null ? digits : digits.slice(-spec.referenceDigits);
+  if (spec.referenceDigits === null) {
+    if (reference.length < MIN_FULL_REFERENCE || reference.length > MAX_FULL_REFERENCE) {
+      return err('invalid_input');
+    }
+  } else if (reference.length !== spec.referenceDigits) {
+    return err('invalid_input');
+  }
 
-  if (reference === '' || idempotencyKey === '') return err('invalid_input');
-  if (typedPhone !== '' && payerPhone === null) return err('invalid_input');
   if (findBank(input.sourceBankId) === null) return err('invalid_input');
   if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
     return err('invalid_input');
   }
 
+  let payerPhone: string | null = null;
+  if (spec.needsPayerPhone) {
+    payerPhone = normalisePhone((input.payerPhone ?? '').trim());
+    if (payerPhone === null) return err('invalid_input');
+  }
+
+  let receivingAccount: string | null = null;
+  if (spec.needsReceivingAccount) {
+    // The full number, because a masked one is refused by the bank with a 400.
+    // The connection only ever stores completed numbers, so a claim that fails
+    // this arrived from somewhere other than the picker.
+    receivingAccount = (input.receivingAccount ?? '').replace(/\D/g, '');
+    if (receivingAccount.length < 10 || receivingAccount.length > 24) return err('invalid_input');
+  }
+
+  let paymentDate: string | null = null;
+  if (spec.needsDate) {
+    paymentDate = (input.paymentDate ?? '').trim();
+    // A payment cannot have happened tomorrow. The comparison is lexical, which
+    // is the same as chronological for `YYYY-MM-DD`, and both sides are
+    // Venezuela local — the counter's day, which is the one the cashier means.
+    if (!ISO_DATE.test(paymentDate) || paymentDate > today) return err('invalid_input');
+  }
+
   return ok({
+    kind: spec.kind,
     reference,
     payerPhone,
+    receivingAccount,
     sourceBankId: input.sourceBankId,
     amountCents: input.amountCents,
-    idempotencyKey,
+    paymentDate,
+    idempotencyKey: input.idempotencyKey.trim(),
   });
 }
 
 /**
- * The credentials and the account number, in the clear for the length of one
- * bank call.
+ * The credential map, in the clear for the length of one bank call.
  *
  * A row that will not open is not a decision the cashier can help with: the key
  * rotated without the row being re-sealed, or the bytes were tampered with.
- * Either way the account is unusable and someone has to be told, which is what
- * an `AppError` is for.
+ * Either way the connection is unusable and someone has to be told, which is
+ * what an `AppError` is for.
  */
-async function openAccount(
+async function openCredentials(
   credsKey: string,
   account: BankAccount,
-): Promise<{ credentials: OpenedCredential[]; accountNumber: string }> {
+): Promise<AccountCredentials> {
   try {
-    // Only the credential pairs are sealed now; the account number is stored in
-    // the clear (§6), so it comes straight off the row.
-    const credentials = await Promise.all(
-      account.credentials.map(async (stored) => ({
-        credKey: stored.credKey,
-        usage: stored.usage,
-        credentials: await unseal<BankCredentials>(credsKey, stored.credentials),
-      })),
-    );
-    return { credentials, accountNumber: account.accountNumber };
+    return await unseal<AccountCredentials>(credsKey, account.credentials);
   } catch {
     throw new AppError('internal', `bank account ${account.id} could not be unsealed`);
   }
@@ -574,11 +693,11 @@ async function openAccount(
 /**
  * A bank's failure as the counter must state it.
  *
- * `no_accounts` and `rate_limited` are onboarding-shaped answers arriving in
- * front of a customer, where the only true thing to say is that the bank did
- * not answer. `rejected_credentials` keeps its own code: it is the merchant's
- * to fix in the panel, and hiding it as "unavailable" would have them waiting
- * for a bank that is working fine.
+ * `rate_limited` is an onboarding-shaped answer arriving in front of a customer,
+ * where the only true thing to say is that the bank did not answer.
+ * `rejected_credentials` keeps its own code: it is the merchant's to fix in the
+ * panel, and hiding it as "unavailable" would have them waiting for a bank that
+ * is working fine.
  */
 function toCounterFailure(failure: BankFailure): ValidatePaymentFailure {
   switch (failure) {

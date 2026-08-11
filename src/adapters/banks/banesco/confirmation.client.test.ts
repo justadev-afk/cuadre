@@ -3,12 +3,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type BanescoConfirmationCall, BanescoConfirmationClient } from './confirmation.client.ts';
 import { serverDevice } from './envelope.ts';
 
-const CLIENT = new BanescoConfirmationClient(serverDevice('200.11.22.33'), 'cuadre/1.0');
+const CLIENT = new BanescoConfirmationClient(serverDevice('200.11.22.33'), 'cuadre/1.0', false);
 
 const CALL: BanescoConfirmationCall = {
   environment: 'sandbox',
   accessToken: 'header.payload.signature',
   sessionId: 'cashier-session-1',
+};
+
+const QUERY = {
+  reference: '456789',
+  payerPhone: '584143125566',
+  sourceBankId: '0134',
+  onDate: '2026-08-06',
 };
 
 /** One row as the bank sends it: padded currency, decimal amount, local time. */
@@ -52,7 +59,6 @@ const confirmationReply = (statusCode: string, details?: Array<Record<string, un
 
 const found: Reply = { status: 200, body: confirmationReply('200', [DETAIL]) };
 const empty: Reply = { status: 200, body: confirmationReply('70001') };
-const tooWide: Reply = { status: 200, body: confirmationReply('70005') };
 
 type Sent = { url: string; body: Record<string, unknown> };
 
@@ -79,60 +85,74 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('BanescoConfirmationClient.findByExactReference', () => {
-  it('asks for the whole reference, inside the bank’s envelope', async () => {
+describe('BanescoConfirmationClient.findPagoMovil', () => {
+  /**
+   * The table is the specification, and this row is the meeting: the bank told
+   * us on 2026-08-11 that the payer's bank code and phone were not arriving.
+   * Every request carries all four fields or this fails.
+   */
+  it('asks by the reference tail, the phone, the payer’s bank and the date', async () => {
     const sent = stubBank([found]);
 
-    await CLIENT.findByExactReference(CALL, ' 000123456789 ');
+    await CLIENT.findPagoMovil(CALL, QUERY);
 
     expect(sent[0].url).toContain('/transactions/financial-account/transactions');
     expect(sent[0].body).toEqual({
       dataRequest: {
         device: { type: 'Server', description: 'Cuadre Worker', ipAddress: '200.11.22.33' },
         securityAuth: { sessionId: 'cashier-session-1' },
-        transaction: { referenceNumber: '000123456789' },
+        transaction: {
+          referenceNumber: '456789',
+          phoneNum: '584143125566',
+          bankId: '0134',
+          startDt: '2026-08-06',
+        },
       },
     });
+  });
+
+  it('sends only the last six digits when a whole reference is pasted', async () => {
+    const sent = stubBank([found]);
+
+    await CLIENT.findPagoMovil(CALL, { ...QUERY, reference: '000123456789' });
+
+    expect(transactionOf(sent[0])).toMatchObject({ referenceNumber: '456789' });
   });
 
   it('normalises the row into the port’s units', async () => {
     stubBank([found]);
 
-    const outcome = await CLIENT.findByExactReference(CALL, '000123456789');
-
-    expect(outcome).toEqual({ kind: 'movements', movements: [MOVEMENT] });
+    expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({
+      kind: 'movements',
+      movements: [MOVEMENT],
+    });
   });
 
   it('reports no results as an answer, not as a failure', async () => {
     stubBank([empty]);
 
-    expect(await CLIENT.findByExactReference(CALL, '000123456789')).toEqual({ kind: 'no_results' });
+    expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({ kind: 'no_results' });
   });
 
   it('reports an empty list as no results too', async () => {
     stubBank([{ status: 200, body: confirmationReply('200', []) }]);
 
-    expect(await CLIENT.findByExactReference(CALL, '000123456789')).toEqual({ kind: 'no_results' });
+    expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({ kind: 'no_results' });
   });
 
   it('maps the bank’s status code to a failure', async () => {
     stubBank([{ status: 200, body: confirmationReply('VRN04') }]);
 
-    expect(await CLIENT.findByExactReference(CALL, '000123456789')).toEqual({
+    expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({
       kind: 'failure',
       failure: 'maintenance',
     });
   });
 
   it('refuses a row it cannot map rather than answering with a wrong amount', async () => {
-    stubBank([
-      {
-        status: 200,
-        body: confirmationReply('200', [{ ...DETAIL, amount: 'n/a' }]),
-      },
-    ]);
+    stubBank([{ status: 200, body: confirmationReply('200', [{ ...DETAIL, amount: 'n/a' }]) }]);
 
-    expect(await CLIENT.findByExactReference(CALL, '000123456789')).toEqual({
+    expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({
       kind: 'failure',
       failure: 'unavailable',
     });
@@ -141,91 +161,9 @@ describe('BanescoConfirmationClient.findByExactReference', () => {
   it('refuses a body that is not the reply at all', async () => {
     vi.stubGlobal('fetch', async () => new Response('<html>502</html>', { status: 502 }));
 
-    expect(await CLIENT.findByExactReference(CALL, '000123456789')).toEqual({
+    expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({
       kind: 'failure',
       failure: 'unavailable',
     });
-  });
-});
-
-describe('BanescoConfirmationClient.findByReferenceTail', () => {
-  it('asks by the last six digits, the phone, the bank and the date', async () => {
-    const sent = stubBank([found]);
-
-    await CLIENT.findByReferenceTail(CALL, {
-      reference: '000123456789',
-      payerPhone: '584143125566',
-      sourceBankId: '0134',
-      onDate: '2026-08-06',
-    });
-
-    expect(transactionOf(sent[0])).toEqual({
-      referenceNumber: '456789',
-      phoneNum: '584143125566',
-      bankId: '0134',
-      startDt: '2026-08-06',
-    });
-  });
-});
-
-describe('BanescoConfirmationClient.listByAccountRange', () => {
-  it('asks for the range on one account', async () => {
-    const sent = stubBank([found]);
-
-    await CLIENT.listByAccountRange(CALL, {
-      accountId: '01340123450123458514',
-      from: '2026-08-05',
-      to: '2026-08-06',
-    });
-
-    expect(transactionOf(sent[0])).toEqual({
-      accountId: '01340123450123458514',
-      startDt: '2026-08-05',
-      endDt: '2026-08-06',
-    });
-  });
-
-  it('splits the range into days when the bank says it is too wide', async () => {
-    const sent = stubBank([tooWide, found, empty]);
-
-    const outcome = await CLIENT.listByAccountRange(CALL, {
-      accountId: '01340123450123458514',
-      from: '2026-08-05',
-      to: '2026-08-06',
-    });
-
-    expect(sent).toHaveLength(3);
-    expect(transactionOf(sent[1])).toMatchObject({ startDt: '2026-08-05', endDt: '2026-08-05' });
-    expect(transactionOf(sent[2])).toMatchObject({ startDt: '2026-08-06', endDt: '2026-08-06' });
-    expect(outcome).toEqual({ kind: 'movements', movements: [MOVEMENT] });
-  });
-
-  it('gives up when a single day still will not fit', async () => {
-    stubBank([tooWide]);
-
-    const outcome = await CLIENT.listByAccountRange(CALL, {
-      accountId: '01340123450123458514',
-      from: '2026-08-06',
-      to: '2026-08-06',
-    });
-
-    expect(outcome).toEqual({ kind: 'failure', failure: 'unavailable' });
-  });
-
-  it.each([
-    ['2026-08-01', '2026-09-30'],
-    ['2026-08-06', '2026-08-05'],
-    ['ayer', '2026-08-06'],
-  ])('refuses the span %s → %s without calling the bank', async (from, to) => {
-    const sent = stubBank([found]);
-
-    const outcome = await CLIENT.listByAccountRange(CALL, {
-      accountId: '01340123450123458514',
-      from,
-      to,
-    });
-
-    expect(sent).toHaveLength(0);
-    expect(outcome).toEqual({ kind: 'failure', failure: 'invalid_input' });
   });
 });

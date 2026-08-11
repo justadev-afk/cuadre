@@ -14,21 +14,20 @@
 import type { BankAccountRepository } from '../../adapters/d1/bank-account.repository.ts';
 import type { Clock } from '../../shared/clock.ts';
 import type { IdGen } from '../../shared/id.ts';
-import type { BankGateway, BankId } from '../ports/bank-gateway.ts';
+import type { BankAccountSummary, BankGateway, BankId } from '../ports/bank-gateway.ts';
 import {
   type ChangeBankCredentials,
   makeChangeBankCredentials,
 } from './change-bank-credentials.ts';
 import { type ConnectBankAccount, makeConnectBankAccount } from './connect-bank-account.ts';
 import { type ListBankAccounts, makeListBankAccounts } from './list-bank-accounts.ts';
+import {
+  type ListReceivingAccounts,
+  makeListReceivingAccounts,
+} from './list-receiving-accounts.ts';
 import { type ListSupportedBanks, makeListSupportedBanks } from './list-supported-banks.ts';
-import type { VerificationStore } from './pending-verification.ts';
 import { makeRemoveBankAccount, type RemoveBankAccount } from './remove-bank-account.ts';
 import { makeReverifyBankAccount, type ReverifyBankAccount } from './reverify-bank-account.ts';
-import {
-  makeVerifyBankCredentials,
-  type VerifyBankCredentials,
-} from './verify-bank-credentials.ts';
 
 export type BankingDeps = {
   /** `BankRegistry`: the strategy selector, built per request. */
@@ -37,7 +36,11 @@ export type BankingDeps = {
     list(): readonly BankGateway[];
   };
   readonly accounts: BankAccountRepository;
-  readonly verifications: VerificationStore;
+  /** The bank's own account list, cached a day (`KvBankListingCache`). */
+  readonly listings: {
+    get(bankAccountId: string): Promise<readonly BankAccountSummary[] | null>;
+    put(bankAccountId: string, accounts: readonly BankAccountSummary[]): Promise<void>;
+  };
   /** The AES-GCM master key. Read from `env` once, in the container. */
   readonly credsKey: string;
   readonly clock: Clock;
@@ -46,9 +49,9 @@ export type BankingDeps = {
 
 export type BankingUseCases = {
   readonly listSupportedBanks: ListSupportedBanks;
-  readonly verifyBankCredentials: VerifyBankCredentials;
   readonly connectBankAccount: ConnectBankAccount;
   readonly listBankAccounts: ListBankAccounts;
+  readonly listReceivingAccounts: ListReceivingAccounts;
   readonly removeBankAccount: RemoveBankAccount;
   readonly reverifyBankAccount: ReverifyBankAccount;
   readonly changeBankCredentials: ChangeBankCredentials;
@@ -57,9 +60,9 @@ export type BankingUseCases = {
 export function makeBankingUseCases(deps: BankingDeps): BankingUseCases {
   return {
     listSupportedBanks: makeListSupportedBanks(deps),
-    verifyBankCredentials: makeVerifyBankCredentials(deps),
     connectBankAccount: makeConnectBankAccount(deps),
     listBankAccounts: makeListBankAccounts(deps),
+    listReceivingAccounts: makeListReceivingAccounts(deps),
     removeBankAccount: makeRemoveBankAccount(deps),
     reverifyBankAccount: makeReverifyBankAccount(deps),
     changeBankCredentials: makeChangeBankCredentials(deps),

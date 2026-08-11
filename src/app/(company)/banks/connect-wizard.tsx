@@ -1,34 +1,35 @@
 'use client';
 
 /**
- * The bank-onboarding wizard, screens 19–23.
+ * Connecting a bank — one form, one submit.
  *
- * Credentials → verifying → pick (or type) the account → connected. Nothing is
- * persisted until the last step, so abandoning it at any point leaves no row and
- * no decryptable secret behind.
+ * It was a wizard: credentials → verifying → pick the receiving account →
+ * connected. The account step is gone (a pago móvil is found by phone, bank code
+ * and date, never by the receiving account), and a wizard with one step is a
+ * form. What is left asks the three things a connection actually is: which bank,
+ * which environment, and the credentials — plus an optional name the merchant
+ * gives it, which is what tells two Banesco affiliations apart in the counter's
+ * "banco receptor" dropdown.
  *
- * The credentials step is `credential-fields.tsx` — the same fields "cambiar
+ * The credentials fields are `credential-fields.tsx` — the same fields "cambiar
  * credenciales" renders, because the two flows ask the merchant for the same
- * thing and a merchant should not have to learn two forms for it. Every field is
- * controlled so a refusal keeps what was typed — including which environment —
- * instead of the action wiping the form the way React resets an uncontrolled
- * one. It renders inside a shadcn `Dialog` (see `banks-panel.tsx`), so its
- * heading is a `DialogTitle` and the modal's own close button is the only X.
+ * thing and a merchant should not have to learn two forms for it (§11). Every
+ * field is controlled so a refusal keeps what was typed — including which
+ * environment — instead of the action wiping the form the way React resets an
+ * uncontrolled one. It renders inside a shadcn `Dialog` (see `banks-panel.tsx`),
+ * so its heading is a `DialogTitle` and the modal's own close button is the only X.
  */
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import { DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
-import { cn } from '@/lib/utils.ts';
 import type { SupportedBank } from '../../../application/banking/list-supported-banks.ts';
 import type { BankEnvironment } from '../../../application/ports/bank-gateway.ts';
-import { formatBolivares } from '../../../domain/money.ts';
 import { Icon } from '../../_components/icon.tsx';
-import { maskAccountNumber } from '../../_lib/masks.ts';
-import { toast } from '../../_lib/toast.ts';
-import { connectBankAction, verifyBankAction } from './actions.ts';
+import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
+import { connectBankAction } from './actions.ts';
 import { ConnectingOverlay } from './connecting-overlay.tsx';
 import {
   BankIdentityFields,
@@ -36,38 +37,29 @@ import {
   type CredentialValues,
 } from './credential-fields.tsx';
 import { requiredCredentialsFilled } from './credentials.ts';
-import {
-  CONNECT_INITIAL,
-  type ConnectState,
-  type SelectableAccountView,
-  VERIFY_INITIAL,
-  type VerifyState,
-} from './form-state.ts';
+import { CONNECT_INITIAL, type ConnectState } from './form-state.ts';
 
-type VerifyBankAction = (previous: VerifyState, form: FormData) => Promise<VerifyState>;
 type ConnectBankAction = (previous: ConnectState, form: FormData) => Promise<ConnectState>;
 
 type ConnectWizardProps = {
-  /** Every bank a company can connect. One today (Banesco); the wizard is generic. */
+  /** Every bank a company can connect. One today (Banesco); the form is generic. */
   banks: readonly SupportedBank[];
   onClose: () => void;
-  /** The verify/connect actions — default to the company's own; the admin panel
-   *  passes its versions, scoped to a target company. */
-  verifyAction?: VerifyBankAction;
+  /** The connect action — defaults to the company's own; the admin panel passes
+   *  its version, scoped to a target company. */
   connectAction?: ConnectBankAction;
-  /** When present (the admin flow), carried into both forms so the actions know
-   *  which company they are setting up. */
+  /** When present (the admin flow), carried into the form so the action knows
+   *  which company it is setting up. */
   companyId?: string;
 };
 
 export function ConnectWizard({
   banks,
   onClose,
-  verifyAction = verifyBankAction,
   connectAction = connectBankAction,
   companyId,
 }: ConnectWizardProps) {
-  const [verify, verifyForm, verifying] = useActionState(verifyAction, VERIFY_INITIAL);
+  const [state, formAction, pending] = useActionState(connectAction, CONNECT_INITIAL);
 
   // The chosen bank drives everything below it — its environments and its
   // declared credential groups. Switching bank resets the environment and
@@ -77,6 +69,8 @@ export function ConnectWizard({
   const [environment, setEnvironment] = useState<BankEnvironment>(
     banks[0]?.environments[0] ?? 'production',
   );
+  const [label, setLabel] = useState('');
+  const [receiving, setReceiving] = useState('');
   const [values, setValues] = useState<CredentialValues>({});
   const setField = (key: string, value: string) => setValues((prev) => ({ ...prev, [key]: value }));
 
@@ -88,44 +82,28 @@ export function ConnectWizard({
     setValues({});
   };
 
-  // A rejected credential set shows as a toast, never as an error line in the
-  // form — the modal must not resize under the fields as the message appears.
-  useEffect(() => {
-    if (verify.step === 'error') toast(verify.message);
-  }, [verify]);
+  // Close on success, toast on refusal — the one pair of effects every action
+  // dialog shares, so this one does not hand-roll them (§11). A rejected
+  // credential set is a toast and never an error line in the form: the modal
+  // must not resize under the fields as the message appears.
+  useActionOutcome(state, onClose);
 
   // The picker only ever holds a supported bank; the guard is for the compiler,
   // never rendered with an empty list (the page gates on `banks.length > 0`).
   if (selectedBank === undefined) return null;
 
-  // The verify button waits on the required (operate) group being filled — a
-  // realtime check, so an empty submit is never even offered.
-  const canVerify = requiredCredentialsFilled(selectedBank.credentialGroups, values);
-
-  // Once the credentials verify, the wizard moves to choosing the account.
-  if (verify.step === 'accounts') {
-    return (
-      <AccountStep
-        verifyId={verify.verifyId}
-        environment={verify.environment}
-        accounts={verify.accounts}
-        displayName={selectedBank.displayName}
-        connectAction={connectAction}
-        companyId={companyId}
-        onClose={onClose}
-      />
-    );
-  }
+  // A realtime check on the required groups, so an empty submit is never offered.
+  const canSubmit = requiredCredentialsFilled(selectedBank.credentialGroups, values);
 
   return (
-    <form action={verifyForm} className="flex flex-col gap-4">
+    <form action={formAction} className="flex flex-col gap-4">
       <ConnectingOverlay
-        active={verifying}
+        active={pending}
         title={`Conectando con ${selectedBank.displayName}`}
         steps={[
           `Autenticando con ${selectedBank.displayName}`,
           'Verificando las credenciales',
-          'Consultando tus cuentas',
+          'Guardando el banco',
         ]}
       />
       <div>
@@ -143,194 +121,72 @@ export function ConnectWizard({
         environment={environment}
         onBankChange={chooseBank}
         onEnvironmentChange={setEnvironment}
-        disabled={verifying}
+        disabled={pending}
       />
+
+      {/* The only new field. It is what the cashier will read in the "banco
+          receptor" dropdown, so a shop with one Banesco can skip it and a shop
+          with two really should not. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bank-label">Nombre (opcional)</Label>
+        <Input
+          id="bank-label"
+          name="label"
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          maxLength={40}
+          autoComplete="off"
+          placeholder="Caja principal"
+          disabled={pending}
+        />
+        <span className="text-[11px] text-muted-foreground">
+          Así lo verá el cajero al elegir el banco que recibe el pago.
+        </span>
+      </div>
+
+      {/* Only a transferencia needs one, and only the merchant can give it: the
+          bank reports its accounts masked and refuses a masked one back, so the
+          twenty digits are typed once here rather than discovered. Left blank,
+          the connection validates pago móvil and the till says so. */}
+      {selectedBank.paymentKinds.some((kind) => kind.needsReceivingAccount) && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="receiving-accounts">Cuentas que reciben transferencias (opcional)</Label>
+          <textarea
+            id="receiving-accounts"
+            name="receivingAccounts"
+            value={receiving}
+            onChange={(event) => setReceiving(event.target.value)}
+            rows={2}
+            spellCheck={false}
+            placeholder="01340804108041005394"
+            disabled={pending}
+            className="rounded-md border border-input bg-card px-3 py-2 font-mono text-[13px] tabular-nums text-foreground outline-none transition-colors focus-visible:border-primary"
+          />
+          <span className="text-[11px] text-muted-foreground">
+            El número completo, 20 dígitos. Una por línea si son varias.
+          </span>
+        </div>
+      )}
 
       <CredentialGroupFields
         groups={selectedBank.credentialGroups}
         values={values}
         onChange={setField}
-        disabled={verifying}
+        disabled={pending}
       />
-
-      <DialogFooter>
-        <Button type="button" variant="secondary" onClick={onClose}>
-          Cancelar
-        </Button>
-        <Button type="submit" disabled={verifying || !canVerify}>
-          <Icon name="plugs-connected" />
-          {verifying ? 'Verificando…' : 'Verificar credenciales'}
-        </Button>
-      </DialogFooter>
-    </form>
-  );
-}
-
-/** Step 3 (screens 21–22) — choose the receiving account, then connect. */
-function AccountStep({
-  verifyId,
-  environment,
-  accounts,
-  displayName,
-  connectAction,
-  companyId,
-  onClose,
-}: {
-  verifyId: string;
-  environment: 'production' | 'sandbox';
-  accounts: readonly SelectableAccountView[];
-  displayName: string;
-  connectAction: ConnectBankAction;
-  companyId?: string;
-  onClose: () => void;
-}) {
-  const [connect, connectForm, connecting] = useActionState(connectAction, CONNECT_INITIAL);
-  const [chosen, setChosen] = useState(accounts[0]?.accountId ?? '');
-  const [typed, setTyped] = useState('');
-
-  // A discover pair listed accounts → pick one; none did → type the number in.
-  // Even with a list, the merchant can switch to typing: the account they bank
-  // on may be masked in the list or belong to a different affiliation.
-  const hasAccounts = accounts.length > 0;
-  const [typing, setTyping] = useState(!hasAccounts);
-
-  // The action revalidated /banks; closing drops the modal over the fresh list.
-  useEffect(() => {
-    if (connect.step === 'done') onClose();
-  }, [connect.step, onClose]);
-
-  // A connect failure is a toast, not an error line — same no-resize rule.
-  useEffect(() => {
-    if (connect.step === 'error') toast(connect.message);
-  }, [connect]);
-
-  // A Venezuelan account number is exactly 20 digits: Guardar waits for all 20,
-  // and a partial number turns the field red as it is typed.
-  const typedDigits = typed.replace(/\D/g, '');
-  const accountComplete = typedDigits.length === 20;
-  const accountInvalid = typedDigits.length > 0 && !accountComplete;
-
-  const saveLabel = connecting
-    ? 'Guardando…'
-    : environment === 'sandbox'
-      ? 'Guardar banco (sandbox)'
-      : 'Guardar banco';
-
-  return (
-    <form action={connectForm} className="flex flex-col gap-4">
-      <ConnectingOverlay
-        active={connecting}
-        title="Guardando la cuenta"
-        steps={['Sellando las credenciales', 'Guardando la cuenta', 'Casi listo']}
-      />
-      <input type="hidden" name="verifyId" value={verifyId} />
-      {companyId !== undefined && <input type="hidden" name="companyId" value={companyId} />}
-      {/* connect prefers a typed number when present; sending both keeps the
-          picker's choice available the moment the merchant switches back. */}
-      <input type="hidden" name="accountId" value={typing ? '' : chosen} />
-      <input type="hidden" name="accountNumber" value={typing ? typed : ''} />
-
-      <div>
-        <DialogTitle>¿Qué cuenta recibe los pagos?</DialogTitle>
-        <DialogDescription>
-          {typing
-            ? 'Escribe el número completo de la cuenta que recibe los pagos.'
-            : `${displayName} reporta ${accounts.length} ${accounts.length === 1 ? 'cuenta' : 'cuentas'} para estas credenciales.`}
-        </DialogDescription>
-      </div>
-
-      {typing ? (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="manual-account">Número de cuenta (20 dígitos)</Label>
-          <Input
-            id="manual-account"
-            aria-invalid={accountInvalid}
-            className="font-mono tabular-nums"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={24}
-            placeholder="0134 0000 0000 0000 0000"
-            value={typed}
-            onChange={(e) => setTyped(maskAccountNumber(e.target.value))}
-            disabled={connecting}
-          />
-          {hasAccounts && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="mt-1 self-start"
-              onClick={() => setTyping(false)}
-              disabled={connecting}
-            >
-              <Icon name="arrow-left" />
-              Volver a la lista
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {accounts.map((account) => {
-            const selected = account.accountId === chosen;
-            return (
-              <button
-                type="button"
-                key={account.accountId}
-                onClick={() => setChosen(account.accountId)}
-                disabled={connecting}
-                className={cn(
-                  'flex cursor-pointer flex-row items-center gap-3 rounded-md bg-card p-3.5 text-left',
-                  selected
-                    ? 'shadow-[inset_0_0_0_1px_var(--color-accent)]'
-                    : 'shadow-[var(--shadow-sm)]',
-                )}
-              >
-                <span
-                  className={cn(
-                    'size-4 flex-none rounded-full border-[1.5px]',
-                    selected
-                      ? 'border-primary bg-primary shadow-[inset_0_0_0_4px_var(--color-surface)]'
-                      : 'border-border',
-                  )}
-                />
-                <span className="flex-1">
-                  <span className="block font-heading text-[15px] tabular-nums">
-                    {account.masked}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {account.type ?? 'Cuenta'}
-                    {account.balanceCents !== null &&
-                      ` · saldo ${formatBolivares(account.balanceCents)}`}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="self-start"
-            onClick={() => setTyping(true)}
-            disabled={connecting}
-          >
-            La cuenta no está en la lista — escribir el número
-          </Button>
-        </div>
-      )}
 
       <div className="flex items-start gap-2 text-xs text-muted-foreground">
         <Icon name="eye" className="mt-0.5" />
-        <span>Solo leemos los movimientos del día de esta cuenta. Cuadre no mueve dinero.</span>
+        <span>Solo consultamos los pagos que valides en la caja. Cuadre no mueve dinero.</span>
       </div>
 
       <DialogFooter>
-        <Button type="button" variant="secondary" onClick={onClose} disabled={connecting}>
+        <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={connecting || (typing ? !accountComplete : chosen === '')}>
-          {saveLabel}
+        <Button type="submit" disabled={pending || !canSubmit}>
+          <Icon name="plugs-connected" />
+          {pending ? 'Conectando…' : 'Conectar banco'}
         </Button>
       </DialogFooter>
     </form>

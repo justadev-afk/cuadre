@@ -2,52 +2,35 @@ import { describe, expect, it } from 'vitest';
 
 import { epochToIso } from '../../shared/clock.ts';
 import { toBase64 } from '../../shared/crypto.ts';
-import {
-  D1BankAccountRepository,
-  toBankAccount,
-  toStoredCredential,
-} from './bank-account.repository.ts';
+import { D1BankAccountRepository, toBankAccount } from './bank-account.repository.ts';
 import { makeFakeD1, uniqueViolation } from './d1.fake.ts';
 
-/** A credential pair's envelope: still sealed, but stored base64 (no BLOBs). */
+/** The credential map's envelope: still sealed, but stored base64 (no BLOBs). */
 const CRED_CT = new Uint8Array([1, 2, 3, 4]);
 const CRED_IV = new Uint8Array([9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2]);
-/** The account number is stored in the clear now (§6). */
-const ACCOUNT_NUMBER = '01340000000000007788';
+const SEALED = { ciphertext: CRED_CT, iv: CRED_IV, keyVersion: 1 };
 const VERIFIED_AT = 1_770_000_000;
 const CREATED_AT = 1_760_000_000;
 
-/** A `bank_accounts` row, as D1 returns it: number in the clear, timestamps ISO. */
+/**
+ * A `bank_accounts` row, as D1 returns it after 0007: no account number, a
+ * merchant-chosen label, the credential map sealed onto the row, timestamps ISO.
+ */
 function accountRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'acct-1',
     company_id: 'la-espiga',
     bank: 'banesco',
     environment: 'production',
+    label: 'Caja principal',
+    receiving_accounts: '["01340804108041005394"]',
     client_id_last6: 'a1b2c3',
-    account_number: ACCOUNT_NUMBER,
-    account_last4: '7788',
-    account_type: 'Corriente',
-    holder_id: 'J-401234567',
-    verified_at: epochToIso(VERIFIED_AT),
-    creds_expire_at: null,
-    status: 'active',
-    created_at: epochToIso(CREATED_AT),
-    ...overrides,
-  };
-}
-
-/** A `bank_account_credentials` row: the sealed pair as base64 text, created ISO. */
-function credRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    bank_account_id: 'acct-1',
-    id: 'cred-1',
-    cred_key: 'confirmation',
-    usage: 'operate',
-    client_id_last6: 'fedfa0',
     creds_ct: toBase64(CRED_CT),
     creds_iv: toBase64(CRED_IV),
     creds_key_v: 1,
+    verified_at: epochToIso(VERIFIED_AT),
+    creds_expire_at: null,
+    status: 'active',
     created_at: epochToIso(CREATED_AT),
     ...overrides,
   };
@@ -58,113 +41,69 @@ const NEW_ACCOUNT = {
   companyId: 'la-espiga',
   bank: 'banesco',
   environment: 'production',
+  label: 'Caja principal',
+  receivingAccounts: ['01340804108041005394'],
   clientIdLast6: 'a1b2c3',
-  accountNumber: ACCOUNT_NUMBER,
-  accountLast4: '7788',
-  accountType: 'Corriente',
-  holderId: 'J-401234567',
-  credentials: [
-    {
-      id: 'cred-1',
-      credKey: 'confirmation',
-      usage: 'operate',
-      clientIdLast6: 'fedfa0',
-      credentials: { ciphertext: CRED_CT, iv: CRED_IV, keyVersion: 1 },
-    },
-  ],
+  credentials: SEALED,
   credsExpireAt: null,
+  verifiedAt: VERIFIED_AT,
   createdAt: CREATED_AT,
 } as const;
 
 describe('toBankAccount', () => {
-  it('reads the number in the clear, the credential envelope back as bytes, times as epoch', () => {
-    const account = toBankAccount(accountRow(), [toStoredCredential(credRow())]);
+  it('reads the credential envelope back as bytes, and times as epoch', () => {
+    const account = toBankAccount(accountRow());
 
-    expect(account.accountNumber).toBe(ACCOUNT_NUMBER);
-    expect(account.credentials[0].credentials.ciphertext).toBeInstanceOf(Uint8Array);
-    expect([...account.credentials[0].credentials.ciphertext]).toEqual([1, 2, 3, 4]);
-    expect([...account.credentials[0].credentials.iv]).toEqual([...CRED_IV]);
+    expect(account.credentials.ciphertext).toBeInstanceOf(Uint8Array);
+    expect([...account.credentials.ciphertext]).toEqual([1, 2, 3, 4]);
+    expect([...account.credentials.iv]).toEqual([...CRED_IV]);
     // ISO in the column, epoch seconds back out.
     expect(account.verifiedAt).toBe(VERIFIED_AT);
     expect(account.createdAt).toBe(CREATED_AT);
   });
 
-  it('reads each credential pair’s own key version', () => {
-    const account = toBankAccount(accountRow(), [toStoredCredential(credRow({ creds_key_v: 5 }))]);
-    expect(account.credentials[0].credentials.keyVersion).toBe(5);
-  });
-
-  it('carries every credential pair the account holds', () => {
-    const account = toBankAccount(accountRow(), [
-      toStoredCredential(credRow({ cred_key: 'confirmation', usage: 'operate' })),
-      toStoredCredential(credRow({ cred_key: 'consulta', usage: 'discover' })),
-    ]);
-    expect(account.credentials.map((c) => c.credKey)).toEqual(['confirmation', 'consulta']);
-    expect(account.credentials.map((c) => c.usage)).toEqual(['operate', 'discover']);
+  it('reads the envelope’s own key version', () => {
+    expect(toBankAccount(accountRow({ creds_key_v: 5 })).credentials.keyVersion).toBe(5);
   });
 
   it('exposes only the maskable parts in the clear', () => {
-    const account = toBankAccount(accountRow(), [toStoredCredential(credRow())]);
-    expect(account.accountLast4).toBe('7788');
+    const account = toBankAccount(accountRow());
+    expect(account.label).toBe('Caja principal');
     expect(account.clientIdLast6).toBe('a1b2c3');
     expect(account).not.toHaveProperty('clientSecret');
   });
 
+  it('reads an unnamed connection as a null label, not an empty string', () => {
+    expect(toBankAccount(accountRow({ label: null })).label).toBeNull();
+  });
+
   it('fails an unreadable environment away from production', () => {
-    expect(toBankAccount(accountRow({ environment: 'staging' }), []).environment).toBe('sandbox');
-    expect(toBankAccount(accountRow({ environment: 'production' }), []).environment).toBe(
-      'production',
-    );
+    expect(toBankAccount(accountRow({ environment: 'staging' })).environment).toBe('sandbox');
+    expect(toBankAccount(accountRow({ environment: 'production' })).environment).toBe('production');
   });
 
   it('fails an unreadable status closed', () => {
-    expect(toBankAccount(accountRow({ status: 'paused' }), []).status).toBe('removed');
-    expect(toBankAccount(accountRow({ status: 'needs_reverify' }), []).status).toBe(
-      'needs_reverify',
-    );
+    expect(toBankAccount(accountRow({ status: 'paused' })).status).toBe('removed');
+    expect(toBankAccount(accountRow({ status: 'needs_reverify' })).status).toBe('needs_reverify');
   });
 
-  it('refuses an account number that is not text', () => {
-    expect(() => toBankAccount(accountRow({ account_number: 123 }), [])).toThrow();
-  });
-});
-
-describe('toStoredCredential', () => {
-  it('reads a credential row into a sealed pair, base64-decoded', () => {
-    const cred = toStoredCredential(credRow());
-    expect(cred).toMatchObject({
-      credKey: 'confirmation',
-      usage: 'operate',
-      clientIdLast6: 'fedfa0',
-    });
-    expect([...cred.credentials.ciphertext]).toEqual([1, 2, 3, 4]);
-    expect(cred.credentials.keyVersion).toBe(1);
-  });
-
-  it('fails an unreadable usage closed to discover', () => {
-    // A pair whose usage is unreadable is never chosen as operate while another
-    // could be. A lone pair is used anyway, by the single-credential rule.
-    expect(toStoredCredential(credRow({ usage: 'nonsense' })).usage).toBe('discover');
-    expect(toStoredCredential(credRow({ usage: 'operate' })).usage).toBe('operate');
-  });
-
-  it('refuses a credential ciphertext that is not valid base64', () => {
-    expect(() => toStoredCredential(credRow({ creds_ct: 'not base64!' }))).toThrow();
+  it('refuses a ciphertext that is not valid base64', () => {
+    expect(() => toBankAccount(accountRow({ creds_ct: 'not base64!' }))).toThrow();
   });
 });
 
 describe('insert', () => {
-  it('binds the account number in the clear and the credential envelope as base64', async () => {
+  it('binds the credential envelope as base64 text, in one statement', async () => {
     const fake = makeFakeD1();
     fake.reply({ rows: [accountRow()] });
 
     await new D1BankAccountRepository(fake.db).insert(NEW_ACCOUNT);
 
-    // calls[0] is the account insert: the number goes in the clear now.
-    expect(fake.calls[0]?.args).toContain(ACCOUNT_NUMBER);
-    // calls[1] is the credential-row insert: the sealed pair as base64 text.
-    expect(fake.calls[1]?.args).toContain(toBase64(CRED_CT));
-    expect(fake.calls[1]?.args).toContain(toBase64(CRED_IV));
+    // One statement, not a batch: the credentials live on the account row now.
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]?.args).toContain(toBase64(CRED_CT));
+    expect(fake.calls[0]?.args).toContain(toBase64(CRED_IV));
+    expect(fake.calls[0]?.args).toContain('Caja principal');
   });
 
   it('never binds a BLOB: no raw secret bytes reach the database', async () => {
@@ -180,26 +119,23 @@ describe('insert', () => {
     expect(allArgs).not.toContain(CRED_CT);
   });
 
-  it('refuses to write an account with no credentials, before touching the db', async () => {
-    // The invariant migration 0003 exists to keep: no account without
-    // credentials. The choke point rejects an empty set outright — nothing is
-    // sent to the database, so there is no half-written account to clean up.
+  it('is born verified: the credentials authenticated a moment ago', async () => {
     const fake = makeFakeD1();
+    fake.reply({ rows: [accountRow()] });
 
-    await expect(
-      new D1BankAccountRepository(fake.db).insert({ ...NEW_ACCOUNT, credentials: [] }),
-    ).rejects.toMatchObject({ code: 'internal', detail: expect.stringContaining('credential') });
-    expect(fake.calls).toHaveLength(0);
+    await new D1BankAccountRepository(fake.db).insert(NEW_ACCOUNT);
+
+    expect(fake.calls[0]?.args).toContain(epochToIso(VERIFIED_AT));
   });
 
-  it('reads the per-company unique key as an already-linked account', async () => {
+  it('reads the per-company unique key as an already-linked connection', async () => {
     const fake = makeFakeD1();
     fake.reply({
       throws: uniqueViolation(
         'bank_accounts.company_id',
         'bank_accounts.bank',
         'bank_accounts.environment',
-        'bank_accounts.account_last4',
+        'bank_accounts.client_id_last6',
       ),
     });
 
@@ -220,65 +156,61 @@ describe('insert', () => {
 });
 
 describe('replaceCredentials', () => {
-  it('clears the old pairs, writes the new set, and re-stamps the account', async () => {
+  it('rewrites the envelope and re-stamps the account, in one statement', async () => {
     const fake = makeFakeD1();
-    // The batch is DELETE, one INSERT per pair, then the UPDATE that RETURNS.
-    fake.reply({ rows: [] }, { rows: [] }, { rows: [accountRow()] });
+    fake.reply({ rows: [accountRow()] });
 
     const result = await new D1BankAccountRepository(fake.db).replaceCredentials(
       'acct-1',
-      [NEW_ACCOUNT.credentials[0]],
+      { ciphertext: new Uint8Array([7, 7]), iv: CRED_IV, keyVersion: 2 },
       'fedfa0',
       1_770_000_900,
     );
 
     expect(result.ok).toBe(true);
-    expect(fake.calls[0]?.sql).toContain('DELETE FROM bank_account_credentials');
-    expect(fake.calls.at(-1)?.sql).toContain('UPDATE bank_accounts');
-    // Re-stamps verified_at as ISO, and never touches the account number.
-    expect(fake.calls.at(-1)?.args).toContain(epochToIso(1_770_000_900));
-    expect(fake.calls.at(-1)?.args).not.toContain(ACCOUNT_NUMBER);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]?.sql).toContain('UPDATE bank_accounts');
+    expect(fake.calls[0]?.sql).toContain("status <> 'removed'");
+    expect(fake.calls[0]?.args).toContain(toBase64(new Uint8Array([7, 7])));
+    // Re-stamps verified_at as ISO.
+    expect(fake.calls[0]?.args).toContain(epochToIso(1_770_000_900));
   });
 
-  it('is not_found when the account update matches nothing', async () => {
+  it('is not_found when the update matches nothing', async () => {
     const fake = makeFakeD1();
-    fake.reply({ rows: [] }, { rows: [] }, { rows: [] });
+    fake.reply({ rows: [] });
 
     expect(
-      await new D1BankAccountRepository(fake.db).replaceCredentials(
-        'ghost',
-        [NEW_ACCOUNT.credentials[0]],
-        null,
-        1,
-      ),
+      await new D1BankAccountRepository(fake.db).replaceCredentials('ghost', SEALED, null, 1),
     ).toEqual({ ok: false, error: 'not_found' });
   });
 });
 
 describe('lifecycle', () => {
-  it('serves a needs_reverify account at the counter, preferring an active one', async () => {
+  it('serves a needs_reverify connection at the counter, preferring an active one', async () => {
     const fake = makeFakeD1();
-    // The account query, then the credential-loading query hydrate runs.
-    fake.reply({ rows: [accountRow({ status: 'needs_reverify' })] }, { rows: [credRow()] });
+    fake.reply({ rows: [accountRow({ status: 'needs_reverify' })] });
 
-    const account = await new D1BankAccountRepository(fake.db).findActiveForCompany(
-      'la-espiga',
-      'production',
-    );
+    const accounts = await new D1BankAccountRepository(fake.db).listActiveForCompany('la-espiga');
 
     expect(fake.calls[0]?.sql).toContain("status <> 'removed'");
-    expect(fake.calls[0]?.sql).toContain("ORDER BY (status = 'active') DESC");
-    expect(account?.status).toBe('needs_reverify');
-    expect(account?.credentials).toHaveLength(1);
-    expect(account?.credentials[0].credKey).toBe('confirmation');
+    expect(fake.calls[0]?.sql).toContain("ORDER BY (environment = 'production') DESC");
+    expect(fake.calls[0]?.sql).toContain("(status = 'active') DESC");
+    expect(accounts[0]?.status).toBe('needs_reverify');
+  });
+
+  it('lists both environments, so the till can offer either', async () => {
+    const fake = makeFakeD1();
+    fake.reply({ rows: [accountRow(), accountRow({ id: 'acct-2', environment: 'sandbox' })] });
+
+    const accounts = await new D1BankAccountRepository(fake.db).listActiveForCompany('la-espiga');
+
+    expect(accounts.map((a) => a.environment)).toEqual(['production', 'sandbox']);
   });
 
   it('clears needs_reverify when the credentials are verified again', async () => {
     const fake = makeFakeD1();
-    fake.reply(
-      { rows: [accountRow({ verified_at: epochToIso(1_770_000_500) })] },
-      { rows: [credRow()] },
-    );
+    fake.reply({ rows: [accountRow({ verified_at: epochToIso(1_770_000_500) })] });
 
     const result = await new D1BankAccountRepository(fake.db).markVerified(
       'acct-1',
@@ -295,7 +227,7 @@ describe('lifecycle', () => {
 
   it('removes by status, never with a DELETE that history points at', async () => {
     const fake = makeFakeD1();
-    fake.reply({ rows: [accountRow({ status: 'removed' })] }, { rows: [] });
+    fake.reply({ rows: [accountRow({ status: 'removed' })] });
 
     const result = await new D1BankAccountRepository(fake.db).remove('acct-1');
 
@@ -304,7 +236,7 @@ describe('lifecycle', () => {
     expect(result.ok && result.value.status).toBe('removed');
   });
 
-  it('reports not_found when nothing matched, without a second query', async () => {
+  it('reports not_found when nothing matched', async () => {
     const fake = makeFakeD1();
     fake.reply({ rows: [] });
 
@@ -312,7 +244,6 @@ describe('lifecycle', () => {
       ok: false,
       error: 'not_found',
     });
-    // A miss never reaches the credential-loading query.
     expect(fake.calls).toHaveLength(1);
   });
 });

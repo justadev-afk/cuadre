@@ -33,6 +33,19 @@ export const logger = {
 };
 
 /**
+ * The one un-structured line this module emits: a labelled block, for a local
+ * debug switch that exists to be *read by a person* while they watch a request
+ * go out (`BANESCO_DEBUG`, see `adapters/banks/banesco/debug.ts`).
+ *
+ * It lives here for the same reason everything else does — this is the only
+ * module `biome.json` lets call `console` — and it is never reached unless the
+ * caller's flag is on, which no deployed environment sets.
+ */
+export function debugLine(scope: string, headline: string, body?: string): void {
+  console.log(`[${scope}] ${headline}${body === undefined ? '' : `\n${body}`}`);
+}
+
+/**
  * A reference is a customer's payment identifier. Logs keep only enough of it
  * to correlate a support call — the last four digits — never the whole thing.
  */

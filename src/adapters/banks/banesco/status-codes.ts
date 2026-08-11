@@ -6,14 +6,11 @@
  * sends them sometimes as numbers and sometimes as strings. Everything is
  * compared as an upper-cased string so the table is one flat list.
  *
- * Two codes are deliberately not failures:
+ * One code is deliberately not a failure:
  *   70001 — no results. "The bank does not report this payment yet" is an
- *           answer; it is what sends `findPayment` to its fallback and, if that
- *           finds nothing either, what the counter reads as *todavía no
- *           aparece*. Turning it into an error would tell a cashier a payment
- *           was rejected when nothing was rejected.
- *   70005 — the date range must be split. Our problem to solve, never the
- *           user's to see.
+ *           answer, and it is what the counter reads as *todavía no aparece*.
+ *           Turning it into an error would tell a cashier a payment was
+ *           rejected when nothing was rejected.
  */
 import type { BankFailure } from '../../../application/ports/bank-gateway.ts';
 
@@ -22,12 +19,10 @@ export type BanescoStatusCode = string | number;
 
 export const BANESCO_OK = '200';
 export const BANESCO_NO_RESULTS = '70001';
-export const BANESCO_SPLIT_RANGE = '70005';
 
 export type BanescoStatus =
   | { readonly kind: 'ok' }
   | { readonly kind: 'no_results' }
-  | { readonly kind: 'split_range' }
   | { readonly kind: 'failure'; readonly failure: BankFailure };
 
 /**
@@ -36,7 +31,12 @@ export type BanescoStatus =
  * to recognise the same condition when the body is unreadable.
  */
 const FAILURE_BY_STATUS: Readonly<Record<string, BankFailure | undefined>> = {
+  // The Account Inquiry's "this affiliation reports no accounts". On the
+  // confirmation endpoint it never appears, so mapping it here costs nothing.
   '204': 'no_accounts',
+  // 70005 is "split the date range", which only ever applied to the range
+  // listing. Reaching it from a single-day pago móvil search means the bank
+  // answered a question we did not ask, so it falls through to 'unavailable'.
   VDE01: 'invalid_input',
   VDE02: 'invalid_input',
   VRN01: 'rejected_credentials',
@@ -59,7 +59,6 @@ export function classifyStatus(code: BanescoStatusCode): BanescoStatus {
 
   if (value === BANESCO_OK) return { kind: 'ok' };
   if (value === BANESCO_NO_RESULTS) return { kind: 'no_results' };
-  if (value === BANESCO_SPLIT_RANGE) return { kind: 'split_range' };
 
   // An unrecognised code is still the bank declining to answer the question.
   // 'unavailable' is the honest default: it does not accuse the merchant's

@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 
 import { canReach } from '../../../application/session.ts';
 import { container, currentSession } from '../../_lib/current-session.ts';
-import type { ChargeInput, ChargeOutcome } from './charge-types.ts';
+import type { ChargeInput, ChargeOutcome, ReceivingAccountView } from './charge-types.ts';
 
 export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
   const resolution = await currentSession();
@@ -21,17 +21,17 @@ export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
     companyId: session.companyId,
     cashierId: session.userId,
     sessionId: resolution.active.sessionId,
+    kind: input.kind,
     reference: input.reference,
     payerPhone: input.payerPhone,
+    receivingAccount: input.receivingAccount,
     sourceBankId: input.sourceBankId,
     amountCents: input.amountCents,
+    paymentDate: input.paymentDate,
     idempotencyKey: input.idempotencyKey,
-    // Narrowed rather than trusted: the field is typed, and a typed field is
-    // still whatever arrived over the wire.
-    environment: input.environment === 'sandbox' ? 'sandbox' : 'production',
-    // Absent → validate against every connected account for the environment.
-    // Scoped by companyId in the use case, so an unknown id just finds nothing.
-    accountId: input.accountId,
+    // Scoped by companyId in the use case, so an unknown id finds nothing rather
+    // than reaching another merchant's connection.
+    bankAccountId: input.bankAccountId,
   });
 
   if (!outcome.ok) return { status: 'failed', failure: outcome.error };
@@ -46,9 +46,11 @@ export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
       status: 'confirmed',
       charge: {
         controlCode: validation.controlCode,
+        kind: validation.kind,
         reference: validation.reference,
         amountCents: validation.amountCents,
         payerPhone: validation.payerPhone,
+        paidAt: validation.trnAt,
         createdAt: validation.createdAt,
         isSandbox: validation.isSandbox,
         latencyMs: validation.latencyMs,
@@ -62,4 +64,35 @@ export async function chargeAction(input: ChargeInput): Promise<ChargeOutcome> {
     return { status: 'already_charged', by: value.by, at: value.at };
   }
   return { status: 'not_found' };
+}
+
+/**
+ * The accounts a connection receives transferencias in — asked the moment a
+ * cashier picks a receiving bank on the Transferencia tab.
+ *
+ * An empty list is the honest answer "this bank cannot take transferencias
+ * here", which is what the form renders: the merchant registered no account for
+ * it, and a transferencia search without one finds nothing. Scoped to the
+ * session's company, so a tampered connection id resolves to nothing.
+ */
+export async function receivingAccountsAction(
+  bankAccountId: string,
+): Promise<readonly ReceivingAccountView[]> {
+  const resolution = await currentSession();
+  if (resolution.kind === 'anonymous') redirect('/login');
+  if (resolution.kind === 'superseded') redirect('/session-ended');
+
+  const { session } = resolution.active;
+  if (!canReach(session.role, 'counter') || session.companyId === null) redirect('/');
+
+  const accounts = await container().banking.listReceivingAccounts({
+    companyId: session.companyId,
+    bankAccountId,
+  });
+  return accounts.map((account) => ({
+    number: account.number,
+    masked: account.masked,
+    type: account.type,
+    balanceCents: account.balanceCents,
+  }));
 }

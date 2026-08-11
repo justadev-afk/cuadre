@@ -66,15 +66,22 @@ export function padSudebanId(value: string | number | null | undefined): string 
 /**
  * `trnDate` + `trnTime` are Venezuela local (UTC−4, no DST) → epoch seconds.
  *
- * Only `YYYY-MM-DD` and `HH:MM[:SS]` are accepted. A tolerant parser here would
- * have to guess at `01/02/2026`, and guessing wrong dates a payment a day out —
- * which is exactly the field the fallback search matches on.
+ * Only `YYYY-MM-DD` for the date: a tolerant parser would have to guess at
+ * `01/02/2026`, and guessing wrong dates a payment a day out — which is exactly
+ * the field the search matches on.
+ *
+ * The *time* accepts `:` or `.` between its parts. The manual documents
+ * `HH:MM:SS` and the confirmation service does send that, but QA's pago-móvil
+ * rows come back as `00.00.00` — and refusing them meant refusing the whole
+ * reply, which the counter then reported as "el banco no pudo responder" for a
+ * payment the bank had just handed us. The separator is punctuation; the three
+ * numbers are the fact, and they are still validated one by one below.
  */
 export function venezuelaLocalToEpochSeconds(date: string, time: string): number | null {
   const day = ISO_DATE.exec(date.trim());
   if (!day) return null;
 
-  const parts = time.trim().split(':');
+  const parts = time.trim().split(/[:.]/);
   if (parts.length < 2 || parts.length > 3) return null;
   const [hours, minutes, seconds = '0'] = parts;
   if (!TWO_DIGITS.test(hours) || !TWO_DIGITS.test(minutes) || !TWO_DIGITS.test(seconds))

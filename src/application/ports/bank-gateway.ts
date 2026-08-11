@@ -3,14 +3,21 @@
  * call time by the `bank` column of the account being read.
  *
  * Banesco is the only implementation today. It is *not* the shape of the port:
- * the port is what Cuadre needs — authenticate, list the accounts, find one
- * payment, list a day — and each adapter is responsible for getting its bank
- * to answer those four questions. Where Banesco needs a `device.ipAddress` and
- * four "search modalities", that vocabulary stays inside its adapter. A term
- * from one bank's manual appearing in this file means the port has leaked.
+ * the port is what Cuadre needs — authenticate, list the merchant's accounts,
+ * and find one payment — and each adapter is responsible for getting its bank
+ * to answer those three questions. Where Banesco needs a `device.ipAddress` and
+ * a "search modality", that vocabulary stays inside its adapter. A term from one
+ * bank's manual appearing in this file means the port has leaked.
  *
  * Adding a bank is therefore an adapter plus a row in the registry, never a
  * change here and never a migration (`bank` is a plain TEXT column).
+ *
+ * **Two kinds of payment, and a bank decides what each one takes.** A pago móvil
+ * is found by the payer's phone, their bank's code and the date; a transferencia
+ * by the merchant's own receiving account — and, verified against Banesco QA on
+ * 2026-08-11, *without* a date, which makes the same search return
+ * `70001 · sin resultados`. Neither shape is hard-coded here: a gateway declares
+ * its `paymentKinds` and the counter renders one form per kind from that.
  */
 import type { Result } from '../../shared/result.ts';
 
@@ -18,6 +25,45 @@ import type { Result } from '../../shared/result.ts';
 export type BankId = string;
 
 export type BankEnvironment = 'production' | 'sandbox';
+
+/**
+ * What the customer did. Stored on every validation (`validations.kind`), shown
+ * in the listings and printed on the receipt, because "Bs 630 de la referencia
+ * 090431" reads differently depending on which it was.
+ */
+export type PaymentKind = 'pago_movil' | 'transferencia';
+
+/**
+ * What one kind of payment takes, at one bank. The counter builds its form from
+ * this and the use case refuses a claim that does not fit it, so neither has a
+ * per-bank branch and neither says "six digits" or "needs a phone" itself.
+ *
+ * Every flag is a fact verified against the bank, not read off its manual. The
+ * manual, for instance, lists `startDt` among the required fields of the
+ * transferencia modality; sending it makes the search fail.
+ */
+export type BankPaymentKind = {
+  readonly kind: PaymentKind;
+  /** Spanish, for the selector beside "Validar pago". */
+  readonly label: string;
+  /**
+   * How many digits of the reference this search is asked with, or `null` when
+   * it wants the **whole** reference.
+   *
+   * The two are different questions and not a length setting: a tail is a fixed
+   * count the counter must collect exactly, while a full reference is whatever
+   * the customer's receipt says — which for Banesco runs 11 or 12 digits and is
+   * not worth refusing over one. The screen labels the field from this and the
+   * use case validates from it, so neither has to know which bank it is.
+   */
+  readonly referenceDigits: number | null;
+  /** The payer's mobile. A pago móvil is made from one; a transferencia is not. */
+  readonly needsPayerPhone: boolean;
+  /** The merchant's own receiving account, full — the transferencia's handle. */
+  readonly needsReceivingAccount: boolean;
+  /** The day of the operation. False where sending it breaks the search. */
+  readonly needsDate: boolean;
+};
 
 /**
  * What a company hands us at onboarding.
@@ -29,7 +75,7 @@ export type BankEnvironment = 'production' | 'sandbox';
  * the type for a future bank that genuinely separates the two.
  *
  * Which fields a given bank asks for is declared by the gateway in
- * `credentialFields` — the onboarding form renders from that and knows nothing
+ * `credentialGroups` — the onboarding form renders from that and knows nothing
  * about any particular bank.
  */
 export type BankCredentials = {
@@ -56,38 +102,30 @@ export type BankCredentialField = {
 };
 
 /**
- * A bank may split its API across more than one credential pair — Banesco does:
- * one client authorises confirming a transaction, a different one authorises
- * reading the account list, and neither can call the other's service. So the
- * onboarding form asks for credentials in **groups**, one per service, and each
- * group declares what it is for.
+ * A bank may split its API across more than one credential pair, so the
+ * onboarding form asks for credentials in **groups**, one per service. Two of
+ * those groups are named by the gateway: `operateKey` is the pair the counter
+ * validates with, `discoverKey` the pair that lists the merchant's accounts.
  *
- *  - `usage: 'operate'` is the pair the counter runs on — the one that finds a
- *    payment. Exactly one group is 'operate', and it is always required.
- *  - `usage: 'discover'` is the pair that lists the merchant's accounts so they
- *    can pick which one receives payments. At most one, and optional: without
- *    it the merchant types the receiving account number by hand.
- *
- * A bank whose single credential does everything declares one 'operate' group
- * and no 'discover' group — the use case then lists accounts with the operate
- * pair. The form stays bank-agnostic: it renders whatever groups it is handed.
+ * They are frequently the same string, and that is the point. Banesco QA issues
+ * two separate clients (each 403s on the other's service, under different RIFs
+ * at that), but production may well hand a merchant one client for everything —
+ * so a connection that stored a single pair uses it for both, and nothing
+ * upstream branches on how many there were.
  */
-export type BankCredentialUsage = 'operate' | 'discover';
-
 export type BankCredentialGroup = {
   /**
-   * Stable machine key for this pair — `'confirmation'`, `'consulta'`. It is
-   * both the form field prefix and the key the pair is stored under inside the
-   * account's credential map, so a bank can grow to N services without any code
-   * outside its adapter naming one: everything downstream keys off this string.
+   * Stable machine key for this pair — `'confirmation'`. It is both the form
+   * field prefix and the key the pair is stored under in
+   * `bank_account_credentials.cred_key`, so a bank can grow to N services
+   * without any code outside its adapter naming one.
    */
   readonly key: string;
-  readonly usage: BankCredentialUsage;
   /** The service this pair belongs to, in the bank's words. Spanish. */
   readonly label: string;
   /** Spanish helper copy, shown under the group. */
   readonly hint?: string;
-  /** 'operate' is always required; 'discover' is the optional one. */
+  /** A group left blank is a refusal when this is true, and skipped when not. */
   readonly required: boolean;
   readonly fields: readonly BankCredentialField[];
 };
@@ -104,12 +142,16 @@ export type BankSession = {
   readonly correlationId: string;
 };
 
+/**
+ * One account the bank reports for a set of credentials.
+ *
+ * `accountId` is **whatever the bank gives us**, which for Banesco's Consulta de
+ * Cuentas is the number already masked (`0134************5394`) — usable as a
+ * label and not as a handle. What a payment search needs is the full number, so
+ * the merchant completes it once and it is stored on the connection; this type
+ * exists to *offer* the merchant that list, never to search with it.
+ */
 export type BankAccountSummary = {
-  /**
-   * The account identifier as the bank expects it back in a request — the full
-   * number. It is sealed the moment it is chosen and never leaves the server
-   * again.
-   */
   accountId: string;
   /** Safe to render: the bank's own masking, or ours if it does not mask. */
   masked: string;
@@ -128,11 +170,26 @@ export type BankAccountSummary = {
  * should not have.
  */
 export type BankMovement = {
+  /**
+   * As the bank spells it. The counter only ever types the last few digits
+   * (see `referenceDigits`), so this is normally the *fuller* of the two and it
+   * is what gets recorded — the customer's receipt carries this number.
+   */
   reference: string;
   amountCents: number;
   /** ISO 4217-ish, already trimmed and upper-cased. 'BS' for bolívares. */
   currency: string;
-  /** Masked. The full number is never echoed back out of an adapter. */
+  /**
+   * The origin the bank reports, masked — the full value is never echoed back
+   * out of an adapter.
+   *
+   * Nothing stores it, on purpose. For a pago móvil it *is* the payer's phone
+   * (Banesco returns `5841************5031` for `584143775031`), which the
+   * validation already keeps in full and unmasked, so a column for it would be
+   * the same fact twice and the worse copy of the two. It stays on the movement
+   * because it is part of reading the bank's row honestly, and because a future
+   * search that is not a pago móvil would put something else here.
+   */
   accountMasked: string;
   occurredAt: number;
   /** Sudeban code of the paying bank, 4 digits, zero-padded. */
@@ -155,6 +212,7 @@ export type BankMovement = {
  */
 export type BankFailure =
   | 'rejected_credentials'
+  /** The credentials work and report no accounts at all. */
   | 'no_accounts'
   | 'invalid_input'
   | 'maintenance'
@@ -162,42 +220,39 @@ export type BankFailure =
   | 'rate_limited'
   | 'timeout';
 
+/**
+ * The one question the counter asks, in the shape the chosen `kind` declared.
+ *
+ * The optional fields are optional *per kind*, never per whim: a pago móvil
+ * carries a phone and a date and no account, a transferencia the reverse. What
+ * a kind declares it needs is present; what it declares it does not is `null`,
+ * and an adapter must not send a `null` to its bank — for Banesco, sending the
+ * date on a transferencia is precisely what makes the search fail.
+ */
 export type FindPaymentQuery = {
-  /** The receiving account, full. */
-  accountId: string;
-  /** The full reference the customer read off their receipt. */
+  readonly kind: PaymentKind;
+  /** The digits the customer read off their receipt — see `referenceDigits`. */
   reference: string;
-  /**
-   * Normalised to the bank's expected form by the domain, e.g. `584143125566`
-   * — or `null` when the payment has no payer phone behind it at all, which is
-   * a transferencia rather than a pago móvil. Only a gateway that declares
-   * `findsTransfers` is ever handed one.
-   */
+  /** Normalised by the domain to `584143125566`. Null where the kind has none. */
   payerPhone: string | null;
-  /** Sudeban code of the payer's bank. */
+  /** The merchant's own receiving account, full. Null where the kind has none. */
+  receivingAccount: string | null;
+  /** Sudeban code of the payer's bank, four digits, e.g. `0134`. */
   sourceBankId: string;
-  /** `YYYY-MM-DD` in Venezuela local time. */
-  onDate: string;
+  /** The day the payment was made, `YYYY-MM-DD` local. Null where unused. */
+  onDate: string | null;
   /** Our cashier session id, forwarded so the bank's support can correlate. */
   sessionId: string;
 };
 
-export type ListMovementsQuery = {
-  accountId: string;
-  /** `YYYY-MM-DD`, inclusive. Adapters must reject a span their bank refuses. */
-  from: string;
-  to: string;
-};
-
 /**
  * A found payment, plus which route found it. `strategy` is recorded on the
- * validation row: when the fallback starts carrying most of the traffic, that
- * is the bank's settlement lag becoming visible, and it is worth knowing
- * before a merchant reports it.
+ * validation row: when one route starts carrying all the traffic, that is
+ * worth knowing before a merchant reports it.
  */
 export type FoundPayment = {
   movement: BankMovement;
-  strategy: 'exact_reference' | 'reference_tail_and_phone';
+  strategy: 'exact_reference' | 'reference_tail_and_phone' | 'reference_tail_and_account';
 };
 
 /**
@@ -219,42 +274,46 @@ export interface BankGateway {
    */
   readonly credentialGroups: readonly BankCredentialGroup[];
   /**
-   * Can this bank find a payment that carries no payer phone — a transferencia?
-   *
-   * A pago móvil is made *from* a phone, so a bank can search by it; a
-   * transferencia has none, and the reference is the only handle there is. The
-   * two are not the same question, and a bank may well answer one and not the
-   * other, so the capability is declared rather than discovered: the counter
-   * keeps the phone required for a bank that says `false`, and a phoneless
-   * claim is never asked of one.
+   * Which of those groups the counter authenticates with. One string, declared
+   * once, so no stored row has to carry a "what is this pair for" flag and no
+   * use case has to guess which of several pairs to open.
    */
-  readonly findsTransfers: boolean;
+  readonly operateKey: string;
+  /**
+   * Which group lists the merchant's accounts. May equal `operateKey`; a
+   * connection holding only one pair uses that pair here regardless (see
+   * `discoverCredential`).
+   */
+  readonly discoverKey: string;
+  /**
+   * The kinds of payment this bank can be asked about, and what each one takes.
+   * The counter renders one form per entry and the selector beside "Validar
+   * pago" is this list; a bank that only does pago móvil declares one, and its
+   * selector disappears on its own.
+   */
+  readonly paymentKinds: readonly BankPaymentKind[];
 
   authenticate(
     environment: BankEnvironment,
     credentials: BankCredentials,
   ): Promise<Result<BankSession, BankFailure>>;
 
+  /**
+   * The accounts these credentials can see — offered to the merchant so they
+   * can say which one receives, never used as a search handle (see
+   * `BankAccountSummary`). Asked at onboarding and refreshed on demand, never on
+   * the checkout path: the counter reads the accounts the merchant confirmed.
+   */
   listAccounts(session: BankSession): Promise<Result<BankAccountSummary[], BankFailure>>;
 
   /**
    * Finds the one payment matching the query, or `null` when the bank simply
    * has nothing yet. `null` is a success: it is an answer, not a fault.
-   *
-   * An adapter is free to try several routes internally — Banesco falls back
-   * from an exact reference lookup to reference-tail plus phone — and reports
-   * which one landed via `strategy`.
    */
   findPayment(
     session: BankSession,
     query: FindPaymentQuery,
   ): Promise<Result<FoundPayment | null, BankFailure>>;
-
-  /** Reconciliation only, for the company panel. Never on the checkout path. */
-  listMovements(
-    session: BankSession,
-    query: ListMovementsQuery,
-  ): Promise<Result<BankMovement[], BankFailure>>;
 }
 
 /**
@@ -273,4 +332,11 @@ export type BankGatewayDeps = {
   egressIp: string;
   /** Sent as the calling application's identity. Traceable in the bank's logs. */
   userAgent: string;
+  /**
+   * Print every request we make to the bank — method, path and body — to the
+   * console. A local switch (`BANESCO_DEBUG=true` in `.dev.vars`), never on in
+   * production: it exists to settle "are you actually sending us the phone and
+   * the bank code?" by showing the wire.
+   */
+  debug: boolean;
 };

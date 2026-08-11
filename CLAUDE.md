@@ -7,12 +7,17 @@ Related documents (Claude Design project `ae632916`):
 `Cuadre - Documento técnico.dc.html` · `Banesco - Integración.dc.html` ·
 `Cuadre.dc.html` (the 27 screens) · design system **Nocturne**.
 
-**Current status: skeleton deployed, bank integration blocked.** The Worker,
-the custom domain, D1, KV, the queue and the secrets are all real. What is not
-real is a single confirmed payment: Banesco validates its callers by IP and
-Cloudflare Workers has no fixed egress address (§9, blocker #1). Until that is
-closed, the Banesco adapter is written and tested against fakes but has never
-spoken to the bank.
+**Current status: live against Banesco QA, awaiting certification.** The Worker,
+the custom domain, D1, KV, the queue and the secrets are all real, and so is the
+bank: a cashier validated a real QA pago móvil end to end (ref `12346090431` →
+CR Bs 630, control code `582422`). The IP blocker the integration document
+predicted turned out not to exist in QA (§9).
+
+What is left is the bank's own sign-off. Banesco reviewed the app on 2026-08-11
+and asked for three changes — pago móvil only, the reference's **last six
+digits** plus phone, bank code and **date**, and those fields actually reaching
+them. All three are implemented (§9); the next step is sending them the test
+evidence, after which they issue production credentials.
 
 ---
 
@@ -173,10 +178,16 @@ tried to use it. So:
 implements. `src/adapters/banks/registry.ts` maps `bank_accounts.bank` to a
 gateway at call time.
 
-- **The port is what Cuadre needs**, not what a bank offers: authenticate, list
-  accounts, find one payment, list a day. A term from a bank's manual —
-  "modalidad", `dataRequest`, `transactionDetail` — appearing outside that
-  bank's folder means the port has leaked.
+- **The port is what Cuadre needs**, not what a bank offers: authenticate, and
+  find one pago móvil. A term from a bank's manual — "modalidad", `dataRequest`,
+  `transactionDetail` — appearing outside that bank's folder means the port has
+  leaked. It listed a merchant's accounts and a day's movements too, until
+  Banesco asked us to drop both (2026-08-11): a pago móvil is found by phone,
+  bank code and date, so the receiving account was never part of the question.
+- **How much of the reference a bank is asked with is the bank's answer**, not
+  the screen's: `referenceDigits` on the port (six, for Banesco). The counter's
+  field, its placeholder and the refusal that guards it all read that number, so
+  a second bank moves them without a line changing on the till.
 - **Adding a bank is an adapter plus a registry entry.** Never a migration:
   `bank` is plain TEXT with no CHECK constraint, on purpose. If a feature needs
   a per-bank branch in a use case, it is designed wrong.
@@ -196,22 +207,38 @@ gateway at call time.
   reference are all compared against what the bank returned. This lives in
   `src/domain/payment-match.ts` and is table-tested.
 - **Amount is exact.** No tolerance. Integer cents, always.
-- **A payment with no payer phone is a transferencia**, and it is a first-class
-  claim rather than a form with a field missing: `payerPhone` is `null` all the
-  way from the till to `validations.payer_phone` (nullable since 0005 — never an
-  empty string standing in for a phone). Whether the counter may ask it is the
-  *bank's* answer, declared on the port as `findsTransfers` and read by both the
-  screen (the field goes optional, with the hint under it) and the use case,
-  which asks a phoneless claim only of the banks that can answer one. A bank that
-  cannot search without a phone keeps the field required without a line changing
-  on the checkout — that is the §4 rule applied to a capability instead of a call.
+- **Pago móvil, and nothing else** (Banesco, 2026-08-11). A pago móvil is made
+  *from* a phone, so the phone is required — `validations.payer_phone` is NOT
+  NULL again (0007), and the transferencia path 0005 opened is closed. The four
+  fields a search takes are the reference tail, the payer's phone, their bank's
+  Sudeban code and **the day it was paid**; the bank refuses to answer without
+  all four, silently, so the till collects all four.
+- **The date is the cashier's, and "hoy" follows the clock.** A till stays open
+  all night: the field holds `null` for *hoy* and resolves the day at submit,
+  never at render, or an 8am charge would quietly ask about yesterday.
+- **A payment is identified by what the bank answers, not by what was typed.**
+  `paymentKey` is the bank's canonical reference — or, when the bank echoes back
+  only the tail it was given, that tail paired with the day it happened. That key
+  is what `ux_validations_payment` is unique over, and the row of record carries
+  the one built from the *movement*.
+- **The "ya cobrado" check runs twice, and the first one is a prediction.** The
+  key is a composition of what the cashier typed, so it can be built before the
+  bank is asked — and for a bank that answers with the tail it was asked with
+  (Banesco) the prediction is character for character the stored key, so a
+  re-scanned receipt answers instantly instead of spending a round trip in front
+  of a customer. It is safe because it can only be **wrong by missing**: a bank
+  that answers with a fuller reference keys its rows on that, the prediction
+  finds nothing, and the check after the movement catches it. A hit is never
+  false — a row under that key on that connection *is* that payment, by the same
+  definition the unique index enforces.
 - **Only confirmed payments are stored.** An attempt with no match creates no
   row — it is not an accounting fact, it is a retry. It lives in Workers Logs
   and Analytics Engine, which is where the "todavía no aparece" rate is
   measurable. This is why the company panel needs no status filter.
-- **One payment, one charge.** `UNIQUE (bank_account_id, reference)` is the
-  entire anti-double-charge mechanism: two cashiers racing the same reference,
-  one INSERT wins.
+- **One payment, one charge.** `UNIQUE (bank_account_id, reference_key)` is the
+  entire anti-double-charge mechanism: two cashiers racing the same payment, one
+  INSERT wins. Both checks above are conveniences in front of it, never a
+  substitute — the index is the only thing that arbitrates a race.
 - **Idempotency.** The client sends an `idempotencyKey` per attempt; retrying
   the same submission returns the same validation and the same control code.
 - **`is_sandbox` is copied onto every validation**, never joined. Delete the
@@ -240,15 +267,20 @@ gateway at call time.
   domain ever sees a date string.
 - **No BLOB columns.** They are unreadable in the tools the team inspects data
   with. What was sealed is stored as **base64 TEXT** instead.
-- **The client secret is sealed; the account number is not.** The OAuth client
-  secret is AES-GCM sealed (then base64) — it is a password. The full account
-  number is **stored in the clear** (`account_number` TEXT): it is the merchant's
-  own receiving account, not sensitive enough to seal. What the UI shows is still
-  the last 4 of the account and the last 6 of the client id. Credentials live one
-  pair per row in `bank_account_credentials` (`cred_key`, `usage`, own key
-  version), never as a JSON blob on the account; **an account is written together
-  with at least one pair or not at all** — the invariant is enforced in
-  `D1BankAccountRepository.insert`, not just intended (migrations 0003–0004).
+- **A `bank_accounts` row is a connection to a bank, not a bank account.** There
+  is no account number on it since 0007 — a pago móvil is found by phone, bank
+  code and date. What it carries is the bank, the environment, an optional
+  `label` the merchant names it with (what the counter's *banco receptor*
+  dropdown shows), and the credentials. Two affiliations of one bank are told
+  apart by `client_id_last6`, which is the fourth column of the unique key.
+- **The credentials are one sealed JSON value on that row.** A map from the
+  bank's own credential-group key to its pair — `{"confirmation": {...}}` —
+  AES-GCM sealed then base64 (`creds_ct`/`creds_iv`/`creds_key_v`). 0003 had
+  split it into a row per pair to make the shape visible; with Banesco's second
+  client gone there is no shape left to see, and a column is the simpler thing
+  that is still true. Each bank stores whatever it needs in there and nothing
+  outside its adapter reads the shape. What survives in the clear is the last 6
+  of the operate client id, which is all the UI shows.
 - **IPs are stored hashed** with `IP_PEPPER`, never raw.
 - **Migrations** are numbered and forward-only. A destructive migration ships
   alone, after a backup, never with feature work.
@@ -334,43 +366,54 @@ gateway at call time.
   in `banesco/envelope.ts`, never flat.
 
 - **Confirmation endpoint** is `/transactions/financial-account/transactions`
-  (the credentials email pasted copy-paste debris after it). Both search modes
-  return the test pago móvil. **Proven end to end in the UI**: a cashier
-  validated ref `12346090431` → CR Bs 630 → control code `582422`, persisted.
-- **Transferencias are found by exact reference and by nothing else**
-  (2026-08-10, live): `00000150496` → CR Bs 525,08, concept `TRANS.CTAS`, with no
-  phone in the request — and the bank answers under `150496`, its own unpadded
-  spelling, which `sameReference`/`matchPayment` already fold. The *tail* search
-  cannot find one: reference + `bankId` + `startDt` without `phoneNum` returns
-  `70001 · Consulta sin resultados`. So `findPayment` stops after the exact route
-  when there is no phone instead of spending a round trip on a search that
-  structurally cannot hit. Hence `BanescoGateway.findsTransfers = true`.
+  (the credentials email pasted copy-paste debris after it). **Proven end to end
+  in the UI**: a cashier validated ref `12346090431` → CR Bs 630 → control code
+  `582422`, persisted.
 
-### The two-client problem (resolved: a per-pair credentials table)
+### The certification meeting (2026-08-11) — what the bank asked for
+
+Banesco reviewed the app live. Three requirements, all now implemented:
+
+1. **Validate pago móvil only**, by its own modality: the **last six digits** of
+   the reference, the payer's phone, their bank's Sudeban code and the date of
+   the operation (manual V1.3 §VI, example c). The phone is therefore required.
+2. **They were not receiving the bank code or the phone** — and they were right.
+   The old flow asked by *exact reference* first and only fell back to the shape
+   that carries them, so a search that answered "sin resultados" on the first
+   call never sent either. There is one call now and it always carries all four
+   fields. `BANESCO_DEBUG=true` prints method, path and body to prove it.
+3. **The date of the operation is a field**, defaulted to today on the checkout.
+
+The bank also described two shapes we deliberately do **not** implement yet: a
+transferencia *interbancaria* wants the reference tail plus the merchant's
+receiving account number, and an internal Banesco→Banesco transfer wants the
+full reference alone. Adding either means putting a receiving account number
+back on `bank_accounts` — which is exactly what 0007 removed, so it is a
+migration and a form field, not a switch.
+
+### The two-client problem (resolved: the second client is gone)
 
 **Banesco splits its two APIs across two separate OAuth clients that cannot call
 each other's service** (each 403s on the other): Consulta de Cuentas is
 `17a43e72`, Confirmación de Transacciones is `0fedfa00`, with different RIFs.
 
-The onboarding wizard lists accounts through **Consulta**, but a cashier
-validates through **Confirmación** — so a bank account connected with one client
-**cannot be validated with it**. The one-credential-pair-per-account model was
-wrong for Banesco, and it is now fixed structurally: **an account carries its
-pairs in `bank_account_credentials`, one row each**, keyed by the bank's
-credential-group key (`confirmation`, `consulta`) and tagged with a `usage`
-(`operate` for the counter, `discover` for the alta). `operateCredential` picks
-the pair the counter runs on — the `operate` one, or, for a single-pair bank,
-that lone pair whatever its usage says. Adding a pair is a row, not a column,
-and no use case branches per bank. `scripts/seed-demo.ts` seeds the demo account
-plus its Confirmación row the same way `connect` does.
+That mattered while onboarding listed accounts through **Consulta** and the
+counter validated through **Confirmación** — a bank account connected with one
+client could not be validated with it, and the fix was a credentials table with
+a `usage` per pair. Dropping the account picker dissolved the problem instead of
+managing it: nothing lists accounts any more, so only Confirmación is ever asked
+for, the wizard is one field-set and one submit, and `operateKey` on the gateway
+names the pair the counter runs on. `scripts/seed-demo.ts` seeds the demo
+connection exactly as `connect` writes one.
 
 ### Still open with Banesco
 
 1. **Production hosts/realm unknown.** Only QA supplied. `endpoints.ts` throws
-   rather than guessing.
-2. **Account Inquiry returns masked account numbers**, Confirmation needs the
-   full 20 digits — onboarding completes the number against the mask.
-4. **`cuadre.ve` is not owned.** The app runs on `cuadre.jsansossio.com` and
+   rather than guessing. Production credentials come after the bank validates
+   the evidence of these changes (their action item from 2026-08-11).
+2. **QA has no interbank test data.** The bank said so in the meeting, so the
+   only pago móvil we can prove end to end is their own Banesco→Banesco one.
+3. **`cuadre.ve` is not owned.** The app runs on `cuadre.jsansossio.com` and
    mail sends from the same zone. All three move together when the domain is
    bought: the route, `APP_BASE_URL` and `MAIL_FROM` in `wrangler.toml`.
    (`cuadre.julio.com.ve` was the first choice; Cloudflare accepted the custom
@@ -391,8 +434,9 @@ kept) lives in `src/app/globals.css`; the components are Tailwind + shadcn.
   value onto its token (`bg-[var(--color-accent-800)]`).
 - **Build with the shadcn primitives** in `src/components/ui/` — `Button`,
   `Input`, `Label`, `Dialog`, `Select`, `Tabs`, `Card`, `Badge`, `Alert`,
-  `SearchableSelect` (Popover + Command), `sonner` toasts — before inventing a
-  parallel one. A table keeps the one bespoke `.table` class inside a `Card`. The
+  `SearchableSelect` (Popover + Command), `Calendar` (react-day-picker, Spanish
+  and Caracas-timed by default), `Tooltip` (hover *and* focus, so a hint is not
+  mouse-only), `sonner` toasts — before inventing a parallel one. A table keeps the one bespoke `.table` class inside a `Card`. The
   default `Button` variant is an accent *outline*, never a fill. An error in a
   modal is a **toast**, never a line that resizes the dialog.
 - **Every screen is a desktop/mobile pair.** The design presents them side by
@@ -430,9 +474,12 @@ The rule is not "don't repeat yourself" everywhere; it is narrower and it binds:
   `banks/credentials.ts` and neither spells the dot itself. A convention that
   lives in two files drifts in one of them, silently, and drops credentials.
 - **A rule that decides money is written once.** "Every filled group is
-  authenticated, a required one missing is a refusal, a discover pair must list
-  accounts" is one function (`application/banking/credential-groups.ts`) that
-  `verify` and `change` both call — never the same loop twice.
+  authenticated, a required one missing is a refusal" is one function
+  (`application/banking/credential-groups.ts`) that `connect` and `change` both
+  call — never the same loop twice. So is "are these two spellings the same
+  payment?": `sameReference` lives in `src/domain/payment-match.ts` and the
+  Banesco adapter imports it to pick its candidate row, rather than keeping the
+  near-copy of it that used to sit in `gateway.ts`.
 - **One failure, one sentence.** Bank failure copy is a single table
   (`banks/bank-messages.ts`), and the bank is a *parameter*: a bank's name
   hardcoded in shared copy is the §4 leak in prose form.

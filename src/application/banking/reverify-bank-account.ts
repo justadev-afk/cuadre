@@ -1,6 +1,6 @@
 /**
- * Asking a connected account the same question onboarding asked: do these
- * credentials still read this account?
+ * Asking a connected bank the same question onboarding asked: do these
+ * credentials still work?
  *
  * It is the button behind the `needs_reverify` badge, and it is also what a
  * merchant reaches for when the counter starts answering "el banco no pudo
@@ -8,23 +8,29 @@
  * client secret that was rotated in the bank's portal last week is a question
  * only the bank can settle, and this asks it away from a queue of customers.
  *
+ * Authenticating is now the whole of it. It used to also read a day of
+ * movements as a smoke test, and that read needed a receiving account number
+ * which no longer exists (migration 0007) — nor would it prove anything extra:
+ * the credentials either open a session or they do not, and whether *this*
+ * payment is findable is the question the counter asks, loudly, where it
+ * belongs.
+ *
  * Nothing is re-typed and nothing is re-sealed: the stored credentials are
- * unsealed, used, and left exactly as they were. A *new* secret is a new
- * connection, because the row's `client_id_last6` and its seal are written
- * together.
+ * unsealed, used, and left exactly as they were. A *new* secret goes through
+ * "cambiar credenciales", which writes the seal and the client id tail together.
  */
 import type {
   BankAccount,
   BankAccountStatus,
   BankAccountWriteFailure,
 } from '../../adapters/d1/bank-account.repository.ts';
-import { type Clock, venezuelaDate } from '../../shared/clock.ts';
+import type { Clock } from '../../shared/clock.ts';
 import { unseal } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
 import { logger } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
-import type { BankCredentials, BankFailure, BankGateway, BankId } from '../ports/bank-gateway.ts';
-import { type OpenedCredential, operateCredential } from './account-credentials.ts';
+import type { BankFailure, BankGateway, BankId } from '../ports/bank-gateway.ts';
+import { type AccountCredentials, operateCredential } from './account-credentials.ts';
 import { type BankAccountView, toBankAccountView } from './bank-account-view.ts';
 import { type BankOnboardingFailure, toOnboardingFailure } from './bank-failure.ts';
 
@@ -75,33 +81,22 @@ export function makeReverifyBankAccount({
     if (account === null || account.companyId !== input.companyId) return err('not_found');
     if (account.status === 'removed') return err('not_found');
 
-    // Unlike a pending verification, these envelopes are the only copy: nobody
-    // can paste them again. A row we cannot open is an operational fault, and it
-    // must page someone rather than read as "the bank said no".
+    // This envelope is the only copy: nobody can paste the secret again. A row
+    // we cannot open is an operational fault, and it must page someone rather
+    // than read as "the bank said no".
     const opened = await openCredentials(credsKey, account).catch(() => {
       throw new AppError('internal', `bank credentials unreadable for account ${account.id}`);
     });
-    // The account number is stored in the clear now (§6) — no unseal.
-    const accountNumber = account.accountNumber;
 
     // Reverify asks the same question the counter does, so it uses the same
     // pair: the operate one — or the lone pair, for a single-credential bank.
-    // Other pairs, if present, only ever listed accounts at onboarding.
     const gateway = banks.get(account.bank);
-    const operate = operateCredential(opened);
+    const operate = operateCredential(opened, gateway.operateKey);
     if (operate === null) {
       throw new AppError('internal', `bank account ${account.id} has no operate credentials`);
     }
     const session = await gateway.authenticate(account.environment, operate);
     if (!session.ok) return failed(accounts, account, session.error);
-
-    const today = venezuelaDate(clock.nowSeconds());
-    const smoke = await gateway.listMovements(session.value, {
-      accountId: accountNumber,
-      from: today,
-      to: today,
-    });
-    if (!smoke.ok) return failed(accounts, account, smoke.error);
 
     const verified = await accounts.markVerified(account.id, clock.nowSeconds(), null);
     if (!verified.ok) return err('not_found');
@@ -146,13 +141,7 @@ async function failed(
   return err(toOnboardingFailure(failure));
 }
 
-/** Every stored pair, unsealed. A single failure rejects the whole read. */
-function openCredentials(credsKey: string, account: BankAccount): Promise<OpenedCredential[]> {
-  return Promise.all(
-    account.credentials.map(async (stored) => ({
-      credKey: stored.credKey,
-      usage: stored.usage,
-      credentials: await unseal<BankCredentials>(credsKey, stored.credentials),
-    })),
-  );
+/** The credential map, unsealed. */
+function openCredentials(credsKey: string, account: BankAccount): Promise<AccountCredentials> {
+  return unseal<AccountCredentials>(credsKey, account.credentials);
 }

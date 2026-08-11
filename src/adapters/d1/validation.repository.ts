@@ -13,8 +13,7 @@
  * and inserting second is the bug: two cashiers racing the same reference both
  * read "not charged yet" and both charge.
  */
-import type { FoundPayment } from '../../application/ports/bank-gateway.ts';
-import { canonicalReference } from '../../domain/payment-match.ts';
+import type { FoundPayment, PaymentKind } from '../../application/ports/bank-gateway.ts';
 import { epochToIso, VENEZUELA_UTC_OFFSET_MINUTES } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 import { isUniqueIndex, readConstraintFailure, type UniqueIndex } from './constraint-error.ts';
@@ -38,13 +37,24 @@ export type Validation = {
   readonly cashierId: string;
   readonly bankAccountId: string;
   readonly bank: string;
+  /** Pago móvil or transferencia — the two are found by different searches. */
+  readonly kind: PaymentKind;
   /** Copied from the account at insert time, never joined back. */
   readonly isSandbox: boolean;
   readonly controlCode: string;
+  /** As the **bank** reported it — normally fuller than what was typed. */
   readonly reference: string;
+  /**
+   * What this payment is identified by, and what `ux_validations_payment` is
+   * unique over. Minted by `paymentKey` in the domain: the bank's canonical
+   * reference, or that reference paired with the day when the bank answers with
+   * nothing more than the digits it was asked with. The use case supplies it —
+   * it cannot be derived from `reference` alone, which is the whole point.
+   */
+  readonly referenceKey: string;
   readonly amountCents: number;
   readonly currency: string;
-  /** `null` for a transferencia: the payment carried no payer phone (0005). */
+  /** A pago móvil always has one; a transferencia never does (0008). */
   readonly payerPhone: string | null;
   readonly sourceBankId: string;
   /** When the bank says the payment happened. */
@@ -117,14 +127,16 @@ export interface ValidationRepository {
   /** Real money only — sandbox is excluded, always. */
   dailyTotals(query: DailyTotalsQuery): Promise<readonly DailyTotal[]>;
   /**
-   * The existing charge for a reference on one of these accounts, if any — the
-   * counter's "already cobrado?" check, run before the bank is ever called.
-   * Carries the cashier's name (the LEFT JOIN), so the till can say who charged
-   * it and when.
+   * The existing charge under this payment key on one of these accounts, if any
+   * — the counter's "already cobrado?" check. It runs *after* the bank answers,
+   * because the key is built from the bank's own reference: six digits typed at
+   * a till identify nothing, so there is nothing to look up until the bank has
+   * said which payment they belong to. Carries the cashier's name (the LEFT
+   * JOIN), so the till can say who charged it and when.
    */
   findChargedPayment(
     bankAccountIds: readonly string[],
-    reference: string,
+    referenceKey: string,
   ): Promise<Validation | null>;
 }
 
@@ -135,9 +147,10 @@ export type DailyTotalsQuery = {
 };
 
 /**
- * Unique over the *canonical* reference (0006), not over the one on the row:
- * `reference` is the spelling the customer's receipt carries, and two paddings
- * of one payment must still collide here.
+ * Unique over the payment *key*, not over the reference on the row: two
+ * spellings of one payment must still collide here, and a bank that answers with
+ * a six-digit tail needs the day folded in to say anything at all. See
+ * `paymentKey`.
  */
 const PAYMENT_INDEX: UniqueIndex = {
   name: 'ux_validations_payment',
@@ -152,16 +165,16 @@ const IDEMPOTENCY_INDEX: UniqueIndex = {
   columns: ['validations.idempotency_key'],
 };
 
-const COLUMNS = `id, company_id, cashier_id, bank_account_id, bank, is_sandbox,
-                 control_code, reference, amount_cents, currency, payer_phone,
-                 source_bank_id, trn_at, latency_ms, search_mode,
+const COLUMNS = `id, company_id, cashier_id, bank_account_id, bank, kind, is_sandbox,
+                 control_code, reference, reference_key, amount_cents, currency,
+                 payer_phone, source_bank_id, trn_at, latency_ms, search_mode,
                  idempotency_key, created_at`;
 
 /** The list columns, aliased for the LEFT JOIN that carries the cashier's name. */
-const LIST_COLUMNS = `v.id, v.company_id, v.cashier_id, v.bank_account_id, v.bank,
-                 v.is_sandbox, v.control_code, v.reference, v.amount_cents, v.currency,
-                 v.payer_phone, v.source_bank_id, v.trn_at, v.latency_ms, v.search_mode,
-                 v.idempotency_key, v.created_at, u.name AS cashier_name`;
+const LIST_COLUMNS = `v.id, v.company_id, v.cashier_id, v.bank_account_id, v.bank, v.kind,
+                 v.is_sandbox, v.control_code, v.reference, v.reference_key, v.amount_cents,
+                 v.currency, v.payer_phone, v.source_bank_id, v.trn_at, v.latency_ms,
+                 v.search_mode, v.idempotency_key, v.created_at, u.name AS cashier_name`;
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -182,14 +195,12 @@ export class D1ValidationRepository implements ValidationRepository {
 
   async findChargedPayment(
     bankAccountIds: readonly string[],
-    reference: string,
+    referenceKey: string,
   ): Promise<Validation | null> {
     if (bankAccountIds.length === 0) return null;
-    // Matched on the (bank_account_id, reference_key) unique columns, so a
-    // padding the customer's receipt spells differently is still the same
-    // payment and is still recognised as already charged. A hit is unambiguous,
-    // so this never refuses a genuine new charge; the authoritative INSERT stays
-    // the arbiter of the race either way.
+    // Matched on the (bank_account_id, reference_key) unique columns exactly, so
+    // a hit is unambiguous and this never refuses a genuine new charge; the
+    // authoritative INSERT stays the arbiter of the race either way.
     const placeholders = bankAccountIds.map(() => '?').join(', ');
     const row = await this.db
       .prepare(
@@ -198,7 +209,7 @@ export class D1ValidationRepository implements ValidationRepository {
           WHERE v.reference_key = ? AND v.bank_account_id IN (${placeholders})
           LIMIT 1`,
       )
-      .bind(canonicalReference(reference), ...bankAccountIds)
+      .bind(referenceKey, ...bankAccountIds)
       .first<D1Row>();
     return row === null ? null : toValidation(row);
   }
@@ -208,11 +219,11 @@ export class D1ValidationRepository implements ValidationRepository {
       const row = await this.db
         .prepare(
           `INSERT INTO validations
-               (id, company_id, cashier_id, bank_account_id, bank, is_sandbox,
+               (id, company_id, cashier_id, bank_account_id, bank, kind, is_sandbox,
                 control_code, reference, reference_key, amount_cents, currency,
                 payer_phone, source_bank_id, trn_at, latency_ms, search_mode,
                 idempotency_key, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING ${COLUMNS}`,
         )
         .bind(
@@ -221,14 +232,11 @@ export class D1ValidationRepository implements ValidationRepository {
           input.cashierId,
           input.bankAccountId,
           input.bank,
+          input.kind,
           input.isSandbox ? 1 : 0,
           input.controlCode,
           input.reference,
-          // Derived here rather than carried on the row: it is not a fact about
-          // the payment, it is the shape the unique index needs the reference in
-          // — and deriving it with the domain's own function is what keeps the
-          // index and `matchPayment` agreeing on what "the same payment" means.
-          canonicalReference(input.reference),
+          input.referenceKey,
           input.amountCents,
           input.currency,
           input.payerPhone,
@@ -382,9 +390,11 @@ export function toValidation(row: D1Row): Validation {
     cashierId: text(row, 'cashier_id'),
     bankAccountId: text(row, 'bank_account_id'),
     bank: text(row, 'bank'),
+    kind: toPaymentKind(text(row, 'kind')),
     isSandbox: flag(row, 'is_sandbox'),
     controlCode: text(row, 'control_code'),
     reference: text(row, 'reference'),
+    referenceKey: text(row, 'reference_key'),
     amountCents: integer(row, 'amount_cents'),
     currency: text(row, 'currency'),
     payerPhone: optionalText(row, 'payer_phone'),
@@ -400,11 +410,26 @@ export function toValidation(row: D1Row): Validation {
 }
 
 /**
+ * Fails closed to the kind every row had before 0008. A row whose kind is
+ * unreadable is still a payment; reading it as a transferencia would tell a
+ * merchant their pago móvil was something else.
+ */
+function toPaymentKind(value: string): PaymentKind {
+  return value === 'transferencia' ? 'transferencia' : 'pago_movil';
+}
+
+/**
  * An unrecognised mode reads as "we do not know how this was found" rather than
  * as one of the two we do know. This column is analytics, so guessing it wrong
  * would quietly bias the answer to "is the exact-reference route degrading?".
  */
 function toSearchMode(value: string | null): SearchMode | null {
-  if (value === 'exact_reference' || value === 'reference_tail_and_phone') return value;
+  if (
+    value === 'exact_reference' ||
+    value === 'reference_tail_and_phone' ||
+    value === 'reference_tail_and_account'
+  ) {
+    return value;
+  }
   return null;
 }

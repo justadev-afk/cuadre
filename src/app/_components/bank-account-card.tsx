@@ -1,8 +1,9 @@
 /**
- * A connected bank account, as screens 08, 14 and 24 draw it.
+ * A connected bank, as screens 08, 14 and 24 draw it.
  *
- * The account is only ever shown as its last four; the full number is sealed
- * and never leaves the server. A sandbox account carries the flask badge and a
+ * There is no account number to show any more: a connection is a bank, an
+ * environment, the merchant's own name for it and the tail of the OAuth client
+ * it authenticates with. A sandbox connection carries the flask badge and a
  * dashed edge, so a till operator can tell at a glance whether the money on
  * screen is real — the same distinction the validation rows carry.
  */
@@ -17,19 +18,30 @@ type BankAccountCardProps = {
   bank: string;
   environment: 'production' | 'sandbox';
   status: 'active' | 'needs_reverify' | 'removed';
-  accountLast4: string;
-  accountType: string | null;
+  /** What the merchant called this connection, when they named it. */
+  label: string | null;
+  /** The tail of the operate client id — all that is ever shown of it. */
+  clientIdLast6: string | null;
   verifiedAt: number | null;
-  /** Right-edge slot for the company's one lever — the deactivate control. */
+  /** Right-edge slot for the levers: cambiar credenciales, desactivar. */
   action?: ReactNode;
 };
 
 const BANK_NAMES: Record<string, string> = { banesco: 'Banesco' };
 
 export function BankAccountCard(props: BankAccountCardProps) {
-  const { bank, environment, status, accountLast4, verifiedAt, action } = props;
+  const { bank, environment, status, label, clientIdLast6, verifiedAt, action } = props;
   const isSandbox = environment === 'sandbox';
   const name = BANK_NAMES[bank] ?? bank;
+
+  // Environment, then the client tail, then the date — each only when there is
+  // something to say, so a connection with no verification date does not render
+  // a dangling separator.
+  const caption = [
+    isSandbox ? 'Pruebas' : 'Producción',
+    clientIdLast6 === null ? null : `cliente ···${clientIdLast6}`,
+    verifiedAt === null ? null : `verificado ${formatDate(verifiedAt)}`,
+  ].filter((part) => part !== null);
 
   return (
     <div
@@ -52,16 +64,14 @@ export function BankAccountCard(props: BankAccountCardProps) {
       <div className="flex-1">
         <div className="flex items-center gap-1.5 font-heading text-[15px]">
           {name}
+          {label !== null && <span className="text-muted-foreground">· {label}</span>}
           {isSandbox && (
             <Badge variant="outline" className="text-[10px]">
               Sandbox
             </Badge>
           )}
         </div>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {environment === 'production' ? 'Producción' : 'Pruebas'} · 1340 ···· ···· {accountLast4}
-          {verifiedAt !== null && ` · verificado ${formatDate(verifiedAt)}`}
-        </span>
+        <span className="text-xs tabular-nums text-muted-foreground">{caption.join(' · ')}</span>
       </div>
 
       {status === 'active' ? (

@@ -9,23 +9,20 @@ import { fixedClock } from '../../shared/clock.ts';
 import { seal } from '../../shared/crypto.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import type {
+  BankCredentials,
+  BankEnvironment,
   BankFailure,
   BankGateway,
-  BankMovement,
   BankSession,
-  ListMovementsQuery,
 } from '../ports/bank-gateway.ts';
 import { makeReverifyBankAccount } from './reverify-bank-account.ts';
 
 const NOW = 1_770_000_000;
 const CREDS_KEY = 'a-test-master-key-of-at-least-32-bytes';
-const ACCOUNT_NUMBER = '01340123450123458514';
 
-const CREDENTIALS = {
+const CREDENTIALS: BankCredentials = {
   clientId: 'cuadre-qa-client',
   clientSecret: 'super-secret-value',
-  username: 'cuadre-qa-user',
-  password: 'super-secret-password',
 };
 
 const SESSION: BankSession = {
@@ -40,19 +37,10 @@ async function account(overrides: Partial<BankAccount> = {}): Promise<BankAccoun
     companyId: 'la-espiga',
     bank: 'banesco',
     environment: 'production',
+    label: 'Caja principal',
+    receivingAccounts: [],
     clientIdLast6: 'client',
-    accountNumber: ACCOUNT_NUMBER,
-    credentials: [
-      {
-        credKey: 'main',
-        usage: 'operate',
-        clientIdLast6: 'client',
-        credentials: await seal(CREDS_KEY, CREDENTIALS),
-      },
-    ],
-    accountLast4: '8514',
-    accountType: 'Corriente',
-    holderId: 'J-12345678-9',
+    credentials: await seal(CREDS_KEY, { main: CREDENTIALS }),
     verifiedAt: NOW - 86_400 * 30,
     credsExpireAt: null,
     status: 'active',
@@ -61,39 +49,43 @@ async function account(overrides: Partial<BankAccount> = {}): Promise<BankAccoun
   };
 }
 
-type Script = {
-  authenticate?: Result<BankSession, BankFailure>;
-  movements?: Result<BankMovement[], BankFailure>;
-};
+type Script = { authenticate?: Result<BankSession, BankFailure> };
+
+/** The one kind these tests care about; the gateway's shape, not its behaviour. */
+const PAGO_MOVIL = {
+  kind: 'pago_movil',
+  label: 'Pago móvil',
+  referenceDigits: 6,
+  needsPayerPhone: true,
+  needsReceivingAccount: false,
+  needsDate: true,
+} as const;
 
 function fakeBanks(script: Script = {}) {
-  const smokeReads: ListMovementsQuery[] = [];
+  const asked: Array<{ environment: BankEnvironment; credentials: BankCredentials }> = [];
 
   const gateway: BankGateway = {
     id: 'banesco',
     displayName: 'Banesco',
     environments: ['production', 'sandbox'],
-    credentialGroups: [
-      { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
-    ],
-    findsTransfers: true,
-
-    async authenticate() {
-      return script.authenticate ?? ok(SESSION);
-    },
+    credentialGroups: [{ key: 'main', label: 'Principal', required: true, fields: [] }],
+    operateKey: 'main',
+    discoverKey: 'main',
+    paymentKinds: [PAGO_MOVIL],
     async listAccounts() {
       return ok([]);
     },
-    async findPayment() {
-      return ok(null);
+
+    async authenticate(environment: BankEnvironment, credentials: BankCredentials) {
+      asked.push({ environment, credentials });
+      return script.authenticate ?? ok(SESSION);
     },
-    async listMovements(_session, query) {
-      smokeReads.push(query);
-      return script.movements ?? ok([]);
+    async findPayment() {
+      throw new Error('reverify never looks for a payment');
     },
   };
 
-  return { banks: { get: () => gateway }, smokeReads };
+  return { banks: { get: () => gateway }, asked };
 }
 
 function fakeAccounts(stored: BankAccount) {
@@ -127,7 +119,7 @@ function fakeAccounts(stored: BankAccount) {
 
 async function harness(options: { script?: Script; account?: Partial<BankAccount> } = {}) {
   const stored = await account(options.account);
-  const { banks, smokeReads } = fakeBanks(options.script);
+  const { banks, asked } = fakeBanks(options.script);
   const store = fakeAccounts(stored);
 
   const reverifyBankAccount = makeReverifyBankAccount({
@@ -137,20 +129,21 @@ async function harness(options: { script?: Script; account?: Partial<BankAccount
     clock: fixedClock(NOW),
   });
 
-  return { reverifyBankAccount, smokeReads, ...store };
+  return { reverifyBankAccount, asked, ...store };
 }
 
 const INPUT = { companyId: 'la-espiga', accountId: 'account-1' };
 
 describe('reverify bank account', () => {
-  it('reads the account with the stored credentials and re-stamps verified_at', async () => {
-    const { reverifyBankAccount, smokeReads, verifications } = await harness();
+  it('authenticates with the stored operate pair and re-stamps verified_at', async () => {
+    // Authenticating is the whole check now: the smoke read that used to follow
+    // it needed a receiving account number, which no longer exists — and it
+    // proved nothing the token did not.
+    const { reverifyBankAccount, asked, verifications } = await harness();
 
     const result = await reverifyBankAccount(INPUT);
 
-    expect(smokeReads).toEqual([
-      { accountId: ACCOUNT_NUMBER, from: '2026-02-01', to: '2026-02-01' },
-    ]);
+    expect(asked).toEqual([{ environment: 'production', credentials: CREDENTIALS }]);
     expect(verifications).toEqual([NOW]);
     expect(result).toMatchObject({ ok: true, value: { verifiedAt: NOW, status: 'active' } });
   });
@@ -169,7 +162,7 @@ describe('reverify bank account', () => {
 
   it('leaves the status alone when the bank is merely unwell', async () => {
     const { reverifyBankAccount, statuses, verifications } = await harness({
-      script: { movements: err('maintenance') },
+      script: { authenticate: err('maintenance') },
     });
 
     expect(await reverifyBankAccount(INPUT)).toEqual({ ok: false, error: 'maintenance' });

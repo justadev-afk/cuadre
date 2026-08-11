@@ -1,22 +1,15 @@
 /**
  * Seeds the DOÑA AURORA acceptance scenario, end to end, as SQL.
  *
- * This exists because Banesco splits its two APIs across two separate OAuth
- * clients — Consulta de Cuentas (17a43e72) and Confirmación de Transacciones
- * (0fedfa00) — and neither can call the other's service. The onboarding wizard
- * lists accounts through Consulta, but a cashier validates through
- * Confirmación, so a bank account connected with one client cannot be validated
- * with it. This seeds a bank account straight into the "connected" state with a
- * single **Confirmación** credential pair — which the counter uses whatever its
- * usage, by the single-credential rule — which is what a real pago-móvil
- * validation needs.
+ * A company, its administrator, a cashier, and a Banesco **sandbox connection**
+ * already in the "connected" state — the state the (now single-step) wizard
+ * would leave it in, so the till is usable the moment the database is reset.
  *
- * It seals exactly as `connect-bank-account.ts` does — the credential pair onto
- * its own `bank_account_credentials` row and the account number onto the
- * account — so `validate-payment.ts` unseals it unchanged. The sealing key must
- * be the one the target environment uses:
- * `.dev.vars`' CREDS_KEY for local, the Worker secret for production. Pass it
- * as the first argument.
+ * It seals exactly as `connect-bank-account.ts` does: the whole credential map
+ * as one JSON value on `bank_accounts.creds_ct` (migration 0007), so
+ * `validate-payment.ts` unseals it unchanged. The sealing key must be the one
+ * the target environment uses: `.dev.vars`' CREDS_KEY for local, the Worker
+ * secret for production. Pass it as the first argument.
  *
  *   bun run scripts/seed-demo.ts <CREDS_KEY> > /tmp/demo.sql
  *   wrangler d1 execute cuadre --local --file=/tmp/demo.sql -y
@@ -40,8 +33,24 @@ const CONFIRMATION = {
   username: '0fedfa00',
   password: '93da683469162053068ec67f35b0020c',
 };
-// The receiving account the test pago móvil landed on (ref 12346090431, Bs 630).
-const ACCOUNT_NUMBER = '01340804108041005394';
+// Consulta de Saldo — a *different RIF* in QA (J500769300 against Confirmación's
+// J003075523), which is why the accounts it lists are not the ones Confirmación
+// reports movements on. It is seeded so the alta and the dropdown exercise the
+// two-credential path; the accounts that actually validate are the registered
+// ones above.
+const CONSULTA = {
+  clientId: '17a43e72',
+  clientSecret: '527f8f9f41cceb18631979e444264be1',
+  username: '17a43e72',
+  password: '527f8f9f41cceb18631979e444264be1',
+};
+// What the merchant calls this connection — the counter's "banco receptor".
+const LABEL = 'Caja principal';
+// The account the QA transferencia landed in (ref 00000150496 → CR Bs 525,08).
+// It has to be the full twenty digits: the bank refuses a masked one with a 400,
+// and Consulta de Cuentas only ever reports masked — which is exactly why this
+// is something the merchant registers rather than something we discover.
+const RECEIVING_ACCOUNTS = ['01340804108041005394'];
 
 const COMPANY_ID = 'dona-aurora';
 const CASHIER_USERNAME = 'maria.r';
@@ -62,17 +71,22 @@ function q(value: string): string {
 const now = Math.floor(1_786_060_000); // a fixed recent instant; scripts have no clock
 const nowIso = epochToIso(now); // timestamp columns are ISO-8601 UTC text (migration 0004)
 
-// One credential pair (Confirmación), sealed then base64-encoded onto its own
-// row. A single-pair account, so the counter uses this pair whatever its usage.
-// The account number is stored in the clear (§6), so it is not sealed.
-const sealedCreds = await seal(credsKey, CONFIRMATION);
+// The credential map — keyed by the adapter's own credential-group key — sealed
+// as one JSON value, then base64. Exactly what `connect-bank-account.ts` writes.
+const sealedCreds = await seal(credsKey, { confirmation: CONFIRMATION, consulta: CONSULTA });
 const clientIdLast6 = CONFIRMATION.clientId.slice(-6);
 
+// Stable ids, not random ones. `INSERT OR REPLACE` only means "re-seed" if the
+// primary keys are the same twice: with random ids a second run left the old
+// rows behind (and the cashier's `(company_id, username)` unique index refused
+// the new one), and — worse — every live session in KV still named a user id
+// that no longer existed, so the next charge died on a foreign key at the
+// INSERT with the bank already asked. Deterministic ids make reseeding idempotent
+// and keep an open till working across one.
 const companyId = COMPANY_ID;
-const cashierId = `demo-cashier-${randomBytes(4).toString('hex')}`;
-const companyUserId = `demo-company-${randomBytes(4).toString('hex')}`;
-const bankAccountId = `demo-bank-${randomBytes(4).toString('hex')}`;
-const credentialId = `demo-cred-${randomBytes(4).toString('hex')}`;
+const cashierId = `${COMPANY_ID}-cashier-maria`;
+const companyUserId = `${COMPANY_ID}-admin`;
+const bankAccountId = `${COMPANY_ID}-banesco-sandbox`;
 
 const statements = [
   // Company (idempotent-ish: the slug is the PK).
@@ -84,12 +98,9 @@ const statements = [
   // Cashier: (company_id, username) + PIN. No email, by CHECK constraint.
   `INSERT OR REPLACE INTO users (id, company_id, role, name, email, username, password_hash, status, created_at) VALUES (${q(cashierId)}, ${q(companyId)}, 'cashier', ${q('María Rodríguez')}, NULL, ${q(CASHIER_USERNAME)}, ${q(hashPassword(CASHIER_PIN))}, 'active', ${q(nowIso)});`,
 
-  // The Banesco sandbox account, already "connected". The full account number is
-  // stored in the clear; timestamps are ISO-8601 UTC text.
-  `INSERT OR REPLACE INTO bank_accounts (id, company_id, bank, environment, client_id_last6, account_number, account_last4, account_type, holder_id, verified_at, creds_expire_at, status, created_at) VALUES (${q(bankAccountId)}, ${q(companyId)}, 'banesco', 'sandbox', ${q(clientIdLast6)}, ${q(ACCOUNT_NUMBER)}, '5394', 'DDA', ${q('J003075523')}, ${q(nowIso)}, NULL, 'active', ${q(nowIso)});`,
-
-  // Its single Confirmación credential pair, sealed then base64-encoded onto its row.
-  `INSERT OR REPLACE INTO bank_account_credentials (id, bank_account_id, cred_key, usage, client_id_last6, creds_ct, creds_iv, creds_key_v, created_at) VALUES (${q(credentialId)}, ${q(bankAccountId)}, 'confirmation', 'operate', ${q(clientIdLast6)}, ${q(toBase64(sealedCreds.ciphertext))}, ${q(toBase64(sealedCreds.iv))}, ${sealedCreds.keyVersion}, ${q(nowIso)});`,
+  // The Banesco sandbox connection, already "connected": credentials sealed onto
+  // the row, timestamps ISO-8601 UTC text.
+  `INSERT OR REPLACE INTO bank_accounts (id, company_id, bank, environment, label, receiving_accounts, client_id_last6, creds_ct, creds_iv, creds_key_v, verified_at, creds_expire_at, status, created_at) VALUES (${q(bankAccountId)}, ${q(companyId)}, 'banesco', 'sandbox', ${q(LABEL)}, ${q(JSON.stringify(RECEIVING_ACCOUNTS))}, ${q(clientIdLast6)}, ${q(toBase64(sealedCreds.ciphertext))}, ${q(toBase64(sealedCreds.iv))}, ${sealedCreds.keyVersion}, ${q(nowIso)}, NULL, 'active', ${q(nowIso)});`,
 ];
 
 process.stdout.write(`${statements.join('\n')}\n`);
@@ -100,7 +111,7 @@ process.stderr.write(
     `  company slug : ${companyId}`,
     `  cashier      : ${companyId} / ${CASHIER_USERNAME} / PIN ${CASHIER_PIN}`,
     `  company login: ${COMPANY_EMAIL} / ${COMPANY_PASSWORD}`,
-    `  bank account : Banesco sandbox · ····5394 (Confirmación creds)`,
+    `  bank         : Banesco sandbox · ${LABEL} (Confirmación creds)`,
     '',
   ].join('\n'),
 );

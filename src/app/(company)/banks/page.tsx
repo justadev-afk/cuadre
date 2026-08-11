@@ -32,7 +32,7 @@ export default async function BanksPage() {
   return (
     <ContentLayout
       title="Bancos"
-      subtitle="Cuentas donde recibes pago móvil. Una de producción y una de pruebas pueden convivir."
+      subtitle="Bancos donde recibes pago móvil. Uno de producción y uno de pruebas pueden convivir."
       actions={
         banks.length > 0 ? <BanksPanel banks={banks} hasAccount={accounts.length > 0} /> : undefined
       }
@@ -53,8 +53,8 @@ export default async function BanksPage() {
               bank={account.bank}
               environment={account.environment}
               status={account.status}
-              accountLast4={account.accountLast4}
-              accountType={account.accountType}
+              label={account.label}
+              clientIdLast6={account.clientIdLast6}
               verifiedAt={account.verifiedAt}
               action={
                 <>
@@ -68,11 +68,7 @@ export default async function BanksPage() {
                       credentialGroups={info.credentialGroups}
                     />
                   )}
-                  <DeactivateBankButton
-                    accountId={account.id}
-                    name={name}
-                    last4={account.accountLast4}
-                  />
+                  <DeactivateBankButton accountId={account.id} name={name} label={account.label} />
                 </>
               }
             />

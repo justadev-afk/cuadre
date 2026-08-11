@@ -19,10 +19,10 @@ import { D1StatsRepository } from './adapters/d1/stats.repository.ts';
 import { D1UserRepository } from './adapters/d1/user.repository.ts';
 import { D1ValidationRepository } from './adapters/d1/validation.repository.ts';
 import { KvActiveSessionStore } from './adapters/kv/active-session.store.ts';
+import { KvBankListingCache } from './adapters/kv/bank-listing.store.ts';
 import { KvLoginStatsCache } from './adapters/kv/login-stats.store.ts';
 import { KvRateLimiter } from './adapters/kv/rate-limit.store.ts';
 import { KvSessionStore } from './adapters/kv/session.store.ts';
-import { KvVerificationStore } from './adapters/kv/verification.store.ts';
 import { AnalyticsEngineAttemptMetrics } from './adapters/metrics/attempt.metrics.ts';
 import { makeAuthUseCases } from './application/auth/factory.ts';
 import { makeBankingUseCases } from './application/banking/factory.ts';
@@ -69,8 +69,11 @@ export function buildContainer(rawEnv: Bindings) {
   // on sign-in and read on resolve, alongside the record it points at.
   const activeSessions = new KvActiveSessionStore(rawEnv.SESSIONS);
   const limiter = new KvRateLimiter(rawEnv.SESSIONS, clock);
-  const verifications = new KvVerificationStore(rawEnv.TOKENS);
   const metrics = new AnalyticsEngineAttemptMetrics(rawEnv.METRICS);
+  // The bank's own account list, cached a day. It shares the TOKENS namespace:
+  // both hold values that expire on somebody else's clock and neither is a
+  // session.
+  const bankListings = new KvBankListingCache(rawEnv.TOKENS);
 
   // Reading that same dataset back is the SQL API, which needs an account id and
   // a token this environment may not carry. Absent either, the source is `null`
@@ -91,6 +94,8 @@ export function buildContainer(rawEnv: Bindings) {
     tokens: rawEnv.TOKENS,
     egressIp: vars.BANK_EGRESS_IP,
     userAgent: BANK_USER_AGENT,
+    // Local only — see `BANESCO_DEBUG` in `env.ts`.
+    debug: vars.BANESCO_DEBUG === 'true',
   });
 
   // Ports the use cases declare, satisfied by shared functions and bindings.
@@ -125,7 +130,7 @@ export function buildContainer(rawEnv: Bindings) {
     banking: makeBankingUseCases({
       banks,
       accounts: bankAccounts,
-      verifications,
+      listings: bankListings,
       credsKey: vars.CREDS_KEY,
       clock,
       ids,

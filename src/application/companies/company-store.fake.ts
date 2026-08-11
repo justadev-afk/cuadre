@@ -111,8 +111,7 @@ export type FakeBankAccountRow = {
   readonly bank: string;
   readonly environment: 'production' | 'sandbox';
   readonly status: 'active' | 'needs_reverify' | 'removed';
-  readonly accountLast4: string;
-  readonly accountType: string | null;
+  readonly label: string | null;
   readonly clientIdLast6: string | null;
   readonly verifiedAt: number | null;
   readonly credsExpireAt: number | null;
@@ -163,8 +162,7 @@ function bankAccountRow(overrides: Partial<FakeBankAccountRow>): FakeBankAccount
     bank: 'banesco',
     environment: 'production',
     status: 'active',
-    accountLast4: '4471',
-    accountType: 'Corriente',
+    label: 'Caja principal',
     clientIdLast6: 'a91c2f',
     verifiedAt: 1_760_000_500,
     credsExpireAt: null,

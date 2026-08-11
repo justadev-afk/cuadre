@@ -58,6 +58,17 @@ export const WorkerVars = z.object({
    */
   CF_ACCOUNT_ID: z.string().min(1).optional(),
   ANALYTICS_SQL_TOKEN: z.string().min(1).optional(),
+
+  /**
+   * Print every Banesco request — method, path and body — to the console.
+   *
+   * A **local** switch: it lives in `.dev.vars` and deliberately not in
+   * `wrangler.toml`, so a deploy cannot turn it on by accident. Those bodies
+   * carry a customer's phone and reference in the clear, which is fine on a
+   * laptop and is not fine in Workers Logs. Optional and compared as the string
+   * `'true'`, because a Worker var is always a string.
+   */
+  BANESCO_DEBUG: z.string().optional(),
 });
 
 export type WorkerVars = z.infer<typeof WorkerVars>;

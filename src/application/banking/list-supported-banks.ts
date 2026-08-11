@@ -12,7 +12,12 @@
  * it, and a projection is the difference between a component rendering a bank
  * and a component able to authenticate as one.
  */
-import type { BankCredentialGroup, BankEnvironment, BankId } from '../ports/bank-gateway.ts';
+import type {
+  BankCredentialGroup,
+  BankEnvironment,
+  BankId,
+  BankPaymentKind,
+} from '../ports/bank-gateway.ts';
 
 /**
  * The port, declared here and structurally: this file depends on the shape it
@@ -25,7 +30,7 @@ type BankCatalogue = {
     readonly displayName: string;
     readonly environments: readonly BankEnvironment[];
     readonly credentialGroups: readonly BankCredentialGroup[];
-    readonly findsTransfers: boolean;
+    readonly paymentKinds: readonly BankPaymentKind[];
   }[];
 };
 
@@ -40,13 +45,12 @@ export type SupportedBank = {
   readonly environments: readonly BankEnvironment[];
   readonly credentialGroups: readonly BankCredentialGroup[];
   /**
-   * Whether the till may leave the payer's phone empty for this bank — a
-   * transferencia carries none. The counter reads it off the account's own bank
-   * rather than deciding for itself, which is the whole point of it travelling
-   * this far: a second bank that cannot search without a phone keeps the field
-   * required without a line changing on the screen.
+   * What this bank can be asked about, and what each kind takes. The counter's
+   * "Pago móvil / Transferencia" selector and both of its forms are rendered
+   * from this, so the fields, their lengths and which of them are required all
+   * arrive from the bank rather than being decided on the screen.
    */
-  readonly findsTransfers: boolean;
+  readonly paymentKinds: readonly BankPaymentKind[];
 };
 
 export type ListSupportedBanks = () => readonly SupportedBank[];
@@ -58,6 +62,6 @@ export function makeListSupportedBanks({ banks }: ListSupportedBanksDeps): ListS
       displayName: bank.displayName,
       environments: bank.environments,
       credentialGroups: bank.credentialGroups,
-      findsTransfers: bank.findsTransfers,
+      paymentKinds: bank.paymentKinds,
     }));
 }

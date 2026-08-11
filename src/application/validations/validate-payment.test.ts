@@ -7,7 +7,6 @@ import type {
   Validation,
 } from '../../adapters/d1/validation.repository.ts';
 import type { ValidationAttempt } from '../../adapters/metrics/attempt.metrics.ts';
-import { canonicalReference } from '../../domain/payment-match.ts';
 import { type Clock, fixedClock } from '../../shared/clock.ts';
 import { seal } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
@@ -24,15 +23,14 @@ import type {
 import { makeValidatePayment, type ValidatePaymentInput } from './validate-payment.ts';
 
 const NOW = 1_770_000_000;
+/** `venezuelaDate(NOW)` — the counter's today, and the date field's default. */
+const TODAY = '2026-02-01';
 const CREDS_KEY = 'a-test-master-key-of-at-least-32-bytes';
 const COMPANY = 'la-espiga';
-const ACCOUNT_NUMBER = '01340123450123458514';
 
 const CREDENTIALS = {
   clientId: 'cuadre-qa-client',
   clientSecret: 'super-secret-value',
-  username: 'cuadre-qa-user',
-  password: 'super-secret-password',
 };
 
 const SESSION: BankSession = {
@@ -41,16 +39,23 @@ const SESSION: BankSession = {
   correlationId: 'correlation-1',
 };
 
-/** The counter's claim. The reference is typed without the bank's padding. */
+/**
+ * The counter's claim. The reference is the **last six digits** — all Banesco
+ * asks for, and all the till now collects.
+ */
 const INPUT: ValidatePaymentInput = {
   companyId: COMPANY,
   cashierId: 'user-maria',
   sessionId: 'session-1',
-  reference: '123456789',
+  kind: 'pago_movil',
+  reference: '456789',
   payerPhone: '0414-3125566',
+  receivingAccount: null,
   sourceBankId: '0134',
   amountCents: 124_000,
+  paymentDate: TODAY,
   idempotencyKey: 'idem-1',
+  bankAccountId: 'account-1',
 };
 
 function movement(overrides: Partial<BankMovement> = {}): BankMovement {
@@ -70,7 +75,7 @@ function movement(overrides: Partial<BankMovement> = {}): BankMovement {
 
 const found = (over: Partial<BankMovement> = {}): FoundPayment => ({
   movement: movement(over),
-  strategy: 'exact_reference',
+  strategy: 'reference_tail_and_phone',
 });
 
 async function bankAccount(overrides: Partial<BankAccount> = {}): Promise<BankAccount> {
@@ -79,19 +84,10 @@ async function bankAccount(overrides: Partial<BankAccount> = {}): Promise<BankAc
     companyId: COMPANY,
     bank: 'banesco',
     environment: 'production',
+    label: 'Caja principal',
+    receivingAccounts: [],
     clientIdLast6: 'client',
-    accountNumber: ACCOUNT_NUMBER,
-    credentials: [
-      {
-        credKey: 'main',
-        usage: 'operate',
-        clientIdLast6: 'client',
-        credentials: await seal(CREDS_KEY, CREDENTIALS),
-      },
-    ],
-    accountLast4: '8514',
-    accountType: 'Corriente',
-    holderId: 'J-12345678-9',
+    credentials: await seal(CREDS_KEY, { main: CREDENTIALS }),
     verifiedAt: NOW - 86_400,
     credsExpireAt: null,
     status: 'active',
@@ -107,16 +103,18 @@ function storedValidation(overrides: Partial<Validation> = {}): Validation {
     cashierId: 'user-maria',
     bankAccountId: 'account-1',
     bank: 'banesco',
+    kind: 'pago_movil',
     isSandbox: false,
     controlCode: '111111',
     reference: '000123456789',
+    referenceKey: '123456789',
     amountCents: 124_000,
     currency: 'BS',
     payerPhone: '584143125566',
     sourceBankId: '0134',
     trnAt: NOW - 300,
     latencyMs: 420,
-    searchMode: 'exact_reference',
+    searchMode: 'reference_tail_and_phone',
     idempotencyKey: 'idem-1',
     createdAt: NOW - 60,
     ...overrides,
@@ -132,11 +130,11 @@ function fakeValidations(seed: readonly Validation[] = [], racing: readonly Vali
   const takenControlCodes = new Set<string>();
   const inserts: NewValidation[] = [];
   /**
-   * Rows that commit *between* the pre-flight check and our INSERT — the race
-   * the unique index exists for. Invisible to the first check and present from
-   * then on, which is exactly what another cashier's commit looks like from
-   * here. Checking first and inserting second is the bug; this is how a test
-   * gets to see the index do the arbitrating.
+   * Rows that commit *between* the last check and our INSERT — the race the
+   * unique index exists for. They land at the moment of writing, so every
+   * lookup before it honestly answers "not charged yet" and only the index
+   * catches them. Checking first and inserting second is the bug; this is how a
+   * test gets to see the index do the arbitrating.
    */
   let pending: readonly Validation[] = racing;
 
@@ -151,33 +149,31 @@ function fakeValidations(seed: readonly Validation[] = [], racing: readonly Vali
 
     async findChargedPayment(
       bankAccountIds: readonly string[],
-      reference: string,
+      referenceKey: string,
     ): Promise<Validation | null> {
-      const found =
+      // Matched on the key exactly, as the index is.
+      return (
         rows.find(
-          (row) =>
-            canonicalReference(row.reference) === canonicalReference(reference) &&
-            bankAccountIds.includes(row.bankAccountId),
-        ) ?? null;
-      rows.push(...pending);
-      pending = [];
-      return found;
+          (row) => row.referenceKey === referenceKey && bankAccountIds.includes(row.bankAccountId),
+        ) ?? null
+      );
     },
 
     async insert(input: NewValidation): Promise<InsertResult> {
       inserts.push(input);
+      // The other cashier's commit lands here — after every check this request
+      // made, which is the only place a race can actually happen.
+      rows.push(...pending);
+      pending = [];
 
       if (rows.some((row) => row.idempotencyKey === input.idempotencyKey)) {
         return { outcome: 'idempotent_replay' };
       }
-      // The real index is unique over (bank_account_id, reference_key), not over
-      // the reference as spelled: a fake that compared the spellings would pass
-      // while the table let two paddings of one payment through.
+      // Unique over (bank_account_id, reference_key), exactly as the table is.
       if (
         rows.some(
           (row) =>
-            row.bankAccountId === input.bankAccountId &&
-            canonicalReference(row.reference) === canonicalReference(input.reference),
+            row.bankAccountId === input.bankAccountId && row.referenceKey === input.referenceKey,
         )
       ) {
         return { outcome: 'duplicate_payment' };
@@ -197,11 +193,29 @@ function fakeValidations(seed: readonly Validation[] = [], racing: readonly Vali
   };
 }
 
+const PAGO_MOVIL = {
+  kind: 'pago_movil',
+  label: 'Pago móvil',
+  referenceDigits: 6,
+  needsPayerPhone: true,
+  needsReceivingAccount: false,
+  needsDate: true,
+} as const;
+
+const TRANSFERENCIA = {
+  kind: 'transferencia',
+  label: 'Transferencia',
+  referenceDigits: 6,
+  needsPayerPhone: false,
+  needsReceivingAccount: true,
+  needsDate: false,
+} as const;
+
 type GatewayScript = {
   authenticate?: Result<BankSession, BankFailure>;
   payment?: Result<FoundPayment | null, BankFailure>;
-  /** A bank that cannot look a payment up without the payer's phone. */
-  findsTransfers?: boolean;
+  /** A bank that asks for a different slice of the reference. */
+  referenceDigits?: number;
 };
 
 function fakeBanks(script: GatewayScript = {}) {
@@ -212,25 +226,25 @@ function fakeBanks(script: GatewayScript = {}) {
     id: 'banesco',
     displayName: 'Banesco',
     environments: ['production', 'sandbox'],
-    credentialGroups: [
-      { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
+    credentialGroups: [{ key: 'main', label: 'Principal', required: true, fields: [] }],
+    operateKey: 'main',
+    discoverKey: 'main',
+    paymentKinds: [
+      { ...PAGO_MOVIL, referenceDigits: script.referenceDigits ?? 6 },
+      { ...TRANSFERENCIA, referenceDigits: script.referenceDigits ?? 6 },
     ],
-    findsTransfers: script.findsTransfers ?? true,
+    async listAccounts() {
+      return ok([]);
+    },
 
     async authenticate() {
       calls.authenticate++;
       return script.authenticate ?? ok(SESSION);
     },
-    async listAccounts() {
-      return ok([]);
-    },
     async findPayment(_session, query) {
       calls.findPayment++;
       queries.push(query);
       return script.payment ?? ok(null);
-    },
-    async listMovements() {
-      return ok([]);
     },
   };
 
@@ -266,7 +280,7 @@ async function harness(
     script?: GatewayScript;
     account?: Partial<BankAccount> | null;
     seed?: readonly Validation[];
-    /** Rows another cashier commits between the pre-flight check and our insert. */
+    /** Rows another cashier commits between the charged check and our insert. */
     racing?: readonly Validation[];
     digits?: string[];
     clock?: Clock;
@@ -279,9 +293,9 @@ async function harness(
 
   const validatePayment = makeValidatePayment({
     accounts: {
-      async listActiveForCompany(companyId, environment) {
+      async listActiveForCompany(companyId: string) {
         if (account === null || companyId !== account.companyId) return [];
-        return account.environment === environment ? [account] : [];
+        return [account];
       },
     },
     validations,
@@ -314,7 +328,7 @@ describe('validate payment', () => {
       amountCents: 124_000,
       currency: 'BS',
       trnAt: NOW - 300,
-      searchMode: 'exact_reference',
+      searchMode: 'reference_tail_and_phone',
       // Normalised by the domain on the way in, whatever the customer read out.
       payerPhone: '584143125566',
       createdAt: NOW,
@@ -324,7 +338,7 @@ describe('validate payment', () => {
         companyId: COMPANY,
         bank: 'banesco',
         environment: 'production',
-        searchStrategy: 'exact_reference',
+        searchStrategy: 'reference_tail_and_phone',
         outcome: 'confirmed',
         bankStatus: null,
         latencyMs: 0,
@@ -333,30 +347,138 @@ describe('validate payment', () => {
     ]);
   });
 
-  it('stores the reference exactly as it was typed, leading zeros and all', async () => {
-    // The customer's receipt says '00000150496' and the bank answers '150496'.
-    // What the cashier has to be able to match against the receipt is the row,
-    // so the row keeps the spelling that was typed — the padding is the bank's
-    // habit, not a fact about the payment.
+  it('records the reference the BANK reported, not the six digits typed', async () => {
+    // The cashier types a tail; the bank knows the whole number and so does the
+    // customer's receipt. A charge printed with six digits is a charge nobody
+    // can settle an argument with.
     const { validatePayment, validations } = await harness({
-      script: { payment: ok(found({ reference: '150496', amountCents: 52_508 })) },
+      script: { payment: ok(found()) },
     });
 
-    await validatePayment({ ...INPUT, reference: '00000150496', amountCents: 52_508 });
+    await validatePayment(INPUT);
 
-    expect(validations.rows[0]?.reference).toBe('00000150496');
+    expect(validations.rows[0]?.reference).toBe('000123456789');
+    expect(validations.rows[0]?.referenceKey).toBe('123456789');
   });
 
-  it('still refuses a second charge for the same payment spelled differently', async () => {
-    // The identity of a payment lives in `reference_key` — the canonical
-    // spelling — precisely so keeping the typed one above cannot open a hole in
-    // `ux_validations_payment`, which is the whole anti-double-charge mechanism.
+  it('keys a bank that echoes back only the tail on the tail AND the day', async () => {
+    // Six digits are not an identifier — two customers a week apart can share
+    // them. Pairing with the movement's own date is the narrowest thing that is
+    // still true.
     const { validatePayment, validations } = await harness({
-      seed: [storedValidation({ reference: '150496', idempotencyKey: 'idem-earlier' })],
-      script: { payment: ok(found({ reference: '150496' })) },
+      script: { payment: ok(found({ reference: '456789' })) },
     });
 
-    const result = await validatePayment({ ...INPUT, reference: '00000150496' });
+    await validatePayment(INPUT);
+
+    expect(validations.rows[0]?.referenceKey).toBe(`456789@${TODAY}`);
+  });
+
+  it('answers already-charged without a bank call, on the claim’s own key', async () => {
+    // The key is a composition of what was typed — tail plus day — so for a bank
+    // that answers with the tail it was asked with it is character for character
+    // the key on the row. Re-scanning a cobrado receipt must not spend a round
+    // trip in front of a customer to be told what the table already knows.
+    const { validatePayment, validations, calls, points } = await harness({
+      seed: [
+        storedValidation({
+          idempotencyKey: 'idem-0',
+          controlCode: '999999',
+          referenceKey: `456789@${TODAY}`,
+          cashierName: 'María Rodríguez',
+          createdAt: NOW - 120,
+        }),
+      ],
+      script: { payment: ok(found()) },
+    });
+
+    const result = await validatePayment(INPUT);
+
+    expect(calls.authenticate).toBe(0);
+    expect(calls.findPayment).toBe(0);
+    expect(result).toEqual({
+      ok: true,
+      value: { kind: 'already_charged', by: 'María Rodríguez', at: NOW - 120 },
+    });
+    expect(validations.inserts).toHaveLength(0);
+    expect(validations.rows).toHaveLength(1);
+    // No search happened, and the metric says so.
+    expect(points[0]).toMatchObject({
+      outcome: 'already_charged',
+      searchStrategy: 'none',
+      amountCents: 124_000,
+    });
+  });
+
+  it('still catches it after the bank when the bank answers with more', async () => {
+    // The prediction misses here — the row is keyed on the full reference the
+    // bank reported, which the claim's six digits cannot produce — so the check
+    // after the movement arrives is what refuses the second charge.
+    const { validatePayment, validations, calls, points } = await harness({
+      seed: [
+        storedValidation({
+          idempotencyKey: 'idem-0',
+          controlCode: '999999',
+          referenceKey: '123456789',
+          cashierName: 'María Rodríguez',
+          createdAt: NOW - 120,
+        }),
+      ],
+      script: { payment: ok(found()) },
+    });
+
+    const result = await validatePayment(INPUT);
+
+    expect(calls.findPayment).toBe(1);
+    expect(result).toEqual({
+      ok: true,
+      value: { kind: 'already_charged', by: 'María Rodríguez', at: NOW - 120 },
+    });
+    expect(validations.inserts).toHaveLength(0);
+    expect(points[0]).toMatchObject({
+      outcome: 'already_charged',
+      searchStrategy: 'reference_tail_and_phone',
+    });
+  });
+
+  it('never refuses a payment the pre-flight has no row for', async () => {
+    // The prediction may only be wrong by missing. A different payment sharing
+    // neither tail nor day must reach the bank untouched.
+    const { validatePayment, calls } = await harness({
+      seed: [
+        storedValidation({
+          idempotencyKey: 'idem-0',
+          controlCode: '999999',
+          referenceKey: `456789@2026-01-30`,
+        }),
+      ],
+      script: { payment: ok(found()) },
+    });
+
+    expect(await validatePayment(INPUT)).toMatchObject({
+      ok: true,
+      value: { kind: 'confirmed' },
+    });
+    expect(calls.findPayment).toBe(1);
+  });
+
+  it('refuses a second charge for the same payment however the bank padded it', async () => {
+    // The identity lives in `reference_key`, so '150496' and '00000150496' from
+    // the same bank collide — the whole anti-double-charge mechanism.
+    const { validatePayment, validations } = await harness({
+      seed: [
+        storedValidation({
+          reference: '150496',
+          referenceKey: '150496',
+          idempotencyKey: 'idem-earlier',
+        }),
+      ],
+      script: { payment: ok(found({ reference: '00000150496' })) },
+    });
+
+    // Keyed on the full reference, so the pre-flight misses and the bank is
+    // asked; the check on its answer is what refuses this.
+    const result = await validatePayment({ ...INPUT, reference: '150496' });
 
     expect(result).toMatchObject({ ok: true, value: { kind: 'already_charged' } });
     expect(validations.rows).toHaveLength(1);
@@ -419,7 +541,7 @@ describe('validate payment', () => {
     // strategy that is not 'none' is exactly that set.
     expect(points[0]).toMatchObject({
       outcome: 'not_found',
-      searchStrategy: 'exact_reference',
+      searchStrategy: 'reference_tail_and_phone',
       bankStatus: 'amount_mismatch',
       amountCents: 0,
     });
@@ -450,41 +572,11 @@ describe('validate payment', () => {
     expect(validations.rows).toHaveLength(0);
   });
 
-  it('answers already-charged before the bank when the typed reference matches', async () => {
+  it('names who charged a payment that landed between the check and the insert', async () => {
     const { validatePayment, validations, points } = await harness({
-      // Stored with the same unpadded reference the cashier types, so the
-      // pre-flight check finds it and no bank is ever asked.
-      seed: [
-        storedValidation({
-          idempotencyKey: 'idem-0',
-          controlCode: '999999',
-          reference: '123456789',
-          cashierName: 'María Rodríguez',
-          createdAt: NOW - 120,
-        }),
-      ],
-      script: { payment: ok(found()) },
-    });
-
-    const result = await validatePayment(INPUT);
-
-    expect(result).toEqual({
-      ok: true,
-      value: { kind: 'already_charged', by: 'María Rodríguez', at: NOW - 120 },
-    });
-    // The pre-check short-circuited: nothing was inserted (had it fallen through
-    // to the bank, the unpadded seed would not have matched the insert and a
-    // second row would exist).
-    expect(validations.inserts).toHaveLength(0);
-    expect(validations.rows).toHaveLength(1);
-    expect(points[0]).toMatchObject({ outcome: 'already_charged', amountCents: 124_000 });
-  });
-
-  it('names who charged a payment that landed between the pre-check and the insert', async () => {
-    const { validatePayment, validations, points } = await harness({
-      // Another cashier commits this exact payment after our pre-flight check
-      // has already answered "not charged yet". The unique index is what stops
-      // the second charge, and the counter still reads back who took the first.
+      // Another cashier commits this exact payment after our check has already
+      // answered "not charged yet". The unique index is what stops the second
+      // charge, and the counter still reads back who took the first.
       racing: [
         storedValidation({
           idempotencyKey: 'idem-0',
@@ -534,46 +626,75 @@ describe('validate payment', () => {
     expect(validations.rows).toHaveLength(0);
   });
 
-  it('copies is_sandbox from the account onto the row', async () => {
+  it('copies is_sandbox from the connection onto the row', async () => {
     const { validatePayment, validations, points } = await harness({
       account: { environment: 'sandbox' },
       script: { payment: ok(found()) },
     });
 
-    const result = await validatePayment({ ...INPUT, environment: 'sandbox' });
+    const result = await validatePayment(INPUT);
 
     expect(result.ok).toBe(true);
     expect(validations.rows[0]?.isSandbox).toBe(true);
     expect(points[0]).toMatchObject({ environment: 'sandbox' });
   });
 
-  it('reads production by default and never the sandbox account', async () => {
-    const { validatePayment, validations } = await harness({
-      account: { environment: 'sandbox' },
-      script: { payment: ok(found()) },
-    });
-
-    // The company holds only a sandbox account; the counter asked for none, so
-    // it asked for production and there is nothing to answer with.
-    const result = await validatePayment(INPUT);
-
-    expect(result).toEqual({ ok: false, error: 'no_bank_account' });
-    expect(validations.inserts).toHaveLength(0);
-  });
-
-  it('unseals the account number and sends it to the bank, never the masked one', async () => {
+  it('sends the bank exactly the four fields a pago móvil search takes', async () => {
+    // The meeting on 2026-08-11: the bank was not receiving the payer's bank
+    // code or phone. Every request carries all four or this fails.
     const { validatePayment, queries } = await harness({ script: { payment: ok(found()) } });
 
     await validatePayment(INPUT);
 
     expect(queries[0]).toEqual({
-      accountId: ACCOUNT_NUMBER,
-      reference: '123456789',
+      kind: 'pago_movil',
+      reference: '456789',
       payerPhone: '584143125566',
+      // A pago móvil never carries a receiving account, whatever the other tab
+      // had on it — the kind's declaration is what decides.
+      receivingAccount: null,
       sourceBankId: '0134',
-      onDate: '2026-02-01',
+      onDate: TODAY,
       sessionId: 'session-1',
     });
+  });
+
+  it('asks about the day the cashier says the customer paid, not about today', async () => {
+    // A customer who paid last night and turns up this morning is findable only
+    // because the date is a field.
+    const { validatePayment, queries } = await harness({ script: { payment: ok(found()) } });
+
+    await validatePayment({ ...INPUT, paymentDate: '2026-01-31' });
+
+    expect(queries[0]?.onDate).toBe('2026-01-31');
+  });
+
+  it('trims a pasted whole reference to the tail the bank asks for', async () => {
+    const { validatePayment, queries } = await harness({ script: { payment: ok(found()) } });
+
+    await validatePayment({ ...INPUT, reference: '000123456789' });
+
+    expect(queries[0]?.reference).toBe('456789');
+  });
+
+  it('takes the bank’s own digit count, not a hard-coded six', async () => {
+    const { validatePayment, queries } = await harness({
+      script: { payment: ok(found()), referenceDigits: 8 },
+    });
+
+    await validatePayment({ ...INPUT, reference: '0123456789' });
+
+    expect(queries[0]?.reference).toBe('23456789');
+  });
+
+  it('refuses a reference shorter than the bank asks for, without calling it', async () => {
+    const { validatePayment, calls } = await harness();
+
+    expect(await validatePayment({ ...INPUT, reference: '4567' })).toEqual({
+      ok: false,
+      error: 'invalid_input',
+    });
+    expect(calls.authenticate).toBe(0);
   });
 
   it('maps a bank in maintenance to a failure, and records the attempt', async () => {
@@ -613,39 +734,10 @@ describe('validate payment', () => {
     expect(await validatePayment(INPUT)).toEqual({ ok: false, error: 'rejected_credentials' });
   });
 
-  it('takes a claim with no phone as a transferencia and records none', async () => {
-    // A transferencia is made from an account, not from a phone. The claim is
-    // asked without one and the row says so — an empty string standing in for a
-    // phone would be a payer nobody can look up.
-    const { validatePayment, validations, queries } = await harness({
-      script: { payment: ok(found()) },
-    });
+  it('requires a phone: every validation is a pago móvil', async () => {
+    const { validatePayment, calls, points } = await harness();
 
-    const result = await validatePayment({ ...INPUT, payerPhone: null });
-
-    expect(result).toMatchObject({ ok: true, value: { kind: 'confirmed' } });
-    expect(queries[0]?.payerPhone).toBeNull();
-    expect(validations.rows[0]?.payerPhone).toBeNull();
-  });
-
-  it('treats a blank phone as no phone rather than as a bad one', async () => {
-    const { validatePayment, validations } = await harness({ script: { payment: ok(found()) } });
-
-    expect(await validatePayment({ ...INPUT, payerPhone: '   ' })).toMatchObject({ ok: true });
-    expect(validations.rows[0]?.payerPhone).toBeNull();
-  });
-
-  it('never asks a phoneless claim of a bank that cannot answer one', async () => {
-    // The till keeps the field required for such a bank, so this is a second
-    // bank connected since the screen loaded, or a hand-made request. Either
-    // way it is refused rather than asked a question with no answer — a bank
-    // that cannot search without a phone would report "todavía no aparece" for
-    // a payment that is plainly there.
-    const { validatePayment, calls, points } = await harness({
-      script: { payment: ok(found()), findsTransfers: false },
-    });
-
-    const result = await validatePayment({ ...INPUT, payerPhone: null });
+    const result = await validatePayment({ ...INPUT, payerPhone: '   ' });
 
     expect(result).toEqual({ ok: false, error: 'invalid_input' });
     expect(calls.authenticate).toBe(0);
@@ -685,12 +777,38 @@ describe('validate payment', () => {
     });
   });
 
+  it.each([['not-a-date'], ['2026-2-1'], ['2026-02-02']])(
+    'refuses the payment date %s before asking the bank',
+    async (paymentDate) => {
+      // The last one is tomorrow: a payment cannot have happened yet.
+      const { validatePayment, calls } = await harness();
+
+      expect(await validatePayment({ ...INPUT, paymentDate })).toEqual({
+        ok: false,
+        error: 'invalid_input',
+      });
+      expect(calls.authenticate).toBe(0);
+    },
+  );
+
   it('answers no_bank_account without a metric, because no bank was involved', async () => {
     const { validatePayment, points, calls } = await harness({ account: null });
 
     expect(await validatePayment(INPUT)).toEqual({ ok: false, error: 'no_bank_account' });
     expect(calls.authenticate).toBe(0);
     expect(points).toEqual([]);
+  });
+
+  it('treats a chosen connection that is not this company’s as no connection', async () => {
+    // Scoped by company first and only then narrowed to the id, so a tampered
+    // value finds nothing rather than another merchant's row.
+    const { validatePayment, calls } = await harness();
+
+    expect(await validatePayment({ ...INPUT, bankAccountId: 'account-elsewhere' })).toEqual({
+      ok: false,
+      error: 'no_bank_account',
+    });
+    expect(calls.authenticate).toBe(0);
   });
 
   it('records the latency the cashier waited, on the row and on the metric', async () => {
@@ -713,141 +831,5 @@ describe('validate payment', () => {
     await validatePayment(INPUT);
 
     expect(validations.rows[0]?.sourceBankId).toBe('0172');
-  });
-});
-
-/**
- * A company can have more than one receiving account for an environment. The
- * counter asks each in turn — a payment lands in exactly one — and an explicit
- * `accountId` scopes to just that one. These build the use case directly so the
- * accounts reader can return two accounts with different numbers.
- */
-describe('validate payment across accounts', () => {
-  const AccA = '01340000000000000001';
-  const AccB = '01340000000000000002';
-
-  async function twoAccounts(): Promise<readonly BankAccount[]> {
-    return [
-      await bankAccount({ id: 'account-a', accountNumber: AccA }),
-      await bankAccount({ id: 'account-b', accountNumber: AccB }),
-    ];
-  }
-
-  /** A gateway that reports the movement only on the account holding `paidTo`. */
-  function gatewayReporting(paidTo: string) {
-    const asked: string[] = [];
-    const gateway: BankGateway = {
-      id: 'banesco',
-      displayName: 'Banesco',
-      environments: ['production', 'sandbox'],
-      credentialGroups: [
-        { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
-      ],
-      findsTransfers: true,
-      async authenticate() {
-        return ok(SESSION);
-      },
-      async listAccounts() {
-        return ok([]);
-      },
-      async findPayment(_session, query) {
-        asked.push(query.accountId);
-        return query.accountId === paidTo ? ok(found()) : ok(null);
-      },
-      async listMovements() {
-        return ok([]);
-      },
-    };
-    return { banks: { get: () => gateway }, asked };
-  }
-
-  function build(
-    list: readonly BankAccount[],
-    banks: { get: () => BankGateway },
-    validations: ReturnType<typeof fakeValidations>,
-    metrics: ReturnType<typeof fakeMetrics>['metrics'],
-  ) {
-    return makeValidatePayment({
-      accounts: {
-        async listActiveForCompany() {
-          return list;
-        },
-      },
-      validations,
-      banks,
-      metrics,
-      clock: fixedClock(NOW),
-      ids: fakeIdGen({ uuids: ['validation-1'], digits: ['654321'] }),
-      credsKey: CREDS_KEY,
-    });
-  }
-
-  it('walks to the account that reports the movement and confirms there', async () => {
-    const { banks, asked } = gatewayReporting(AccB);
-    const validations = fakeValidations();
-    const { metrics, points } = fakeMetrics();
-    const validate = build(await twoAccounts(), banks, validations, metrics);
-
-    const result = await validate(INPUT);
-
-    expect(result).toMatchObject({ ok: true, value: { kind: 'confirmed' } });
-    // Asked A first (null), then B (the movement): two round trips, in order.
-    expect(asked).toEqual([AccA, AccB]);
-    expect(validations.rows[0]?.bankAccountId).toBe('account-b');
-    // One metric for the attempt, attributed to the account that answered.
-    expect(points).toHaveLength(1);
-    expect(points[0]?.outcome).toBe('confirmed');
-  });
-
-  it('stops at the first account that has the payment', async () => {
-    const { banks, asked } = gatewayReporting(AccA);
-    const validations = fakeValidations();
-    const { metrics } = fakeMetrics();
-    const validate = build(await twoAccounts(), banks, validations, metrics);
-
-    await validate(INPUT);
-
-    // A has it, so B is never asked — no wasted round trip at the counter.
-    expect(asked).toEqual([AccA]);
-    expect(validations.rows[0]?.bankAccountId).toBe('account-a');
-  });
-
-  it('scopes to the chosen account when accountId is given', async () => {
-    const { banks, asked } = gatewayReporting(AccB);
-    const validations = fakeValidations();
-    const { metrics } = fakeMetrics();
-    const validate = build(await twoAccounts(), banks, validations, metrics);
-
-    const result = await validate({ ...INPUT, accountId: 'account-b' });
-
-    expect(result).toMatchObject({ ok: true, value: { kind: 'confirmed' } });
-    // Only B was asked — A was out of scope.
-    expect(asked).toEqual([AccB]);
-  });
-
-  it('is not_found when no account reports it, and asks them all', async () => {
-    const { banks, asked } = gatewayReporting('nobody');
-    const validations = fakeValidations();
-    const { metrics, points } = fakeMetrics();
-    const validate = build(await twoAccounts(), banks, validations, metrics);
-
-    const result = await validate(INPUT);
-
-    expect(result).toMatchObject({ ok: true, value: { kind: 'not_found' } });
-    expect(asked).toEqual([AccA, AccB]);
-    expect(points).toHaveLength(1);
-    expect(points[0]?.outcome).toBe('not_found');
-  });
-
-  it('treats a stale chosen accountId as no account', async () => {
-    const { banks, asked } = gatewayReporting(AccA);
-    const validations = fakeValidations();
-    const { metrics } = fakeMetrics();
-    const validate = build(await twoAccounts(), banks, validations, metrics);
-
-    const result = await validate({ ...INPUT, accountId: 'account-removed' });
-
-    expect(result).toEqual({ ok: false, error: 'no_bank_account' });
-    expect(asked).toEqual([]);
   });
 });

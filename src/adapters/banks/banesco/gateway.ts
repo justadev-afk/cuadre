@@ -1,7 +1,8 @@
 /**
- * Banesco as the port sees it: authenticate, list accounts, find one payment,
- * list a day. Composition only — every request shape, status code and unit
- * conversion belongs to the files this one calls.
+ * Banesco as the port sees it: authenticate, list the merchant's accounts, and
+ * find one payment — a pago móvil or a transferencia, each by its own modality.
+ * Composition only — every request shape, status code and unit conversion
+ * belongs to the files this one calls.
  *
  * The port keeps `BankSession` opaque and deliberately carries no token, so the
  * token lives here, in a map held by the gateway the registry built **for this
@@ -18,21 +19,24 @@ import type {
   BankGateway,
   BankGatewayDeps,
   BankMovement,
+  BankPaymentKind,
   BankSession,
   FindPaymentQuery,
   FoundPayment,
-  ListMovementsQuery,
 } from '../../../application/ports/bank-gateway.ts';
+import { sameReference } from '../../../domain/payment-match.ts';
+import { AppError } from '../../../shared/errors.ts';
 import { logger, maskReference } from '../../../shared/logger.ts';
 import { err, ok, type Result } from '../../../shared/result.ts';
 import { BanescoAccountsClient } from './accounts.client.ts';
-import { type BanescoConfirmationCall, BanescoConfirmationClient } from './confirmation.client.ts';
+import {
+  type BanescoConfirmationCall,
+  BanescoConfirmationClient,
+  REFERENCE_TAIL_DIGITS,
+} from './confirmation.client.ts';
 import { BANESCO_ID, hasProductionEndpoints } from './endpoints.ts';
 import { type BanescoDevice, serverDevice } from './envelope.ts';
 import { BanescoOauthClient } from './oauth.client.ts';
-
-/** Below this a shared suffix is a coincidence, not the same reference. */
-const MIN_MATCHABLE_DIGITS = 6;
 
 type ActiveSession = {
   environment: BankEnvironment;
@@ -45,33 +49,19 @@ export class BanescoGateway implements BankGateway {
   readonly environments: readonly BankEnvironment[] = ['production', 'sandbox'];
 
   /**
-   * Verified live against QA (2026-08-10): the exact-reference search returns a
-   * transferencia with no phone anywhere in the request — ref `00000150496` →
-   * CR Bs 525,08, concept `TRANS.CTAS`, on the …5394 account. The bank even
-   * answers it under the reference without its leading zeros, which is what
-   * `sameReference` below already folds.
+   * Two services, two credential pairs — and in QA two *different RIFs*, which
+   * is why the Confirmación client 403s on Consulta's endpoint and why the
+   * accounts Consulta lists are not the ones Confirmación reports movements on.
    *
-   * The *tail* search cannot do it: the same reference with `bankId` and
-   * `startDt` but no `phoneNum` comes back `70001 · Consulta sin resultados`.
-   * That is not a settlement lag, it is a search that structurally cannot hit —
-   * which is why `findPayment` stops after the exact route when there is no
-   * phone rather than falling into a fallback that will always answer nothing.
-   */
-  readonly findsTransfers = true;
-
-  /**
-   * Two services, two credential pairs. Banesco issues one OAuth client for
-   * confirming a transaction and a *separate* one for reading the account list,
-   * and each 403s on the other's service (verified against QA). So the merchant
-   * pastes the Confirmación pair — the one the counter runs on, required — and,
-   * optionally, the Consulta pair that lets us list their accounts to pick the
-   * receiving one. Each pair is a client id and secret; the password grant uses
-   * them as their own username and password (see `oauth.client.ts`).
+   * Confirmación is required: it is what the counter validates with. Consulta is
+   * optional, and all it buys is the list of accounts offered to the merchant
+   * when they register which one receives — a merchant who has only one client
+   * (the likely production shape) leaves it blank and that single pair does
+   * both jobs.
    */
   readonly credentialGroups: readonly BankCredentialGroup[] = [
     {
       key: 'confirmation',
-      usage: 'operate',
       label: 'Confirmación de Transacciones',
       hint: 'Con estas credenciales validamos cada pago en la caja. Son obligatorias.',
       required: true,
@@ -82,14 +72,48 @@ export class BanescoGateway implements BankGateway {
     },
     {
       key: 'consulta',
-      usage: 'discover',
       label: 'Consulta de Saldo',
-      hint: 'Opcional. Si las das, listamos tus cuentas para que elijas la receptora; si no, escribes el número.',
+      hint: 'Opcional. Si las das, listamos tus cuentas al registrar las que reciben transferencias. Si tienes una sola credencial, deja esto vacío.',
       required: false,
       fields: [
         { name: 'clientId', label: 'Client ID (OAuth 2.0)', secret: false },
         { name: 'clientSecret', label: 'Client Secret', secret: true },
       ],
+    },
+  ];
+
+  readonly operateKey = 'confirmation';
+  readonly discoverKey = 'consulta';
+
+  /**
+   * What each kind of payment takes — every flag probed against QA on
+   * 2026-08-11, field by field.
+   *
+   * A pago móvil is asked with the **last six** digits; a transferencia with the
+   * **whole** reference, which is what the customer's receipt carries. Both
+   * shapes answer in QA — a transferencia is found by its tail too — but the
+   * full number is what a cashier is reading off the screen in front of them,
+   * and asking for six of eleven digits invites transcribing the wrong six.
+   *
+   * `needsDate: false` on the transferencia is the one that looks like an
+   * oversight and is not. See `findTransferencia`.
+   */
+  readonly paymentKinds: readonly BankPaymentKind[] = [
+    {
+      kind: 'pago_movil',
+      label: 'Pago móvil',
+      referenceDigits: REFERENCE_TAIL_DIGITS,
+      needsPayerPhone: true,
+      needsReceivingAccount: false,
+      needsDate: true,
+    },
+    {
+      kind: 'transferencia',
+      label: 'Transferencia',
+      referenceDigits: null,
+      needsPayerPhone: false,
+      needsReceivingAccount: true,
+      needsDate: false,
     },
   ];
 
@@ -108,9 +132,13 @@ export class BanescoGateway implements BankGateway {
 
   constructor(private readonly deps: BankGatewayDeps) {
     this.device = serverDevice(this.deps.egressIp);
-    this.oauth = new BanescoOauthClient(this.deps.tokens, this.deps.userAgent);
+    this.oauth = new BanescoOauthClient(this.deps.tokens, this.deps.userAgent, this.deps.debug);
     this.accounts = new BanescoAccountsClient(this.device, this.deps.userAgent);
-    this.confirmation = new BanescoConfirmationClient(this.device, this.deps.userAgent);
+    this.confirmation = new BanescoConfirmationClient(
+      this.device,
+      this.deps.userAgent,
+      this.deps.debug,
+    );
     this.active = new Map();
   }
 
@@ -157,6 +185,12 @@ export class BanescoGateway implements BankGateway {
     });
   }
 
+  /**
+   * One call, in the shape the kind declares. There is no fallback between the
+   * two: each modality answers its own kind of payment and returns
+   * `70001 · sin resultados` for the other, so a second attempt would only spend
+   * a round trip at the counter to be told nothing.
+   */
   async findPayment(
     session: BankSession,
     query: FindPaymentQuery,
@@ -165,53 +199,38 @@ export class BanescoGateway implements BankGateway {
     if (!resumed.ok) return resumed;
     const call = this.confirmationCall(resumed.value, query.sessionId);
 
-    const exact = await this.confirmation.findByExactReference(call, query.reference);
-    if (exact.kind === 'failure') return err(exact.failure);
-    if (exact.kind === 'movements') {
-      const match = select(exact.movements, query);
-      if (match) return ok({ movement: match, strategy: 'exact_reference' });
-    }
-
-    // No phone: the claim is a transferencia, and the fallback below is a pago
-    // móvil search — it matches on phone, bank and date, and the bank answers
-    // "sin resultados" to one without a phone however real the payment is.
-    // The exact reference was the only route there is, and it has been tried.
-    if (query.payerPhone === null) return ok(null);
-
-    // The bank settles a payment under its full reference some minutes after
-    // it can already find it by tail and phone. Falling back automatically is
-    // the difference between "todavía no aparece" and a sale.
-    const tail = await this.confirmation.findByReferenceTail(call, {
-      reference: query.reference,
-      payerPhone: query.payerPhone,
-      sourceBankId: query.sourceBankId,
-      onDate: query.onDate,
-    });
-    if (tail.kind === 'failure') return err(tail.failure);
-    if (tail.kind === 'movements') {
-      const match = select(tail.movements, query);
-      if (match) return ok({ movement: match, strategy: 'reference_tail_and_phone' });
-    }
-
-    // Neither route found it. That is an answer: the bank does not report
-    // this payment yet.
-    return ok(null);
-  }
-
-  async listMovements(
-    session: BankSession,
-    query: ListMovementsQuery,
-  ): Promise<Result<BankMovement[], BankFailure>> {
-    const resumed = this.resume(session);
-    if (!resumed.ok) return resumed;
-
-    const outcome = await this.confirmation.listByAccountRange(
-      this.confirmationCall(resumed.value, session.correlationId),
-      { accountId: query.accountId, from: query.from, to: query.to },
-    );
+    // The use case has already checked the claim against the kind's declaration,
+    // so a missing field here is a programming error rather than a user's.
+    const outcome =
+      query.kind === 'transferencia'
+        ? await this.confirmation.findTransferencia(call, {
+            reference: query.reference,
+            receivingAccount: required(query.receivingAccount, 'receivingAccount'),
+            sourceBankId: query.sourceBankId,
+          })
+        : await this.confirmation.findPagoMovil(call, {
+            reference: query.reference,
+            payerPhone: required(query.payerPhone, 'payerPhone'),
+            sourceBankId: query.sourceBankId,
+            onDate: required(query.onDate, 'onDate'),
+          });
 
     if (outcome.kind === 'failure') return err(outcome.failure);
-    return ok(outcome.kind === 'movements' ? outcome.movements : []);
+    if (outcome.kind === 'movements') {
+      const match = select(outcome.movements, query);
+      if (match) {
+        return ok({
+          movement: match,
+          strategy:
+            query.kind === 'transferencia'
+              ? 'reference_tail_and_account'
+              : 'reference_tail_and_phone',
+        });
+      }
+    }
+
+    // The bank does not report this payment yet. That is an answer.
+    return ok(null);
   }
 
   private resume(session: BankSession): Result<ActiveSession, BankFailure> {
@@ -257,6 +276,12 @@ export class BanescoGateway implements BankGateway {
   }
 }
 
+/** A field the kind promised would be there. Absent means we built a bad query. */
+function required(value: string | null, field: string): string {
+  if (value === null) throw new AppError('internal', `banesco query is missing ${field}`);
+  return value;
+}
+
 /**
  * Which of the bank's rows is the payment being validated.
  *
@@ -264,11 +289,10 @@ export class BanescoGateway implements BankGateway {
  * already scoped to the merchant by the credentials that made it, so every row
  * it returns is *this* merchant's money — which of their accounts it settled on
  * is not a reason to refuse it. A pago móvil lands on whatever account its
- * receiving phone maps to, not necessarily the one connected at the counter, and
- * rejecting on that mismatch is exactly what made a real payment read as
- * "todavía no aparece". Amount and currency are the domain's job in
- * `matchPayment`; the account is deliberately not a filter here. Debits are
- * dropped: money leaving is never a payment received.
+ * receiving phone maps to, and rejecting on that mismatch is exactly what made a
+ * real payment read as "todavía no aparece". Amount and currency are the
+ * domain's job in `matchPayment`. Debits are dropped: money leaving is never a
+ * payment received.
  */
 function select(movements: readonly BankMovement[], query: FindPaymentQuery): BankMovement | null {
   const candidates = movements.filter(
@@ -286,16 +310,4 @@ function select(movements: readonly BankMovement[], query: FindPaymentQuery): Ba
     reference: maskReference(query.reference),
   });
   return candidates.reduce((latest, next) => (next.occurredAt > latest.occurredAt ? next : latest));
-}
-
-/** Equal, or one is the tail of the other — the fallback search asks by tail. */
-function sameReference(candidate: string, reference: string): boolean {
-  const found = candidate.replace(/\D/g, '');
-  const asked = reference.replace(/\D/g, '');
-  if (found === '' || asked === '') return false;
-  if (found === asked) return true;
-
-  const shorter = found.length < asked.length ? found : asked;
-  if (shorter.length < MIN_MATCHABLE_DIGITS) return false;
-  return found.endsWith(asked) || asked.endsWith(found);
 }

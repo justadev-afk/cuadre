@@ -63,6 +63,58 @@ export function formatDateTime(epochSeconds: number): string {
 }
 
 /**
+ * `YYYY-MM-DD` for a calendar day the *user* picked, read off a `Date` the
+ * picker built in local time.
+ *
+ * Deliberately not `toISOString().slice(0, 10)`: that converts to UTC first, so
+ * a day chosen anywhere west of Greenwich comes back as the day before — which
+ * on this field would send the bank the wrong `startDt` and make a real payment
+ * unfindable. The picker already yields the day the cashier sees; this only
+ * spells it.
+ */
+export function toIsoDay(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * A `YYYY-MM-DD` back to a `Date` at local midnight — the inverse of
+ * `toIsoDay`, and the shape react-day-picker wants for its selection.
+ */
+export function fromIsoDay(iso: string): Date {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1);
+}
+
+/**
+ * Today, at the counter — `YYYY-MM-DD` in Caracas, read fresh from the clock.
+ *
+ * Read at the moment it is needed, never cached into a render: a till stays open
+ * all night, and a "today" resolved when the page loaded would still call itself
+ * today at eight in the morning while meaning yesterday. The offset is
+ * arithmetic on the epoch rather than an `Intl` timezone, which is the same
+ * choice the rest of this file and `day-range.ts` make, so they cannot disagree
+ * about where a day starts.
+ */
+export function venezuelaToday(): string {
+  const { year, month, day } = localParts(Math.floor(Date.now() / 1000));
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+/** The day before that, for the "Ayer" label. */
+export function yesterdayInVenezuela(): string {
+  const { year, month, day } = localParts(Math.floor(Date.now() / 1000) - SECONDS_PER_DAY);
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+/** 'hoy', 'ayer', or '06/08/2026' — how the till labels the day it will ask about. */
+export function formatIsoDay(iso: string, todayIso: string, yesterdayIso: string): string {
+  if (iso === todayIso) return 'Hoy';
+  if (iso === yesterdayIso) return 'Ayer';
+  const [year, month, day] = iso.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/**
  * 'hoy 11:02', 'ayer 09:12', '04/08 09:12'.
  *
  * A row three tabs deep still has to say *when*, and "hoy" is what someone

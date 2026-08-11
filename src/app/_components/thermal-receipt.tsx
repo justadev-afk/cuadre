@@ -13,6 +13,7 @@
  * exactly this ticket. `PrintReceiptButton` is the trigger.
  */
 import { Button } from '@/components/ui/button.tsx';
+import type { PaymentKind } from '../../application/ports/bank-gateway.ts';
 import { formatBolivares } from '../../domain/money.ts';
 import { formatPhoneForDisplay } from '../../domain/phone.ts';
 import { formatDateTime } from '../_lib/venezuela-format.ts';
@@ -25,9 +26,13 @@ export type ReceiptData = {
   readonly amountCents: number;
   /** `null` for a transferencia — there is no phone, and none is printed. */
   readonly payerPhone: string | null;
+  /** Pago móvil or transferencia — printed, because the two settle differently. */
+  readonly kind: PaymentKind;
   readonly bankName?: string | null;
   readonly cashierName?: string | null;
-  /** Epoch seconds — the bank's transaction time. */
+  /** Epoch seconds — when the bank says the payment happened. */
+  readonly paidAt: number;
+  /** Epoch seconds — when this counter charged it. */
   readonly atSeconds: number;
   readonly isSandbox: boolean;
 };
@@ -52,7 +57,7 @@ export function ThermalReceipt({ data }: { data: ReceiptData }) {
         <Rule />
         <div className="text-[11px] font-bold">COMPROBANTE DE PAGO</div>
         <div className="text-[11px]">
-          {data.payerPhone ? 'Pago móvil validado' : 'Transferencia validada'}
+          {data.kind === 'transferencia' ? 'Transferencia validada' : 'Pago móvil validado'}
         </div>
         <Rule />
 
@@ -70,7 +75,11 @@ export function ThermalReceipt({ data }: { data: ReceiptData }) {
           ) : null}
           {data.bankName ? <Line label="Banco" value={data.bankName} /> : null}
           {data.cashierName ? <Line label="Cajero" value={data.cashierName} /> : null}
-          <Line label="Fecha" value={formatDateTime(data.atSeconds)} />
+          {/* Two dates, because they answer different questions: the customer's
+              receipt says when they paid, and the shop's books say when it was
+              charged. A ticket carrying only one of them cannot settle either. */}
+          <Line label="Fecha del pago" value={formatDateTime(data.paidAt)} />
+          <Line label="Cobrado" value={formatDateTime(data.atSeconds)} />
         </div>
 
         {data.isSandbox ? (

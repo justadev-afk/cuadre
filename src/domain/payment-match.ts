@@ -100,22 +100,73 @@ function sameAmount(actual: number, expected: number): boolean {
 }
 
 /**
- * References are numeric handles a customer reads off a receipt, and banks pad
- * them to their own widths — the same payment comes back as '0000123456' from
- * one and '123456' from another, and a cashier copies whichever is printed.
- * Comparing those as raw strings would reject payments that are genuinely
- * there, so both sides are reduced to the same canonical digits first.
+ * Whether the bank's reference and the claimed one are the same payment.
  *
- * This is the only place any leniency exists, and it is leniency about
- * *formatting*, not about identity: two different references never fold onto
- * each other, because stripping leading zeros is injective over the strings
- * that remain. An empty reference matches nothing at all, including another
- * empty one.
+ * Two kinds of leniency, both about *spelling* and neither about identity:
+ *
+ *  - **Padding.** Banks pad references to their own widths — one payment comes
+ *    back as '0000123456' and another bank prints '123456' — so both sides are
+ *    reduced to the same canonical digits first. Stripping leading zeros is
+ *    injective over what remains, so two different references never fold onto
+ *    each other.
+ *  - **Tails.** The counter asks with the last few digits (Banesco: six), and
+ *    the bank answers with the whole number. One is therefore the suffix of the
+ *    other by construction — and checking it here is what makes sure the
+ *    movement that came back is an answer to the question that was asked, and
+ *    not some other row.
+ *
+ * The floor is what keeps the tail rule honest: below six digits a shared
+ * suffix is a coincidence rather than a payment, so it is refused. An empty
+ * reference matches nothing at all, including another empty one.
+ *
+ * Exported because the Banesco adapter picks its candidate row with the same
+ * rule, and a rule that decides money is written once (§11).
  */
-function sameReference(actual: string, expected: string): boolean {
-  const a = canonicalReference(actual);
-  const b = canonicalReference(expected);
-  return a !== '' && a === b;
+export function sameReference(actual: string, expected: string): boolean {
+  // Padding first, on the canonical forms: '0000123456' and '123456' are one
+  // payment however either side spelled it.
+  const canonicalA = canonicalReference(actual);
+  const canonicalB = canonicalReference(expected);
+  if (canonicalA === '' || canonicalB === '') return false;
+  if (canonicalA === canonicalB) return true;
+
+  // Then tails, on the **raw** digits rather than the canonical ones. A tail may
+  // legitimately begin with a zero — Banesco's ref 12346090431 is asked for as
+  // '090431' — and stripping that zero first would leave five digits, drop it
+  // under the floor, and refuse a payment the bank had just handed us.
+  const digitsA = actual.replace(/\D/g, '');
+  const digitsB = expected.replace(/\D/g, '');
+  const shorter = digitsA.length < digitsB.length ? digitsA : digitsB;
+  if (shorter.length < MIN_MATCHABLE_DIGITS) return false;
+  return digitsA.endsWith(digitsB) || digitsB.endsWith(digitsA);
+}
+
+/** Below this a shared suffix is a coincidence, not the same reference. */
+const MIN_MATCHABLE_DIGITS = 6;
+
+/**
+ * Which spelling of one reference the row keeps — the fuller of the two, never
+ * a normalised one.
+ *
+ * Both sides are the same payment by the time this is asked (`sameReference`
+ * said so), so the only question left is which spelling a customer can settle
+ * an argument with, and that is whichever carries more digits:
+ *
+ *  - **Pago móvil.** Six digits are typed, the bank answers with all eleven.
+ *    The bank's is fuller, and the receipt shows the same eleven.
+ *  - **Transferencia.** The whole reference is typed — `00000150496`, exactly as
+ *    the receipt prints it — and Banesco answers `150496`, its own spelling with
+ *    the padding dropped. Here the *typed* one is fuller, and storing the bank's
+ *    would quietly delete zeros the customer is looking at.
+ *
+ * Never a merge of the two: a spelling nobody sent is a spelling nobody can
+ * check. Identity is not decided here — that is `paymentKey`, which canonicalises
+ * both to the same thing either way.
+ */
+export function fullestReference(reported: string, asTyped: string): string {
+  const reportedDigits = reported.replace(/\D/g, '').length;
+  const typedDigits = asTyped.replace(/\D/g, '').length;
+  return typedDigits > reportedDigits ? asTyped : reported;
 }
 
 /**
@@ -131,4 +182,40 @@ export function canonicalReference(reference: string): string {
   const compact = reference.replace(/\s/g, '').toUpperCase();
   // Keep the last digit: '000' is the reference zero, not the empty string.
   return compact.replace(/^0+(?=.)/, '');
+}
+
+/**
+ * The key one payment is charged under — what `ux_validations_payment` is
+ * unique over, and therefore the whole anti-double-charge mechanism.
+ *
+ * It is the bank's own reference, canonicalised, **and the day it happened
+ * whenever that reference is only a tail**. Banesco is asked with the last six
+ * digits and normally answers with the full number, which is unique on its own;
+ * but it sometimes echoes back nothing more than the six it was given, and six
+ * digits are not an identifier — two customers paying the same shop a week
+ * apart can genuinely share them. Pairing the tail with the date is the
+ * narrowest thing that is still true: within one day, on one affiliation, a
+ * six-digit tail is the payment.
+ *
+ * `askedDigits` is the bank's own `referenceDigits`. A reference no longer than
+ * what we asked with is a tail; anything longer is the bank telling us more
+ * than we knew, and stands alone.
+ */
+export function paymentKey({
+  reference,
+  occurredOn,
+  askedDigits,
+}: {
+  /** As the bank reported it. Never the cashier's typing. */
+  readonly reference: string;
+  /** `YYYY-MM-DD`, Venezuela local, of the movement itself. */
+  readonly occurredOn: string;
+  readonly askedDigits: number;
+}): string {
+  const canonical = canonicalReference(reference);
+  // Counted on the reference as it arrived, not on the canonical form: leading
+  // zeros are padding the bank chose, and stripping them first would read
+  // '000150' as three digits and call a full reference a tail.
+  const digits = reference.replace(/\D/g, '').length;
+  return digits > askedDigits ? canonical : `${canonical}@${occurredOn}`;
 }

@@ -25,15 +25,16 @@ export type ValidatedPaymentView = {
   readonly controlCode: string;
   readonly amountCents: number;
   readonly reference: string;
-  /** `null` for a transferencia: the payment carried no payer phone. */
   readonly payerPhone: string | null;
   /** The bank that answered, as a name (e.g. "Banesco"). */
   readonly bankName: string;
   readonly cashierName?: string | null;
-  /** "Banesco ···· 5394" — the account the payment landed on, when known. */
+  /** "Banesco · Caja principal" — the connection that received it, when known. */
   readonly accountLabel?: string;
-  /** Epoch seconds — the bank's transaction time. */
-  readonly atSeconds: number;
+  /** Epoch seconds — when the bank says the payment happened. */
+  readonly paidAt: number;
+  /** Epoch seconds — when this counter charged it. */
+  readonly chargedAt: number;
   readonly isSandbox: boolean;
   /** What the printed ticket needs. */
   readonly receipt: ReceiptData;
@@ -66,7 +67,7 @@ export function ValidatedPaymentModal({
           <div className="flex-1">
             <DialogTitle className="text-xl">Cobro validado</DialogTitle>
             <span className="text-xs text-muted-foreground">
-              {view.bankName} · {formatDateTime(view.atSeconds)}
+              {view.bankName} · {formatDateTime(view.chargedAt)}
             </span>
           </div>
           {view.isSandbox && (
@@ -105,9 +106,12 @@ export function ValidatedPaymentModal({
           {view.payerPhone !== null ? (
             <Row label="Teléfono" value={formatPhoneForDisplay(view.payerPhone)} />
           ) : null}
-          {view.accountLabel ? <Row label="Cuenta" value={view.accountLabel} /> : null}
+          {view.accountLabel ? <Row label="Banco" value={view.accountLabel} /> : null}
           {view.cashierName ? <Row label="Cajero" value={view.cashierName} /> : null}
-          <Row label="Fecha" value={formatDateTime(view.atSeconds)} />
+          {/* The customer's date, then the shop's. A payment made last night and
+              charged this morning is two different days, and both are true. */}
+          <Row label="Fecha del pago" value={formatDateTime(view.paidAt)} />
+          <Row label="Cobrado" value={formatDateTime(view.chargedAt)} />
         </div>
 
         <div className="flex gap-2">

@@ -6,7 +6,6 @@ import { makeListSupportedBanks } from './list-supported-banks.ts';
 const GROUPS: readonly BankCredentialGroup[] = [
   {
     key: 'confirmation',
-    usage: 'operate',
     label: 'Confirmación de Transacciones',
     required: true,
     fields: [
@@ -16,7 +15,6 @@ const GROUPS: readonly BankCredentialGroup[] = [
   },
   {
     key: 'consulta',
-    usage: 'discover',
     label: 'Consulta de Saldo',
     required: false,
     fields: [
@@ -31,22 +29,31 @@ const BANESCO = {
   displayName: 'Banesco',
   environments: ['production', 'sandbox'] as const,
   credentialGroups: GROUPS,
-  findsTransfers: true,
-};
+  paymentKinds: [
+    {
+      kind: 'pago_movil',
+      label: 'Pago móvil',
+      referenceDigits: 6,
+      needsPayerPhone: true,
+      needsReceivingAccount: false,
+      needsDate: true,
+    },
+  ],
+} as const;
 
 describe('list supported banks', () => {
   it('hands the form the credential groups the bank declared, in order', async () => {
     const listSupportedBanks = makeListSupportedBanks({ banks: { list: () => [BANESCO] } });
 
-    // Two groups: the required Confirmación pair and the optional Consulta pair.
-    // No code here mentions either — it projects whatever the gateway declares.
+    // A two-group bank, which Banesco is not any more — that is the point: the
+    // projection names no service and no bank, it passes on whatever was declared.
     expect(listSupportedBanks()).toEqual([
       {
         id: 'banesco',
         displayName: 'Banesco',
         environments: ['production', 'sandbox'],
         credentialGroups: GROUPS,
-        findsTransfers: true,
+        paymentKinds: BANESCO.paymentKinds,
       },
     ]);
   });

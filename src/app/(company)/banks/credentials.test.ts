@@ -11,7 +11,6 @@ import {
 const GROUPS: readonly BankCredentialGroup[] = [
   {
     key: 'confirmation',
-    usage: 'operate',
     label: 'Confirmación de Transacciones',
     required: true,
     fields: [
@@ -21,7 +20,6 @@ const GROUPS: readonly BankCredentialGroup[] = [
   },
   {
     key: 'consulta',
-    usage: 'discover',
     label: 'Consulta de Cuentas',
     required: false,
     fields: [

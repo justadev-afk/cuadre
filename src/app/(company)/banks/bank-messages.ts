@@ -15,20 +15,12 @@ const MESSAGES: Record<string, (bank: string) => string> = {
   rejected_credentials: (bank) =>
     `${bank} rechazó estas credenciales. Revisa el Client ID y el Client Secret.`,
   environment_mismatch: () => 'Estas credenciales no son de ese entorno.',
-  no_accounts: () =>
-    'Las credenciales son válidas, pero no hay cuentas reportadas para esta afiliación.',
   maintenance: (bank) => `${bank} está en mantenimiento. Intenta de nuevo en un rato.`,
   unavailable: (bank) => `${bank} no pudo responder. Intenta de nuevo.`,
   timeout: (bank) => `${bank} tardó demasiado. Intenta de nuevo.`,
   invalid_input: () => 'Escribe el Client ID y el Client Secret.',
-  not_found: () => 'No encontramos esa cuenta.',
-
-  // Only the last step of the alta can reach these: the verification is parked
-  // in KV for ten minutes and the account is chosen out of what it holds.
-  verification_expired: () => 'La verificación expiró. Vuelve a empezar el alta.',
-  unknown_account: () => 'Esa cuenta ya no está en la lista. Vuelve a verificar.',
-  invalid_account: () => 'Ese número de cuenta no es válido. Revísalo e intenta de nuevo.',
-  account_already_linked: () => 'Esa cuenta ya está conectada.',
+  not_found: () => 'No encontramos ese banco conectado.',
+  account_already_linked: () => 'Ya tienes ese banco conectado con esas credenciales.',
 };
 
 /** The default subject: a refusal that arrived before we knew which bank. */

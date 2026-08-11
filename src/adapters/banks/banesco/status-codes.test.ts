@@ -35,8 +35,11 @@ describe('classifyStatus', () => {
     expect(classifyStatus('70001')).toEqual({ kind: 'no_results' });
   });
 
-  it('maps 70005 to a range that must be split, which the user never sees', () => {
-    expect(classifyStatus('70005')).toEqual({ kind: 'split_range' });
+  it('maps 70005 to unavailable — it answers a range question we no longer ask', () => {
+    // "Split the date range" belonged to the account listing, which is gone with
+    // the receiving account. Reaching it from a single-day pago móvil search is
+    // the bank answering something else, and 'unavailable' is the honest word.
+    expect(classifyStatus('70005')).toEqual({ kind: 'failure', failure: 'unavailable' });
   });
 
   it('reads a code the bank sent as a number', () => {

@@ -1,12 +1,12 @@
 'use client';
 
 /**
- * The "Bancos" panel's one interactive piece: the button that opens the
- * onboarding wizard in a modal. The list of connected accounts is server-
- * rendered above it; this only owns the add flow, so a page with a bank already
- * connected still renders and reads without any client JS having run.
+ * The "Bancos" panel's one interactive piece: the button that opens the connect
+ * form in a modal. The list of connected banks is server-rendered above it; this
+ * only owns the add flow, so a page with a bank already connected still renders
+ * and reads without any client JS having run.
  *
- * It is handed every supported bank and passes them whole to the wizard, which
+ * It is handed every supported bank and passes them whole to the form, which
  * opens with a bank picker — one bank today (Banesco), but nothing here names it.
  */
 import { useState } from 'react';
@@ -16,27 +16,20 @@ import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog.tsx
 import type { SupportedBank } from '../../../application/banking/list-supported-banks.ts';
 import { Icon } from '../../_components/icon.tsx';
 import { ConnectWizard } from './connect-wizard.tsx';
-import type { ConnectState, VerifyState } from './form-state.ts';
+import type { ConnectState } from './form-state.ts';
 
 type BanksPanelProps = {
-  /** Every bank a company can connect. Passed whole; the wizard picks one. */
+  /** Every bank a company can connect. Passed whole; the form picks one. */
   banks: readonly SupportedBank[];
-  /** Whether the company already has an account, which changes the button copy. */
+  /** Whether the company already has one, which changes the button copy. */
   hasAccount: boolean;
-  /** The admin panel passes its own verify/connect actions + the target company
-   *  to set a company up; omit them for a company's own /banks page. */
-  verifyAction?: (previous: VerifyState, form: FormData) => Promise<VerifyState>;
+  /** The admin panel passes its own connect action + the target company to set a
+   *  company up; omit them for a company's own /banks page. */
   connectAction?: (previous: ConnectState, form: FormData) => Promise<ConnectState>;
   companyId?: string;
 };
 
-export function BanksPanel({
-  banks,
-  hasAccount,
-  verifyAction,
-  connectAction,
-  companyId,
-}: BanksPanelProps) {
+export function BanksPanel({ banks, hasAccount, connectAction, companyId }: BanksPanelProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -44,7 +37,7 @@ export function BanksPanel({
       <DialogTrigger asChild>
         <Button className="h-10">
           <Icon name="plus" />
-          {hasAccount ? 'Conectar otra cuenta' : 'Conectar banco'}
+          {hasAccount ? 'Conectar otro banco' : 'Conectar banco'}
         </Button>
       </DialogTrigger>
 
@@ -52,7 +45,6 @@ export function BanksPanel({
         <ConnectWizard
           banks={banks}
           onClose={() => setOpen(false)}
-          verifyAction={verifyAction}
           connectAction={connectAction}
           companyId={companyId}
         />

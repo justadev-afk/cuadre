@@ -1,7 +1,7 @@
 /**
  * Manual live smoke against Banesco QA — NOT a test, and never run by CI.
  *
- * §11 of CLAUDE.md is firm: never call a real bank from a test. This honours
+ * §12 of CLAUDE.md is firm: never call a real bank from a test. This honours
  * that. It is a script the maintainer runs by hand to confirm the QA
  * integration still answers — the same category as `seed-demo.ts`, a tool rather
  * than part of `bun run test`. The regression that guards the *logic* lives in
@@ -15,19 +15,15 @@
  *   BANESCO_QA_CONFIRMATION_CLIENT_SECRET=... \
  *   bun run scripts/banesco-smoke.ts
  *
- * It authenticates on the Confirmación (operate) client and looks up the known
- * QA pago móvil — ref 12346090431 → CR Bs 630 on the …5394 account. Prints
- * PASS/FAIL and exits non-zero on anything but a confirmed match, so it can gate
- * a manual release check. Override the target with BANESCO_QA_REFERENCE /
- * BANESCO_QA_ACCOUNT / BANESCO_QA_PAYER_PHONE / BANESCO_QA_SOURCE_BANK /
- * BANESCO_QA_ON_DATE if the QA fixture ever moves.
+ * It authenticates on the Confirmación client and looks up the known QA pago
+ * móvil the way the counter now does — **last six digits of the reference,
+ * payer's phone, payer's bank code and the date** — which is the one search
+ * modality Banesco offers for a pago móvil. Prints PASS/FAIL and exits non-zero
+ * on anything but a confirmed match, so it can gate a manual release check.
  *
- * Setting BANESCO_QA_PAYER_PHONE to the empty string runs the *transferencia*
- * case — a payment with no phone behind it, found on the reference alone:
- *
- *   BANESCO_QA_REFERENCE=00000150496 BANESCO_QA_PAYER_PHONE= \
- *   BANESCO_QA_CONFIRMATION_CLIENT_ID=... BANESCO_QA_CONFIRMATION_CLIENT_SECRET=... \
- *   bun run scripts/banesco-smoke.ts
+ * Override the target with BANESCO_QA_REFERENCE / BANESCO_QA_PAYER_PHONE /
+ * BANESCO_QA_SOURCE_BANK / BANESCO_QA_ON_DATE if the QA fixture ever moves. Set
+ * BANESCO_DEBUG=true to see the exact body that goes out.
  */
 import { BanescoGateway } from '../src/adapters/banks/banesco/gateway.ts';
 import type { BankGatewayDeps } from '../src/application/ports/bank-gateway.ts';
@@ -63,6 +59,9 @@ const deps: BankGatewayDeps = {
   tokens: memoryKv(),
   egressIp: process.env.BANK_EGRESS_IP ?? '0.0.0.0',
   userAgent: 'Cuadre/1.0 (banesco-smoke)',
+  // On by default here: the whole point of running this by hand is to see the
+  // wire. The bodies carry a phone and a reference and nothing secret.
+  debug: process.env.BANESCO_DEBUG !== 'false',
 };
 
 const credentials = {
@@ -70,17 +69,13 @@ const credentials = {
   clientSecret: required('BANESCO_QA_CONFIRMATION_CLIENT_SECRET'),
 };
 
-const reference = process.env.BANESCO_QA_REFERENCE ?? '12346090431';
-const accountId = process.env.BANESCO_QA_ACCOUNT ?? '01340804108041005394';
-// Unset is the pago móvil fixture; set-but-empty is the transferencia one,
-// which carries no phone at all and is looked up on its reference alone.
-const phoneVar = process.env.BANESCO_QA_PAYER_PHONE;
-const payerPhone = phoneVar === undefined ? '584143775031' : phoneVar.trim() || null;
+const gateway = new BanescoGateway(deps);
+
+// The QA pago móvil is ref 12346090431; the counter asks by its last six.
+const reference = process.env.BANESCO_QA_REFERENCE ?? '090431';
+const payerPhone = process.env.BANESCO_QA_PAYER_PHONE ?? '584143775031';
 const sourceBankId = process.env.BANESCO_QA_SOURCE_BANK ?? '0134';
 const onDate = process.env.BANESCO_QA_ON_DATE ?? new Date().toISOString().slice(0, 10);
-const tail = `…${accountId.slice(-4)}`;
-
-const gateway = new BanescoGateway(deps);
 
 const session = await gateway.authenticate('sandbox', credentials);
 if (!session.ok) {
@@ -90,7 +85,6 @@ if (!session.ok) {
 
 const found = await gateway.findPayment(session.value, {
   reference,
-  accountId,
   payerPhone,
   sourceBankId,
   onDate,
@@ -106,36 +100,15 @@ if (found.value !== null) {
   const movement = found.value.movement;
   process.stdout.write(
     `✅ PASS — ref ${reference}: ${movement.isCredit ? 'CR' : 'DB'} ${movement.amountCents} cents ` +
-      `(${movement.currency}) via ${found.value.strategy} on account ${tail}\n`,
+      `(${movement.currency}), reportado como ${movement.reference}\n`,
   );
   process.exit(0);
 }
 
-// Not on the connected account. Re-ask with the account filter OFF (an empty
-// accountId makes the last-four check a no-op) to reveal whether the bank has
-// this payment at all, and on which account — the whole point when a validation
-// says "todavía no aparece" but the payment plainly exists.
-const probe = await gateway.findPayment(session.value, {
-  reference,
-  accountId: '',
-  payerPhone,
-  sourceBankId,
-  onDate,
-  sessionId: 'banesco-smoke-probe',
-});
-
-if (probe.ok && probe.value !== null) {
-  const onAccount = probe.value.movement.accountMasked || '(sin máscara de cuenta)';
-  process.stderr.write(
-    `❌ ref ${reference} EXISTE, pero en la cuenta ${onAccount} — no en la conectada ${tail}.\n` +
-      `   Conecta la cuenta ${onAccount} (es la que recibió el pago), no la ${tail}.\n`,
-  );
-  process.exit(1);
-}
-
 process.stderr.write(
-  `❌ ref ${reference}: el banco no lo reporta ni ignorando la cuenta.\n` +
-    '   O estas credenciales de Confirmación no ven ese pago (otro RIF/afiliación),\n' +
-    '   o el dato de QA cambió. No es la cuenta: es el pago o las credenciales.\n',
+  `❌ ref ${reference}: el banco no reporta ese pago móvil.\n` +
+    `   Se preguntó con teléfono ${payerPhone}, banco ${sourceBankId}, fecha ${onDate}.\n` +
+    '   Revisa que los cuatro coincidan con el pago de QA: la búsqueda por últimos\n' +
+    '   6 dígitos exige los cuatro, y falla en silencio si alguno no cuadra.\n',
 );
 process.exit(1);

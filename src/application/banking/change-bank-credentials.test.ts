@@ -3,11 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type {
   BankAccount,
   BankAccountWriteFailure,
-  NewStoredCredential,
 } from '../../adapters/d1/bank-account.repository.ts';
 import { fixedClock } from '../../shared/clock.ts';
-import { seal, unseal } from '../../shared/crypto.ts';
-import { fakeIdGen } from '../../shared/id.ts';
+import { type Sealed, seal, unseal } from '../../shared/crypto.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import type { BankFailure, BankGateway, BankSession } from '../ports/bank-gateway.ts';
 import type { AccountCredentials } from './account-credentials.ts';
@@ -15,7 +13,6 @@ import { makeChangeBankCredentials } from './change-bank-credentials.ts';
 
 const NOW = 1_770_000_000;
 const CREDS_KEY = 'a-test-master-key-of-at-least-32-bytes';
-const ACCOUNT_NUMBER = '01340123450123458514';
 
 /** The secret already sealed on the row — it is never read back to the caller. */
 const OLD: AccountCredentials = { main: { clientId: 'old-client-000000', clientSecret: 'old' } };
@@ -30,19 +27,10 @@ async function account(overrides: Partial<BankAccount> = {}): Promise<BankAccoun
     companyId: 'la-espiga',
     bank: 'banesco',
     environment: 'production',
+    label: 'Caja principal',
+    receivingAccounts: [],
     clientIdLast6: '000000',
-    accountNumber: ACCOUNT_NUMBER,
-    credentials: [
-      {
-        credKey: 'main',
-        usage: 'operate',
-        clientIdLast6: '000000',
-        credentials: await seal(CREDS_KEY, OLD.main),
-      },
-    ],
-    accountLast4: '8514',
-    accountType: 'Corriente',
-    holderId: 'J-12345678-9',
+    credentials: await seal(CREDS_KEY, OLD),
     verifiedAt: NOW - 86_400 * 30,
     credsExpireAt: null,
     status: 'active',
@@ -51,37 +39,40 @@ async function account(overrides: Partial<BankAccount> = {}): Promise<BankAccoun
   };
 }
 
+/** The one kind these tests care about; the gateway's shape, not its behaviour. */
+const PAGO_MOVIL = {
+  kind: 'pago_movil',
+  label: 'Pago móvil',
+  referenceDigits: 6,
+  needsPayerPhone: true,
+  needsReceivingAccount: false,
+  needsDate: true,
+} as const;
+
 function fakeBanks(authenticate?: Result<BankSession, BankFailure>) {
   const gateway: BankGateway = {
     id: 'banesco',
     displayName: 'Banesco',
     environments: ['production', 'sandbox'],
-    credentialGroups: [
-      { key: 'main', usage: 'operate', label: 'Principal', required: true, fields: [] },
-    ],
-    findsTransfers: true,
-    async authenticate() {
-      return authenticate ?? ok(SESSION);
-    },
+    credentialGroups: [{ key: 'main', label: 'Principal', required: true, fields: [] }],
+    operateKey: 'main',
+    discoverKey: 'main',
+    paymentKinds: [PAGO_MOVIL],
     async listAccounts() {
       return ok([]);
     },
+    async authenticate() {
+      return authenticate ?? ok(SESSION);
+    },
     async findPayment() {
       return ok(null);
-    },
-    async listMovements() {
-      return ok([]);
     },
   };
   return { get: () => gateway };
 }
 
 function fakeAccounts(stored: BankAccount) {
-  const updates: {
-    credentials: readonly NewStoredCredential[];
-    clientIdLast6: string | null;
-    verifiedAt: number;
-  }[] = [];
+  const updates: { credentials: Sealed; clientIdLast6: string | null; verifiedAt: number }[] = [];
 
   return {
     updates,
@@ -91,7 +82,7 @@ function fakeAccounts(stored: BankAccount) {
       },
       async replaceCredentials(
         _id: string,
-        credentials: readonly NewStoredCredential[],
+        credentials: Sealed,
         clientIdLast6: string | null,
         verifiedAt: number,
       ): Promise<Result<BankAccount, BankAccountWriteFailure>> {
@@ -118,7 +109,6 @@ async function harness(
     accounts: store.accounts,
     credsKey: CREDS_KEY,
     clock: fixedClock(NOW),
-    ids: fakeIdGen({ uuids: ['cred-1', 'cred-2'] }),
   });
   return { changeBankCredentials, ...store };
 }
@@ -136,12 +126,9 @@ describe('change bank credentials', () => {
       value: { status: 'active', clientIdLast6: '999999' },
     });
     expect(updates).toHaveLength(1);
-    // The account is rewritten with one row for the NEW pair; the account number
-    // is not among the arguments — its envelope is left untouched.
-    const rows = updates[0].credentials;
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ credKey: 'main', usage: 'operate', clientIdLast6: '999999' });
-    expect(await unseal(CREDS_KEY, rows[0].credentials)).toEqual(NEW.main);
+    // The whole map is re-sealed as one value, keyed by service — so a pair the
+    // merchant left blank is a pair removed, not one left behind.
+    expect(await unseal(CREDS_KEY, updates[0].credentials)).toEqual(NEW);
     expect(updates[0].verifiedAt).toBe(NOW);
   });
 
