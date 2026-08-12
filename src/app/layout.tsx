@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
 import { Toaster } from '../components/ui/sonner.tsx';
+import { brandIcon, faviconIco } from './_lib/brand.ts';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -17,17 +18,18 @@ export const metadata: Metadata = {
   // it unless it is declared here — without this line the PWA is not
   // installable and none of its icons are ever fetched.
   manifest: '/manifest.webmanifest',
-  // Two marks, one family: `icon.svg` (phone, flag, check) is the app icon, and
-  // `favicon.svg` is the same idea redrawn for 16px, where the bezels, the
-  // notch and the badge would only turn to mush. The `.ico` carries 16/32/48
-  // for the browsers that still ask for it by path.
+  // Two marks, one family: `icon.svg` (the tricolour tablet with the
+  // confirmation check) is the app icon, and `favicon.svg` is the same idea
+  // redrawn for 16px, where the camera, the home bar and the badge would only
+  // turn to mush. The `.ico` carries 16/32/48 for the browsers that still ask
+  // for it by path. Every one of them is versioned — see `_lib/brand.ts`.
   icons: {
     icon: [
-      { url: '/icons/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico', sizes: '48x48' },
+      { url: brandIcon('favicon.svg'), type: 'image/svg+xml' },
+      { url: faviconIco(), sizes: '48x48' },
     ],
     // iOS rounds the touch icon itself, so that PNG is square and opaque.
-    apple: { url: '/icons/apple-touch-icon.png', sizes: '180x180' },
+    apple: { url: brandIcon('apple-touch-icon.png'), sizes: '180x180' },
   },
   appleWebApp: { capable: true, title: 'Cuadre', statusBarStyle: 'black-translucent' },
 };

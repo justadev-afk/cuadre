@@ -1,5 +1,7 @@
 import type { MetadataRoute } from 'next';
 
+import { brandIcon } from './_lib/brand.ts';
+
 /**
  * The PWA manifest, served at `/manifest.webmanifest`.
  *
@@ -9,7 +11,9 @@ import type { MetadataRoute } from 'next';
  * express till is the PWA's, so the app reopens straight there rather than on
  * the shell. The colours are Nocturne's ground so the splash and the status bar
  * match the first paint. Icons are served from the Worker's own `public/`,
- * never a CDN.
+ * never a CDN, and carry `?v=` (`_lib/brand.ts`) — an installed app only picks
+ * up new artwork when this document changes, and it does not change when the
+ * bytes behind an unchanged URL do.
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -23,9 +27,9 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#161826',
     lang: 'es-VE',
     icons: [
-      { src: '/icons/192.png', sizes: '192x192', type: 'image/png' },
-      { src: '/icons/512.png', sizes: '512x512', type: 'image/png' },
-      { src: '/icons/maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: brandIcon('192.png'), sizes: '192x192', type: 'image/png' },
+      { src: brandIcon('512.png'), sizes: '512x512', type: 'image/png' },
+      { src: brandIcon('maskable.png'), sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [{ name: 'Mis validaciones', url: '/my-validations' }],
   };

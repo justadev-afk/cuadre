@@ -11,6 +11,7 @@
  * a neutral shield, because the platform team's own door is deliberately not the
  * merchant's product and should not wear the merchant's logo.
  */
+import { brandIcon } from '../_lib/brand.ts';
 import { Icon } from './icon.tsx';
 
 type BrandProps = {
@@ -36,8 +37,10 @@ export function Brand({ size = 24, internal = false, markOnly = false }: BrandPr
         // The mark already carries its own rounded tile, so it needs no frame —
         // just the image at the asked size. `alt` is empty when the wordmark
         // spells the name beside it, and names the brand when it stands alone.
+        // Versioned like every other reference to it: the service worker caches
+        // `/icons/` and would otherwise keep painting the drawing it first saw.
         <img
-          src="/icons/icon.svg"
+          src={brandIcon('icon.svg')}
           alt={markOnly ? 'Cuadre' : ''}
           width={size}
           height={size}

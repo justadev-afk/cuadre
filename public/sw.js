@@ -8,7 +8,12 @@
  * makes for data falls straight through to the network with no cache in front
  * of it.
  */
-const SHELL_CACHE = 'cuadre-shell-v1';
+/*
+ * Bumped when the shell's cacheable set changes meaning — v2 drops every entry
+ * cached under the icons' old unversioned URLs, which is what kept the previous
+ * drawing on screen after the mark was redrawn.
+ */
+const SHELL_CACHE = 'cuadre-shell-v2';
 
 self.addEventListener('install', (event) => {
   // Nothing to pre-cache: the shell is content-hashed and populated lazily on
@@ -42,7 +47,11 @@ self.addEventListener('fetch', (event) => {
   if (!isShell) return;
 
   // Stale-while-revalidate: answer from cache instantly, refresh in the
-  // background. Safe here precisely because these URLs are immutable.
+  // background. Safe only because these URLs are immutable — the build assets
+  // by their content hash, the icons by the `?v=` every reference to them
+  // carries (`src/app/_lib/brand.ts`). An icon cached under a bare
+  // `/icons/icon.svg` outlived two redraws, which is why the version is in the
+  // URL now and not only in the file.
   event.respondWith(
     (async () => {
       const cache = await caches.open(SHELL_CACHE);
