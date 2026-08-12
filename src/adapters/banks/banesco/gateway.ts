@@ -30,9 +30,10 @@ import { err, ok, type Result } from '../../../shared/result.ts';
 import {
   type BanescoConfirmationCall,
   BanescoConfirmationClient,
+  isInterbankTransferencia,
   REFERENCE_TAIL_DIGITS,
 } from './confirmation.client.ts';
-import { BANESCO_ID, hasProductionEndpoints } from './endpoints.ts';
+import { BANESCO_ID, BANESCO_SUDEBAN_CODE, hasProductionEndpoints } from './endpoints.ts';
 import { type BanescoDevice, serverDevice } from './envelope.ts';
 import { BanescoOauthClient } from './oauth.client.ts';
 
@@ -84,8 +85,12 @@ export class BanescoGateway implements BankGateway {
    * full number is what a cashier is reading off the screen in front of them,
    * and asking for six of eleven digits invites transcribing the wrong six.
    *
-   * `needsDate: false` on the transferencia is the one that looks like an
-   * oversight and is not. See `findTransferencia`.
+   * Both kinds take a date, and for a transferencia that is a *collection*
+   * rather than a promise it travels: a Banesco→Banesco transfer is found only
+   * when `startDt` is absent, an interbank one only when it is present, and
+   * which of the two a payment is is the payer's bank — not a question worth
+   * putting to a cashier. So the till asks for the day either way and
+   * `findTransferencia` decides what reaches the wire.
    */
   readonly paymentKinds: readonly BankPaymentKind[] = [
     {
@@ -102,7 +107,7 @@ export class BanescoGateway implements BankGateway {
       referenceDigits: null,
       needsPayerPhone: false,
       needsReceivingAccount: true,
-      needsDate: false,
+      needsDate: true,
     },
   ];
 
@@ -114,7 +119,9 @@ export class BanescoGateway implements BankGateway {
    */
   readonly receivingAccountRule = {
     digits: 20,
-    prefix: '0134',
+    // The same four digits that decide the modality: an account at Banesco
+    // begins with Banesco's Sudeban code, and it is one fact, not two.
+    prefix: BANESCO_SUDEBAN_CODE,
     label: 'Cuentas que reciben transferencias',
     placeholder: '01340804108041005394',
   };
@@ -176,10 +183,12 @@ export class BanescoGateway implements BankGateway {
   }
 
   /**
-   * One call, in the shape the kind declares. There is no fallback between the
-   * two: each modality answers its own kind of payment and returns
-   * `70001 · sin resultados` for the other, so a second attempt would only spend
-   * a round trip at the counter to be told nothing.
+   * One call, in the shape the kind — and, for a transferencia, the payer's bank
+   * — calls for. There is no fallback between the modalities: each answers its
+   * own kind of payment and returns `70001 · sin resultados` for the others, so
+   * a second attempt would only spend a round trip at the counter to be told
+   * nothing. It is also what the bank's desk complained about on 2026-08-11: a
+   * first call that misses is a call whose fields they never see.
    */
   async findPayment(
     session: BankSession,
@@ -197,6 +206,7 @@ export class BanescoGateway implements BankGateway {
             reference: query.reference,
             receivingAccount: required(query.receivingAccount, 'receivingAccount'),
             sourceBankId: query.sourceBankId,
+            onDate: required(query.onDate, 'onDate'),
           })
         : await this.confirmation.findPagoMovil(call, {
             reference: query.reference,
@@ -208,15 +218,7 @@ export class BanescoGateway implements BankGateway {
     if (outcome.kind === 'failure') return err(outcome.failure);
     if (outcome.kind === 'movements') {
       const match = select(outcome.movements, query);
-      if (match) {
-        return ok({
-          movement: match,
-          strategy:
-            query.kind === 'transferencia'
-              ? 'reference_tail_and_account'
-              : 'reference_tail_and_phone',
-        });
-      }
+      if (match) return ok({ movement: match, strategy: strategyFor(query) });
     }
 
     // The bank does not report this payment yet. That is an answer.
@@ -264,6 +266,23 @@ export class BanescoGateway implements BankGateway {
     });
     return probe.ok;
   }
+}
+
+/**
+ * Which of the three questions found it, recorded on the row.
+ *
+ * Three, not two, because a transferencia has two modalities and they are not
+ * interchangeable: the internal one is answered by the whole reference, the
+ * interbank one by its tail and the day. Flattening both into one label would
+ * hide exactly the distinction the bank spent a certification round asking us
+ * to make. The rule is `isInterbankTransferencia`, the same one that shaped the
+ * request, so the name a row carries cannot drift from what was sent.
+ */
+function strategyFor(query: FindPaymentQuery): FoundPayment['strategy'] {
+  if (query.kind !== 'transferencia') return 'reference_tail_and_phone';
+  return isInterbankTransferencia(query.sourceBankId)
+    ? 'reference_tail_and_account'
+    : 'exact_reference';
 }
 
 /** A field the kind promised would be there. Absent means we built a bad query. */

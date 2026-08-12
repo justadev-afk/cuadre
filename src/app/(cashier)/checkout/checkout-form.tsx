@@ -374,10 +374,9 @@ export function CheckoutForm({
    *
    * The two kinds are two claims about two different payments, and a reference
    * typed for one is not a head start on the other — but more than that, a value
-   * left behind can *reach the bank*: a `startDt` on a transferencia is what
-   * turns a movement it would have returned into "sin resultados". The use case
-   * drops what the kind does not take, and this makes sure the screen never
-   * shows it either.
+   * left behind can *reach the bank*, and Banesco is unforgiving about a field
+   * that should not have been there. The use case drops what the kind does not
+   * take, and this makes sure the screen never shows it either.
    */
   function chooseKind(next: PaymentKind): void {
     if (next === kind) return;
@@ -413,8 +412,9 @@ export function CheckoutForm({
       kind: spec.kind,
       reference,
       payerPhone,
-      // Only ever sent for a kind that takes one. The bank is unforgiving about
-      // the extras: a date on a transferencia finds nothing.
+      // Only ever sent for a kind that takes one: what a kind does not declare
+      // must not reach the wire, and a stale value left on the form by a cashier
+      // switching tabs is exactly how it would.
       receivingAccount: spec.needsReceivingAccount ? receivingAccount : null,
       sourceBankId: bank.code,
       amountCents: cents,
@@ -611,9 +611,10 @@ export function CheckoutForm({
           </div>
         </div>
 
-        {/* The amount shares its row with the date only where there is one — a
-            transferencia takes no date, and a half-width amount beside nothing
-            reads as a field that lost its neighbour. */}
+        {/* The amount shares its row with the date wherever the kind takes one —
+            both do, at Banesco — and takes the full width otherwise, since a
+            half-width amount beside nothing reads as a field that lost its
+            neighbour. */}
         <div className={cn('grid gap-3', spec?.needsDate ? 'grid-cols-2' : 'grid-cols-1')}>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={amountId}>Monto del cobro</Label>
@@ -640,12 +641,13 @@ export function CheckoutForm({
             </div>
           </div>
 
-          {/* Only where the kind takes a date. For a pago móvil the bank
-              searches a single day, so this is not decoration: a customer who
-              paid last night and turns up this morning is findable only because
-              the cashier can move it back. For a transferencia the bank finds
-              nothing when a date is sent at all, so the field is absent rather
-              than ignored. */}
+          {/* Only where the kind takes a date — and this is not decoration: the
+              bank searches a single day, so a customer who paid last night and
+              turns up this morning is findable only because the cashier can move
+              it back. A transferencia asks for it too, even though the day
+              reaches the bank on only one of its two modalities: which one it is
+              depends on the customer's bank, and "¿fue interbancaria?" is not a
+              question to put to someone with a queue in front of them. */}
           {spec?.needsDate ? (
             <PaymentDateField
               id={dateId}

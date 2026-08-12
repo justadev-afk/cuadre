@@ -21,14 +21,18 @@ const QUERY = {
   sessionId: 'cashier-session-1',
 } as const;
 
-/** The transferencia claim: an account instead of a phone, and no date at all. */
+/**
+ * The transferencia claim: an account instead of a phone, and a date the counter
+ * always collects — whether it reaches the bank is the payer's Sudeban code's
+ * business, not the till's.
+ */
 const TRANSFER_QUERY = {
   kind: 'transferencia',
   reference: '150496',
   payerPhone: null,
   receivingAccount: '01340804108041005394',
   sourceBankId: '0134',
-  onDate: null,
+  onDate: '2026-07-02',
   sessionId: 'cashier-session-1',
 } as const;
 
@@ -141,8 +145,10 @@ describe('BanescoGateway', () => {
     // Six for a pago móvil; the whole reference for a transferencia, which is
     // what the customer's receipt carries.
     expect(kinds.map((kind) => kind.referenceDigits)).toEqual([6, null]);
-    // The asymmetry is the point, and it is what QA answers to: a pago móvil
-    // needs a phone and a date, a transferencia an account and no date.
+    // The asymmetry is the point: a pago móvil needs a phone, a transferencia an
+    // account. Both need the day — the transferencia because one of its two
+    // modalities is searched by it, and the counter cannot know in advance which
+    // one a customer's bank makes it.
     expect(kinds[0]).toMatchObject({
       needsPayerPhone: true,
       needsReceivingAccount: false,
@@ -151,7 +157,7 @@ describe('BanescoGateway', () => {
     expect(kinds[1]).toMatchObject({
       needsPayerPhone: false,
       needsReceivingAccount: true,
-      needsDate: false,
+      needsDate: true,
     });
   });
 });
@@ -211,10 +217,11 @@ describe('authenticate', () => {
 });
 
 describe('findPayment · transferencia', () => {
-  it('asks by the whole reference and the receiving account, and sends NO date', async () => {
+  it('asks Banesco→Banesco by the whole reference and the receiving account, and sends NO date', async () => {
     // The omission is load-bearing: sending `startDt` turns a movement the bank
     // had just returned into `70001 · sin resultados`, verified against QA on
-    // the transferencia's own reported date.
+    // the transferencia's own reported date. The counter still collected the
+    // day — `TRANSFER_QUERY` carries one — and this is where it stops.
     const sent = stubBank([rows(detail({ referenceNumber: '150496', concept: 'TRANS.CTAS' }))]);
     const { gateway, session } = await authenticated();
 
@@ -231,9 +238,34 @@ describe('findPayment · transferencia', () => {
     expect(body).toContain('"accountId":"01340804108041005394"');
     expect(body).not.toContain('startDt');
     expect(body).not.toContain('phoneNum');
+    // Found by the whole reference, and the row says so. The interbank one
+    // below is a different question and is recorded as one.
     expect(found).toMatchObject({
       ok: true,
-      value: { strategy: 'reference_tail_and_account', movement: { reference: '150496' } },
+      value: { strategy: 'exact_reference', movement: { reference: '150496' } },
+    });
+  });
+
+  it('asks an interbank transferencia by the reference tail, the account and the date', async () => {
+    // What the bank asked us for on 2026-08-12: they were seeing the fields of
+    // the Banesco→Banesco modality and no interbank request at all.
+    const sent = stubBank([rows(detail({ referenceNumber: '150496', concept: 'TRANS.CTAS' }))]);
+    const { gateway, session } = await authenticated();
+
+    const found = await gateway.findPayment(session, {
+      ...TRANSFER_QUERY,
+      reference: '00000150496',
+      sourceBankId: '0102',
+    });
+
+    const body = paymentCalls(sent)[0].body;
+    expect(body).toContain('"referenceNumber":"150496"');
+    expect(body).toContain('"accountId":"01340804108041005394"');
+    expect(body).toContain('"bankId":"0102"');
+    expect(body).toContain('"startDt":"2026-07-02"');
+    expect(found).toMatchObject({
+      ok: true,
+      value: { strategy: 'reference_tail_and_account' },
     });
   });
 

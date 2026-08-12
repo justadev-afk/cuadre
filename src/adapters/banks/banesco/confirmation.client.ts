@@ -2,21 +2,35 @@
  * Confirmation of Transactions: the endpoint that answers "did this pago móvil
  * land?".
  *
- * One URL, two questions, told apart only by the shape of the `transaction`
- * object we put in the envelope. **Both shapes are what QA actually answers**,
- * probed field by field on 2026-08-11, not what the manual lists:
+ * One URL, **three** questions, told apart only by the shape of the
+ * `transaction` object we put in the envelope:
  *
- *   pago móvil     reference tail + `phoneNum` + `bankId` + `startDt`
- *                  (manual §VI example c). Drop any of the four and the bank
- *                  answers `70001 · sin resultados`.
+ *   pago móvil                  reference tail + `phoneNum` + `bankId` +
+ *                               `startDt` (manual §VI). Drop any of the four and
+ *                               the bank answers `70001 · sin resultados`.
+ *                               Verified against QA on 2026-08-11.
  *
- *   transferencia  the **whole** reference + `accountId`, the merchant's own
- *                  receiving account. The manual lists `startDt` and `bankId` among
- *                  that modality's required fields; sending `startDt` makes the
- *                  search **fail** — ref 150496 on account …5394 returns the
- *                  movement without it and `70001` with it, on the very date the
- *                  bank itself reports for that movement. `bankId` is harmless
- *                  and travels, because the payer's bank is worth telling them.
+ *   transferencia Banesco→      the **whole** reference + `accountId`, the
+ *   Banesco                     merchant's own receiving account, and **no
+ *                               date**. Verified against QA: ref 150496 on
+ *                               account …5394 returns the movement without
+ *                               `startDt` and `70001` with it, on the very date
+ *                               the bank itself reports for that movement.
+ *
+ *   transferencia               the reference **tail** + `accountId` +
+ *   interbancaria               `bankId` + `startDt` — the modality v1.3 of the
+ *                               manual added "para solo Transferencias
+ *                               Interbancarias", and the one the bank's desk
+ *                               asked for on 2026-08-12 after seeing only the
+ *                               internal shape in our traffic. QA holds no
+ *                               interbank movement to prove it against (the bank
+ *                               said so in the meeting), so this shape is the
+ *                               manual's, faithfully, rather than something we
+ *                               have watched answer.
+ *
+ * Which of the two transferencia shapes travels is decided by one field — the
+ * payer's Sudeban code — and by nothing on the screen: a cashier picks the
+ * customer's bank, not a modality.
  *
  * "No results" comes back from here as its own outcome rather than as a
  * failure, because it is not a fault — it is *todavía no aparece*.
@@ -29,7 +43,7 @@ import type {
 import { logger } from '../../../shared/logger.ts';
 import { bankFetch, parseJsonBody } from '../http.ts';
 import { debugBanescoCall } from './debug.ts';
-import { BANESCO_ID, banescoEndpoints } from './endpoints.ts';
+import { BANESCO_ID, BANESCO_SUDEBAN_CODE, banescoEndpoints } from './endpoints.ts';
 import { type BanescoDevice, dataRequest } from './envelope.ts';
 import { classifyStatus, failureForHttpStatus } from './status-codes.ts';
 import { ConfirmationReply, toMovements } from './transaction-detail.ts';
@@ -72,13 +86,34 @@ export type PagoMovilQuery = {
 };
 
 export type TransferenciaQuery = {
-  /** The whole reference the customer's receipt carries. Sent as it is. */
+  /**
+   * The whole reference the customer's receipt carries. Sent as it is to the
+   * internal modality, trimmed to its tail for the interbank one.
+   */
   reference: string;
   /** The merchant's receiving account, **full**: a masked one is refused (400). */
   receivingAccount: string;
-  /** Sudeban code of the paying bank. Optional to the bank, sent when known. */
-  sourceBankId: string | null;
+  /**
+   * Sudeban code of the paying bank. Never optional here: it is what chooses
+   * between the two transferencia modalities.
+   */
+  sourceBankId: string;
+  /**
+   * `YYYY-MM-DD`, Venezuela local. Travels on an interbank transferencia and is
+   * **dropped** on a Banesco→Banesco one, where sending it finds nothing. The
+   * counter collects it either way — see `findTransferencia`.
+   */
+  onDate: string;
 };
+
+/**
+ * Did the money come from another entity? The one rule that chooses a
+ * transferencia's modality, written once so the shape of the request and the
+ * name it is recorded under cannot disagree about it (§11).
+ */
+export function isInterbankTransferencia(sourceBankId: string): boolean {
+  return sourceBankId !== BANESCO_SUDEBAN_CODE;
+}
 
 export interface ConfirmationClient {
   findPagoMovil(call: BanescoConfirmationCall, query: PagoMovilQuery): Promise<ConfirmationOutcome>;
@@ -118,28 +153,52 @@ export class BanescoConfirmationClient implements ConfirmationClient {
   }
 
   /**
-   * The reference tail and the receiving account — and **no date**.
+   * A transferencia, in whichever of its **two** modalities the payer's bank
+   * calls for. The choice is made here and nowhere else — a caller passes what
+   * the cashier collected and this decides what the bank is asked.
    *
-   * The omission is the whole subtlety of this method and it is load-bearing, so
-   * it is not left to a caller to remember: adding `startDt` turns a movement
-   * the bank had just returned into `70001 · sin resultados`, verified on the
-   * transferencia's own reported date. Whatever the manual says, this shape is
-   * the one that answers.
+   *  - **From another entity** (interbancaria): the reference *tail*, the
+   *    receiving account, the payer's bank and the date. This is the modality
+   *    the manual's v1.3 added for interbank transfers specifically, and the one
+   *    Banesco asked for on 2026-08-12 — they were seeing only the internal
+   *    shape arrive.
+   *  - **From Banesco itself**: the *whole* reference and the account, with
+   *    **no date**. That omission is load-bearing and is why it is not left to a
+   *    caller to remember: adding `startDt` turns a movement the bank had just
+   *    returned into `70001 · sin resultados`, verified on the transferencia's
+   *    own reported date.
+   *
+   * So the date is collected for both and travels for one. A cashier is asked
+   * for the day of the payment whichever bank the customer used — the field is
+   * not a modality switch in disguise — and it is dropped, here, when the bank
+   * it is going to would refuse it.
    */
   async findTransferencia(
     call: BanescoConfirmationCall,
     query: TransferenciaQuery,
   ): Promise<ConfirmationOutcome> {
-    const transaction: TransactionQuery = {
-      // Whole, not trimmed: this modality is asked with the full reference.
-      // The bank answers `150496` to `00000150496` either way — its own
-      // unpadded spelling — which `sameReference` folds.
-      referenceNumber: query.reference.replace(/\D/g, ''),
-      accountId: query.receivingAccount,
-    };
-    if (query.sourceBankId !== null) transaction.bankId = query.sourceBankId;
+    const interbank = isInterbankTransferencia(query.sourceBankId);
 
-    return this.post(call, 'transferencia', transaction);
+    // The bank answers `150496` to both `00000150496` and `150496` — its own
+    // unpadded spelling — which `sameReference` folds either way.
+    const transaction: TransactionQuery = interbank
+      ? {
+          referenceNumber: referenceTail(query.reference),
+          accountId: query.receivingAccount,
+          bankId: query.sourceBankId,
+          startDt: query.onDate,
+        }
+      : {
+          referenceNumber: query.reference.replace(/\D/g, ''),
+          accountId: query.receivingAccount,
+          bankId: query.sourceBankId,
+        };
+
+    return this.post(
+      call,
+      interbank ? 'transferencia_interbancaria' : 'transferencia_banesco',
+      transaction,
+    );
   }
 
   // ── the wire ─────────────────────────────────────────────────────────────

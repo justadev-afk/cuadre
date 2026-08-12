@@ -167,3 +167,65 @@ describe('BanescoConfirmationClient.findPagoMovil', () => {
     });
   });
 });
+
+/**
+ * The table is the specification, and here it has two rows because Banesco reads
+ * a transferencia two ways. Which one travels is the payer's Sudeban code and
+ * nothing else — the bank's desk told us on 2026-08-12 that they were seeing
+ * only the internal shape arrive, and this is the pair of requests that answers
+ * them.
+ */
+describe('BanescoConfirmationClient.findTransferencia', () => {
+  const transfer = {
+    reference: '00000150496',
+    receivingAccount: '01340804108041005394',
+    onDate: '2026-07-02',
+  };
+
+  it('asks Banesco→Banesco by the whole reference and the account, with NO date', async () => {
+    // The omission is load-bearing: sending `startDt` turns a movement the bank
+    // had just returned into `70001 · sin resultados`, verified against QA on
+    // the transferencia's own reported date.
+    const sent = stubBank([found]);
+
+    await CLIENT.findTransferencia(CALL, { ...transfer, sourceBankId: '0134' });
+
+    expect(transactionOf(sent[0])).toEqual({
+      referenceNumber: '00000150496',
+      accountId: '01340804108041005394',
+      bankId: '0134',
+    });
+  });
+
+  it('asks an interbank transferencia by the reference tail, the account, the bank and the date', async () => {
+    // Manual V1.3: "Búsqueda por Referencia (últimos 6 dígitos) y Número de
+    // Cuenta", added in that version "para solo Transferencias Interbancarias".
+    const sent = stubBank([found]);
+
+    await CLIENT.findTransferencia(CALL, { ...transfer, sourceBankId: '0102' });
+
+    expect(transactionOf(sent[0])).toEqual({
+      referenceNumber: '150496',
+      accountId: '01340804108041005394',
+      bankId: '0102',
+      startDt: '2026-07-02',
+    });
+  });
+
+  it('never carries a phone, whichever modality it is', async () => {
+    const sent = stubBank([found, found]);
+
+    await CLIENT.findTransferencia(CALL, { ...transfer, sourceBankId: '0134' });
+    await CLIENT.findTransferencia(CALL, { ...transfer, sourceBankId: '0172' });
+
+    for (const call of sent) expect(transactionOf(call)).not.toHaveProperty('phoneNum');
+  });
+
+  it('reports no results as an answer, not as a failure', async () => {
+    stubBank([empty]);
+
+    expect(await CLIENT.findTransferencia(CALL, { ...transfer, sourceBankId: '0102' })).toEqual({
+      kind: 'no_results',
+    });
+  });
+});

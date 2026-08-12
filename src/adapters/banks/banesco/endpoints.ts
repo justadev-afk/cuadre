@@ -13,6 +13,17 @@ import { AppError } from '../../../shared/errors.ts';
 /** The registry key, and the value of `bank_accounts.bank`. */
 export const BANESCO_ID = 'banesco';
 
+/**
+ * Banesco's own Sudeban code — the four digits that say a payer banks *here*.
+ *
+ * Not decoration: it is what tells the two transferencia modalities apart. A
+ * transfer from another entity is *interbancaria* and is asked for one way; one
+ * from Banesco to Banesco is internal and is asked for another (see
+ * `confirmation.client.ts`). It sits beside `BANESCO_ID` because both are the
+ * bank's identity, in the two vocabularies that name it: ours and Sudeban's.
+ */
+export const BANESCO_SUDEBAN_CODE = '0134';
+
 export type BanescoEndpoints = {
   /** Keycloak. The realm is part of the path, so this is per-environment too. */
   token: string;

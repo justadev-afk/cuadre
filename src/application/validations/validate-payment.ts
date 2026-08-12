@@ -328,10 +328,15 @@ export function makeValidatePayment({
     // What it buys is the counter's worst case: re-scanning a receipt that was
     // already cobrado now answers instantly instead of spending a bank round
     // trip in front of a customer to be told what the table already knew.
-    // A kind with no date has nothing to pair a bare tail with, so its key is
-    // the canonical reference alone — which is also why a transferencia the bank
-    // answers by tail is deduped across days rather than within one. That is the
-    // honest reading of what the bank told us, not a shortcut.
+    // A kind with no date at all has nothing to pair a bare tail with, and its
+    // key is then the canonical reference alone.
+    //
+    // The prediction is exact wherever the bank searches the day it was given —
+    // every pago móvil, and an interbank transferencia. On a Banesco→Banesco
+    // transferencia the date is collected but not sent, so a cashier who
+    // re-scans the same receipt under a different day predicts a key the stored
+    // row does not carry: a miss, one round trip, and the check after the bank
+    // answers catches it. Missing is the only way this is allowed to be wrong.
     const claimKey = paymentKey({
       reference: claim.reference,
       occurredOn: claim.paymentDate ?? UNDATED,
@@ -434,10 +439,12 @@ export function makeValidatePayment({
     const referenceKey = paymentKey({
       reference: movement.reference,
       occurredOn: spec.needsDate ? venezuelaDate(movement.occurredAt) : UNDATED,
-      // What we actually sent, not what the kind declares: a transferencia is
-      // asked with the whole reference and answered with the bank's own
-      // six-digit spelling, and it is that comparison — answer against ask —
-      // that decides whether the reply is a tail needing the day folded in.
+      // What the cashier gave us, not what the kind declares: a transferencia is
+      // typed whole and answered with the bank's own six-digit spelling, and it
+      // is that comparison — answer against ask — that decides whether the reply
+      // is a tail needing the day folded in. An adapter that trims further
+      // before asking (Banesco does, on an interbank transferencia) only makes
+      // this stricter, and a stricter key can miss but never collide.
       askedDigits: askedDigits(claim.reference),
     });
 
@@ -602,9 +609,12 @@ function outcome(
  * parse is a round trip spent to be told `VDE02`.
  *
  * A field the kind does not take is **dropped, not merely ignored**. That is
- * the difference that matters: sending Banesco a `startDt` on a transferencia
- * turns a movement it would have returned into "sin resultados", so a stale
- * value left on the form by a cashier switching tabs must not reach the wire.
+ * the difference that matters: a stale value left on the form by a cashier
+ * switching tabs must not reach the wire, because Banesco answers "sin
+ * resultados" to a request carrying a field that modality did not ask for. What
+ * a kind *does* take always reaches the adapter, which is then free to withhold
+ * it from its bank — the date of a Banesco→Banesco transferencia is collected
+ * here and deliberately never sent.
  *
  * The reference is *trimmed*, not refused, when it is longer than the bank
  * asks for: a cashier who pasted the whole number gave us more than we needed,

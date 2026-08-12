@@ -207,12 +207,13 @@ gateway at call time.
   reference are all compared against what the bank returned. This lives in
   `src/domain/payment-match.ts` and is table-tested.
 - **Amount is exact.** No tolerance. Integer cents, always.
-- **Pago móvil, and nothing else** (Banesco, 2026-08-11). A pago móvil is made
-  *from* a phone, so the phone is required — `validations.payer_phone` is NOT
-  NULL again (0007), and the transferencia path 0005 opened is closed. The four
-  fields a search takes are the reference tail, the payer's phone, their bank's
-  Sudeban code and **the day it was paid**; the bank refuses to answer without
-  all four, silently, so the till collects all four.
+- **Two kinds, three searches, and the kind is stored** (`validations.kind`,
+  0008). A pago móvil is made *from* a phone, so it requires one and a
+  transferencia has none at all — `payer_phone` is nullable and the column that
+  says which is which is explicit, because "phone is null" is a guess, not a
+  fact. What each search takes is the gateway's `paymentKinds`, never a branch in
+  a use case, and the bank refuses **silently** — `70001 · sin resultados` — when
+  a field is missing or one it did not ask for is present. See §9 for the table.
 - **The date is the cashier's, and "hoy" follows the clock.** A till stays open
   all night: the field holds `null` for *hoy* and resolves the day at submit,
   never at render, or an 8am charge would quietly ask about yesterday.
@@ -384,12 +385,35 @@ Banesco reviewed the app live. Three requirements, all now implemented:
    fields. `BANESCO_DEBUG=true` prints method, path and body to prove it.
 3. **The date of the operation is a field**, defaulted to today on the checkout.
 
-The bank also described two shapes we deliberately do **not** implement yet: a
-transferencia *interbancaria* wants the reference tail plus the merchant's
-receiving account number, and an internal Banesco→Banesco transfer wants the
-full reference alone. Adding either means putting a receiving account number
-back on `bank_accounts` — which is exactly what 0007 removed, so it is a
-migration and a form field, not a switch.
+### The second round (2026-08-12) — a transferencia is two questions
+
+The bank read our traces and answered: the pago móvil fields are right, and
+**a transferencia is validated two different ways** depending on where the money
+came from. What they saw in our traffic was only the Banesco→Banesco shape;
+there was no interbank request at all, because we sent one shape for both.
+
+There are three modalities now, not two, and the payer's Sudeban code chooses
+between the last two — `isInterbankTransferencia` in
+`banesco/confirmation.client.ts`, one rule read by the request and by the name
+the row is recorded under:
+
+| | asked with |
+|---|---|
+| Pago móvil | reference tail · `phoneNum` · `bankId` · `startDt` |
+| Transferencia Banesco→Banesco | **whole** reference · `accountId` · `bankId` — **no date** |
+| Transferencia interbancaria | reference **tail** · `accountId` · `bankId` · `startDt` |
+
+**The till asks for the date on both kinds, and the adapter decides whether it
+travels.** A cashier is never asked "¿fue interbancaria?" — the question is
+answered by the bank they already picked, and one field that means two different
+things to the bank is exactly the kind of knowledge a counter must not carry.
+Sending `startDt` to the internal modality still turns a movement into
+`70001 · sin resultados` (verified 2026-08-11), so the drop happens in
+`findTransferencia` and is tested there.
+
+The interbank shape is the **manual's**, not something we have watched answer:
+QA holds no interbank movement (§ *Still open*, 2). It is the modality V1.3 of
+the manual added "para solo Transferencias Interbancarias".
 
 ### Consulta de Saldo is not used, and that is a decision with evidence
 
@@ -420,7 +444,10 @@ connection exactly as `connect` writes one.
    rather than guessing. Production credentials come after the bank validates
    the evidence of these changes (their action item from 2026-08-11).
 2. **QA has no interbank test data.** The bank said so in the meeting, so the
-   only pago móvil we can prove end to end is their own Banesco→Banesco one.
+   only movements we can prove end to end — pago móvil and transferencia alike —
+   are their own Banesco→Banesco ones. The interbank request is built from the
+   manual and answers `70001`, which is the honest evidence to send: the shape is
+   provable, the match is not.
 3. **`cuadre.ve` is not owned.** The app runs on `cuadre.jsansossio.com` and
    mail sends from the same zone. All three move together when the domain is
    bought: the route, `APP_BASE_URL` and `MAIL_FROM` in `wrangler.toml`.

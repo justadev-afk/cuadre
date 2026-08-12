@@ -55,8 +55,15 @@ export function ContentLayout({
     <main
       className={cn(
         'grid w-full max-w-[1040px] gap-x-6 gap-y-[18px] px-7 pt-[26px] max-[899px]:px-4 max-[899px]:pt-[18px]',
+        // `min-content` rather than 0 as the body row's floor: the express till
+        // stretches its card to the bottom of the PWA window, and on a short
+        // phone the window is shorter than the form. A 0 floor lets the row be
+        // squeezed under its own content, and what that looks like is the
+        // Validar button hanging out through the bottom of its card. With the
+        // floor at min-content the row keeps the height it needs and `min-h-full`
+        // lets the page scroll the last few pixels instead.
         fill
-          ? 'min-h-full grid-rows-[auto_minmax(0,1fr)] pb-7 max-[899px]:pb-4'
+          ? 'min-h-full grid-rows-[auto_minmax(min-content,1fr)] pb-7 max-[899px]:pb-4'
           : 'content-start pb-11 max-[899px]:pb-7',
         aside && 'min-[900px]:grid-cols-[minmax(0,1fr)_324px]',
         aside && (fill ? 'items-stretch' : 'items-start'),

@@ -14,10 +14,16 @@
  *
  * **Two kinds of payment, and a bank decides what each one takes.** A pago móvil
  * is found by the payer's phone, their bank's code and the date; a transferencia
- * by the merchant's own receiving account — and, verified against Banesco QA on
- * 2026-08-11, *without* a date, which makes the same search return
- * `70001 · sin resultados`. Neither shape is hard-coded here: a gateway declares
- * its `paymentKinds` and the counter renders one form per kind from that.
+ * by the merchant's own receiving account. Neither shape is hard-coded here: a
+ * gateway declares its `paymentKinds` and the counter renders one form per kind
+ * from that.
+ *
+ * What a kind *collects* is not what a bank is *sent*. Banesco reads a
+ * transferencia two ways — from another entity it wants the date, from itself
+ * that same date makes the search fail — and which one applies is the payer's
+ * bank, not an answer a cashier should be asked for. So the field is declared
+ * once on the kind and the adapter decides what travels. A port that carried
+ * "modality" would be a port with a bank's vocabulary in it.
  */
 import type { Result } from '../../shared/result.ts';
 
@@ -38,9 +44,11 @@ export type PaymentKind = 'pago_movil' | 'transferencia';
  * this and the use case refuses a claim that does not fit it, so neither has a
  * per-bank branch and neither says "six digits" or "needs a phone" itself.
  *
- * Every flag is a fact verified against the bank, not read off its manual. The
- * manual, for instance, lists `startDt` among the required fields of the
- * transferencia modality; sending it makes the search fail.
+ * Every flag says what the counter must *collect*, which is not always what
+ * reaches the bank: Banesco takes the date of a transferencia when the payer
+ * banks elsewhere and refuses to answer at all when it does not, and only the
+ * adapter is in a position to know which. A flag is therefore a question the
+ * screen asks, and where it lands is `findPayment`'s business.
  */
 export type BankPaymentKind = {
   readonly kind: PaymentKind;
@@ -61,7 +69,7 @@ export type BankPaymentKind = {
   readonly needsPayerPhone: boolean;
   /** The merchant's own receiving account, full — the transferencia's handle. */
   readonly needsReceivingAccount: boolean;
-  /** The day of the operation. False where sending it breaks the search. */
+  /** The day of the operation. False only where no search of this kind uses it. */
   readonly needsDate: boolean;
 };
 
@@ -224,10 +232,11 @@ export type BankFailure =
  * The one question the counter asks, in the shape the chosen `kind` declared.
  *
  * The optional fields are optional *per kind*, never per whim: a pago móvil
- * carries a phone and a date and no account, a transferencia the reverse. What
- * a kind declares it needs is present; what it declares it does not is `null`,
- * and an adapter must not send a `null` to its bank — for Banesco, sending the
- * date on a transferencia is precisely what makes the search fail.
+ * carries a phone and no account, a transferencia the reverse, and both carry
+ * the day. What a kind declares it needs is present; what it declares it does
+ * not is `null`. An adapter may still decline to forward a field it was given —
+ * Banesco drops the date on a Banesco→Banesco transferencia, where sending it is
+ * precisely what makes the search fail — but it can never invent one.
  */
 export type FindPaymentQuery = {
   readonly kind: PaymentKind;
@@ -248,7 +257,8 @@ export type FindPaymentQuery = {
 /**
  * A found payment, plus which route found it. `strategy` is recorded on the
  * validation row: when one route starts carrying all the traffic, that is
- * worth knowing before a merchant reports it.
+ * worth knowing before a merchant reports it — and a bank that reads one of its
+ * modalities differently from what we thought shows up here first.
  */
 export type FoundPayment = {
   movement: BankMovement;
