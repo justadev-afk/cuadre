@@ -14,7 +14,7 @@ const CREDENTIALS = {
 const QUERY = {
   kind: 'pago_movil',
   reference: '456789',
-  payerPhone: '584143125566',
+  payerPhone: '+584143125566',
   receivingAccount: null,
   sourceBankId: '0134',
   onDate: '2026-08-06',

@@ -12,6 +12,7 @@
 import type { SearchMode } from '../../adapters/d1/validation.repository.ts';
 import type { PaymentKind } from '../../application/ports/bank-gateway.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip.tsx';
+import { formatPhoneForDisplay } from '../../domain/phone.ts';
 import { kindLabel, kindMark } from '../_lib/payment-kind.ts';
 
 /**
@@ -59,7 +60,7 @@ export function PaymentKindMark({
         {search !== null && <div className="mt-0.5 text-muted-foreground">{search}</div>}
         {payerPhone !== null && (
           <div className="mt-0.5 text-muted-foreground">
-            Teléfono <span className="tabular-nums">{payerPhone}</span>
+            Teléfono <span className="tabular-nums">{formatPhoneForDisplay(payerPhone)}</span>
           </div>
         )}
         {payerPhone === null && kind === 'transferencia' && (

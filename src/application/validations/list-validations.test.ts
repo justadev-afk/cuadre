@@ -29,7 +29,7 @@ function validation(index: number, overrides: Partial<Validation> = {}): Validat
     referenceKey: `12345${String(index).padStart(4, '0')}`,
     amountCents: 124_000,
     currency: 'BS',
-    payerPhone: '584143125566',
+    payerPhone: '+584143125566',
     sourceBankId: '0134',
     trnAt: NOW - index * 60,
     latencyMs: 400,
@@ -180,8 +180,8 @@ describe('list validations', () => {
 
   it('finds a payer by a phone typed the way it is read aloud', async () => {
     const rows = [
-      validation(0, { payerPhone: '584241234567' }),
-      validation(1, { payerPhone: '584143125566' }),
+      validation(0, { payerPhone: '+584241234567' }),
+      validation(1, { payerPhone: '+584143125566' }),
     ];
     const { validations } = fakeValidations(rows);
     const listValidations = makeListValidations({ validations });
@@ -225,7 +225,7 @@ describe('list validations', () => {
   it('pages a search without repeating or skipping a match', async () => {
     // Every other row matches, so the page boundary lands mid-batch.
     const rows = Array.from({ length: 200 }, (_, index) =>
-      validation(index, { payerPhone: index % 2 === 0 ? '584143125566' : '584241234567' }),
+      validation(index, { payerPhone: index % 2 === 0 ? '+584143125566' : '+584241234567' }),
     );
     const { validations } = fakeValidations(rows);
     const listValidations = makeListValidations({ validations });
@@ -241,7 +241,7 @@ describe('list validations', () => {
     expect(second.items).toHaveLength(20);
     const ids = new Set([...first.items, ...second.items].map((item) => item.id));
     expect(ids.size).toBe(40);
-    expect(first.items.every((item) => item.payerPhone === '584143125566')).toBe(true);
+    expect(first.items.every((item) => item.payerPhone === '+584143125566')).toBe(true);
   });
 
   it('hands back a cursor when the scan budget runs out, never a false end', async () => {

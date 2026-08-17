@@ -13,7 +13,7 @@ const CALL: BanescoConfirmationCall = {
 
 const QUERY = {
   reference: '456789',
-  payerPhone: '584143125566',
+  payerPhone: '+584143125566',
   sourceBankId: '0134',
   onDate: '2026-08-06',
 };
@@ -102,6 +102,9 @@ describe('BanescoConfirmationClient.findPagoMovil', () => {
         device: { type: 'Server', description: 'Cuadre Worker', ipAddress: '200.11.22.33' },
         securityAuth: { sessionId: 'cashier-session-1' },
         transaction: {
+          // Bare digits: the query carries the domain's E.164 '+584143125566'
+          // and the plus is dropped here, because this field is the bank's and
+          // a plus in it answers `70001 · sin resultados`.
           referenceNumber: '456789',
           phoneNum: '584143125566',
           bankId: '0134',

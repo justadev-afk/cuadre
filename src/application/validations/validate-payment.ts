@@ -216,7 +216,7 @@ type Claim = {
   readonly kind: PaymentKind;
   /** Trimmed to the kind's `referenceDigits`. */
   readonly reference: string;
-  /** Canonical `584143125566`, or null where the kind takes no phone. */
+  /** Canonical E.164 `+584143125566`, or null where the kind takes no phone. */
   readonly payerPhone: string | null;
   /** The full receiving account, or null where the kind takes none. */
   readonly receivingAccount: string | null;

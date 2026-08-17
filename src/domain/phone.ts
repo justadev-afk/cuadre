@@ -1,11 +1,18 @@
 /**
  * The payer's mobile number.
  *
- * One canonical form, `584143125566`, because it is what the bank expects in
- * `FindPaymentQuery.payerPhone` and what `validations.payer_phone` stores. A
- * customer reads their number out as '0414-3125566' and a receipt prints it as
- * '+58 414 3125566'; both are the same payer, and storing them as two strings
- * would mean a reference lookup that matches on phone silently missing.
+ * One canonical form, and it is **E.164**: `+584143125566`. A customer reads
+ * their number out as '0414-3125566' and a receipt may arrive with '+58 414
+ * 3125566' on it; both are the same payer, and storing them as two strings
+ * would mean a lookup that matches on phone silently missing.
+ *
+ * The `+` is part of the format, not decoration. It is what says the digits
+ * after it are a country code rather than a trunk prefix — `584143125566` and
+ * `0584143125566` are not distinguishable by shape alone — and it is what makes
+ * a stored number recognisable as a phone number anywhere it is read: a column
+ * in the panel, a CSV a merchant exports, a row somebody eyeballs in the D1
+ * console. What a *bank* wants on the wire is that bank's own business: Banesco
+ * takes the bare digits, and its client strips the plus on the way out (§4).
  */
 
 /**
@@ -23,13 +30,11 @@ export const VENEZUELAN_MOBILE_PREFIXES: readonly string[] = [
 
 const COUNTRY_CODE = '58';
 
-/** Country code plus the ten national digits. */
-const CANONICAL_PHONE = /^58(\d{3})(\d{7})$/;
-
 /**
- * `null` when it is not a Venezuelan mobile. Punctuation is discarded first,
- * so parentheses, spaces, hyphens and a leading '+' are all just noise around
- * the same ten national digits.
+ * `null` when it is not a Venezuelan mobile. Punctuation is discarded first, so
+ * parentheses, spaces, hyphens and a leading '+' are all just noise around the
+ * same ten national digits — which is also why this is what repairs a number
+ * stored before the plus was canonical.
  */
 export function normalisePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, '');
@@ -38,21 +43,24 @@ export function normalisePhone(raw: string): string | null {
   if (national === null) return null;
   if (!VENEZUELAN_MOBILE_PREFIXES.includes(`0${national.slice(0, 3)}`)) return null;
 
-  return `${COUNTRY_CODE}${national}`;
+  return `+${COUNTRY_CODE}${national}`;
 }
 
 /**
- * Back to what a Venezuelan reads aloud: '0414-3125566'.
+ * The number as every screen shows it: '+584143125566'.
  *
- * Shape only — a stored number is already known to be a valid mobile, and a
- * display helper that refuses to render is a blank cell on a receipt. Anything
- * that is not the canonical form comes back untouched rather than as an empty
- * string, so a surprise in the column is visible instead of hidden.
+ * One shape, everywhere — the table, the modal, the tooltip and the printed
+ * ticket. The panel used to show three at once (the column printed the stored
+ * string raw, the modal rendered '0414-…', the receipt a third thing), and a
+ * merchant comparing a row against a customer's screen should not have to
+ * translate between them.
+ *
+ * Anything this cannot read comes back untouched rather than as an empty
+ * string: a display helper that refuses to render is a blank cell on a receipt,
+ * and a surprise in the column is better seen than hidden.
  */
-export function formatPhoneForDisplay(normalised: string): string {
-  const parsed = CANONICAL_PHONE.exec(normalised);
-  if (parsed === null) return normalised;
-  return `0${parsed[1]}-${parsed[2]}`;
+export function formatPhoneForDisplay(stored: string): string {
+  return normalisePhone(stored) ?? stored;
 }
 
 /** The ten digits after any country or trunk prefix, or `null`. */

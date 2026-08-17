@@ -242,7 +242,7 @@ export type FindPaymentQuery = {
   readonly kind: PaymentKind;
   /** The digits the customer read off their receipt — see `referenceDigits`. */
   reference: string;
-  /** Normalised by the domain to `584143125566`. Null where the kind has none. */
+  /** Normalised by the domain to `+584143125566`. Null where the kind has none. */
   payerPhone: string | null;
   /** The merchant's own receiving account, full. Null where the kind has none. */
   receivingAccount: string | null;

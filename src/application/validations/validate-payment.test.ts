@@ -110,7 +110,7 @@ function storedValidation(overrides: Partial<Validation> = {}): Validation {
     referenceKey: '123456789',
     amountCents: 124_000,
     currency: 'BS',
-    payerPhone: '584143125566',
+    payerPhone: '+584143125566',
     sourceBankId: '0134',
     trnAt: NOW - 300,
     latencyMs: 420,
@@ -327,7 +327,7 @@ describe('validate payment', () => {
       trnAt: NOW - 300,
       searchMode: 'reference_tail_and_phone',
       // Normalised by the domain on the way in, whatever the customer read out.
-      payerPhone: '584143125566',
+      payerPhone: '+584143125566',
       createdAt: NOW,
     });
     expect(points).toEqual([
@@ -646,7 +646,7 @@ describe('validate payment', () => {
     expect(queries[0]).toEqual({
       kind: 'pago_movil',
       reference: '456789',
-      payerPhone: '584143125566',
+      payerPhone: '+584143125566',
       // A pago móvil never carries a receiving account, whatever the other tab
       // had on it — the kind's declaration is what decides.
       receivingAccount: null,

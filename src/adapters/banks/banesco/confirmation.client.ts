@@ -77,7 +77,7 @@ export type BanescoConfirmationCall = {
 export type PagoMovilQuery = {
   /** The reference as typed. Only its last six digits travel. */
   reference: string;
-  /** Already normalised by the domain to the bank's form, e.g. '584143125566'. */
+  /** The domain's canonical E.164, '+584143125566'. `wirePhone` drops the plus. */
   payerPhone: string;
   /** Sudeban code of the paying bank, four digits, e.g. '0134'. */
   sourceBankId: string;
@@ -146,7 +146,7 @@ export class BanescoConfirmationClient implements ConfirmationClient {
   ): Promise<ConfirmationOutcome> {
     return this.post(call, 'pago_movil', {
       referenceNumber: referenceTail(query.reference),
-      phoneNum: query.payerPhone,
+      phoneNum: wirePhone(query.payerPhone),
       bankId: query.sourceBankId,
       startDt: query.onDate,
     });
@@ -294,4 +294,17 @@ type TransactionQuery = Record<string, string>;
  */
 function referenceTail(reference: string): string {
   return reference.replace(/\D/g, '').slice(-REFERENCE_TAIL_DIGITS);
+}
+
+/**
+ * `+584143125566` → `584143125566`. The domain's canonical phone is E.164 and
+ * carries its plus; `phoneNum` here is a field of bare digits, and a plus in it
+ * is a `70001 · sin resultados` for a payment that is sitting right there.
+ *
+ * Which is exactly the seam §4 asks for: what a bank's field looks like is that
+ * bank's problem, solved in its own folder, so the rest of the app can hold one
+ * shape for a phone number.
+ */
+function wirePhone(phone: string): string {
+  return phone.replace(/\D/g, '');
 }

@@ -5,24 +5,25 @@ import { formatPhoneForDisplay, normalisePhone, VENEZUELAN_MOBILE_PREFIXES } fro
 describe('normalisePhone', () => {
   const table: ReadonlyArray<{ raw: string; expected: string | null; why: string }> = [
     // the four forms a number is written in
-    { raw: '0414-3125566', expected: '584143125566', why: 'as a customer reads it aloud' },
-    { raw: '04143125566', expected: '584143125566', why: 'unpunctuated national' },
-    { raw: '+58 414 3125566', expected: '584143125566', why: 'international, spaced' },
-    { raw: '584143125566', expected: '584143125566', why: 'already canonical' },
-    { raw: '4143125566', expected: '584143125566', why: 'the trunk zero omitted' },
+    { raw: '0414-3125566', expected: '+584143125566', why: 'as a customer reads it aloud' },
+    { raw: '04143125566', expected: '+584143125566', why: 'unpunctuated national' },
+    { raw: '+58 414 3125566', expected: '+584143125566', why: 'international, spaced' },
+    { raw: '+584143125566', expected: '+584143125566', why: 'already canonical' },
+    { raw: '584143125566', expected: '+584143125566', why: 'the pre-E.164 stored form' },
+    { raw: '4143125566', expected: '+584143125566', why: 'the trunk zero omitted' },
 
     // punctuation is noise
-    { raw: '+58 (414) 312-5566', expected: '584143125566', why: 'parentheses and hyphens' },
-    { raw: '  0414 312 55 66  ', expected: '584143125566', why: 'whitespace anywhere' },
-    { raw: '0414.312.5566', expected: '584143125566', why: 'dots' },
-    { raw: '+58-414-3125566', expected: '584143125566', why: 'hyphens after the plus' },
+    { raw: '+58 (414) 312-5566', expected: '+584143125566', why: 'parentheses and hyphens' },
+    { raw: '  0414 312 55 66  ', expected: '+584143125566', why: 'whitespace anywhere' },
+    { raw: '0414.312.5566', expected: '+584143125566', why: 'dots' },
+    { raw: '+58-414-3125566', expected: '+584143125566', why: 'hyphens after the plus' },
 
     // every operator that carries pago móvil
-    { raw: '04123125566', expected: '584123125566', why: '0412' },
-    { raw: '04143125566', expected: '584143125566', why: '0414' },
-    { raw: '04163125566', expected: '584163125566', why: '0416' },
-    { raw: '04243125566', expected: '584243125566', why: '0424' },
-    { raw: '04263125566', expected: '584263125566', why: '0426' },
+    { raw: '04123125566', expected: '+584123125566', why: '0412' },
+    { raw: '04143125566', expected: '+584143125566', why: '0414' },
+    { raw: '04163125566', expected: '+584163125566', why: '0416' },
+    { raw: '04243125566', expected: '+584243125566', why: '0424' },
+    { raw: '04263125566', expected: '+584263125566', why: '0426' },
 
     // and the ones that do not
     { raw: '02123125566', expected: null, why: '0212 is a Caracas landline' },
@@ -65,27 +66,31 @@ describe('normalisePhone', () => {
 });
 
 describe('formatPhoneForDisplay', () => {
-  const table: ReadonlyArray<{ normalised: string; expected: string; why: string }> = [
-    { normalised: '584143125566', expected: '0414-3125566', why: 'the reference case' },
-    { normalised: '584123125566', expected: '0412-3125566', why: 'another operator' },
-    { normalised: '584263125566', expected: '0426-3125566', why: 'and another' },
-    { normalised: '0414-3125566', expected: '0414-3125566', why: 'not canonical: passed through' },
-    { normalised: '', expected: '', why: 'empty passes through rather than throwing' },
-    { normalised: '58414312556', expected: '58414312556', why: 'too short: passed through' },
+  const table: ReadonlyArray<{ stored: string; expected: string; why: string }> = [
+    { stored: '+584143125566', expected: '+584143125566', why: 'the reference case' },
+    { stored: '+584123125566', expected: '+584123125566', why: 'another operator' },
+    { stored: '+584263125566', expected: '+584263125566', why: 'and another' },
+    // A row written before 0009 ran, and a number that arrived some other way:
+    // the column reads as E.164 whatever spelling it is holding.
+    { stored: '584143125566', expected: '+584143125566', why: 'a row from before the plus' },
+    { stored: '0414-3125566', expected: '+584143125566', why: 'as a customer reads it aloud' },
+    // And what it cannot read is shown, not swallowed.
+    { stored: '', expected: '', why: 'empty passes through rather than throwing' },
+    { stored: '58414312556', expected: '58414312556', why: 'too short: passed through' },
+    { stored: '02123125566', expected: '02123125566', why: 'a landline: passed through' },
   ];
 
-  for (const { normalised, expected, why } of table) {
-    it(`${JSON.stringify(normalised)} -> ${JSON.stringify(expected)} (${why})`, () => {
-      expect(formatPhoneForDisplay(normalised)).toBe(expected);
+  for (const { stored, expected, why } of table) {
+    it(`${JSON.stringify(stored)} -> ${JSON.stringify(expected)} (${why})`, () => {
+      expect(formatPhoneForDisplay(stored)).toBe(expected);
     });
   }
 
-  it('round-trips every operator', () => {
+  it('shows every operator in E.164, whichever way it was typed', () => {
     for (const prefix of VENEZUELAN_MOBILE_PREFIXES) {
-      const typed = `${prefix}-3125566`;
-      const stored = normalisePhone(typed);
+      const stored = normalisePhone(`${prefix}-3125566`);
       expect(stored).not.toBeNull();
-      expect(formatPhoneForDisplay(stored ?? '')).toBe(typed);
+      expect(formatPhoneForDisplay(stored ?? '')).toBe(`+58${prefix.slice(1)}3125566`);
     }
   });
 });

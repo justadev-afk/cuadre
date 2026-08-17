@@ -29,7 +29,7 @@ function validation(overrides: Partial<Validation> = {}): Validation {
     referenceKey: '123456789',
     amountCents: 124_000,
     currency: 'BS',
-    payerPhone: '584143125566',
+    payerPhone: '+584143125566',
     sourceBankId: '0134',
     trnAt: NOW - 300,
     latencyMs: 400,

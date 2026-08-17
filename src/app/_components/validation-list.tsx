@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import type { Validation } from '../../adapters/d1/validation.repository.ts';
 import { formatBolivares } from '../../domain/money.ts';
+import { formatPhoneForDisplay } from '../../domain/phone.ts';
 import { findBank } from '../../domain/sudeban.ts';
 import { amountDigits, formatClock, formatDayClock } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
@@ -94,7 +95,9 @@ export function ValidationList({
                   {amountDigits(v.amountCents)}
                 </td>
                 {/* A transferencia has no payer phone — the cell says so. */}
-                <td className="tabular-nums text-muted-foreground">{v.payerPhone ?? '—'}</td>
+                <td className="tabular-nums text-muted-foreground">
+                  {v.payerPhone === null ? '—' : formatPhoneForDisplay(v.payerPhone)}
+                </td>
                 {showCashier && (
                   <td className="whitespace-nowrap text-muted-foreground">
                     {v.cashierName ?? '—'}
@@ -145,7 +148,7 @@ export function ValidationList({
               {v.payerPhone !== null && (
                 <>
                   {' · '}
-                  <span className="tabular-nums">{v.payerPhone}</span>
+                  <span className="tabular-nums">{formatPhoneForDisplay(v.payerPhone)}</span>
                 </>
               )}
             </span>
