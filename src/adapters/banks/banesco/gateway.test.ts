@@ -68,14 +68,23 @@ const rows = (...details: Array<Record<string, unknown>>) => confirmationReply('
 
 type Sent = { url: string; body: string };
 
-/** Routes by URL: one stub stands in for the whole bank. */
-function stubBank(payments: unknown[]): Sent[] {
+/**
+ * Routes by URL: one stub stands in for the whole bank.
+ *
+ * `productionAccepts` answers the question the environment probe asks — does the
+ * production realm know these credentials? A QA client does not (401), and that
+ * refusal is what says a connection filed as a test really is one.
+ */
+function stubBank(payments: unknown[], productionAccepts = false): Sent[] {
   const queue = [...payments];
   const sent: Sent[] = [];
 
   vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
     sent.push({ url, body: String(init.body) });
 
+    if (url.includes('realm-api-prd') && !productionAccepts) {
+      return new Response(JSON.stringify({ error: 'invalid_client' }), { status: 401 });
+    }
     if (url.includes('/token')) return new Response(JSON.stringify(TOKEN), { status: 200 });
     return new Response(JSON.stringify(queue.shift() ?? NO_RESULTS), { status: 200 });
   });
@@ -199,20 +208,33 @@ describe('authenticate', () => {
     expect(await gateway.findPayment(forged, QUERY)).toEqual({ ok: false, error: 'unavailable' });
   });
 
-  it('fails cleanly for production instead of throwing, since its hosts are unpublished', async () => {
-    // `banescoEndpoints('production')` throws by design; authenticate must catch
-    // that upstream and return a failure, or onboarding 500s instead of showing
-    // a toast. No network call is made — the guard is hit before the token round
-    // trip — so any fetch here would be a bug.
-    const fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
+  it('opens a production session against the production realm', async () => {
+    // The bank published the production hosts on 2026-08-17. Until then this
+    // path returned `unavailable` without a round trip; now it is an ordinary
+    // authentication, and the only thing worth pinning is *where* it goes —
+    // a production account must never end up asking QA.
+    const sent = stubBank([], true);
     const gateway = new BanescoGateway(deps());
 
-    expect(await gateway.authenticate('production', CREDENTIALS)).toEqual({
+    const session = await gateway.authenticate('production', CREDENTIALS);
+
+    expect(session).toMatchObject({ ok: true, value: { environment: 'production' } });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toContain('realm-api-prd');
+    expect(sent[0].url).not.toContain('realm-api-qa');
+  });
+
+  it('refuses credentials filed as a test that production accepts', async () => {
+    // Production credentials declared as a sandbox would let real money move
+    // through the flow we tell merchants is a test. The probe is a token call
+    // to the production realm; here it succeeds, which is the tell.
+    stubBank([], true);
+    const gateway = new BanescoGateway(deps());
+
+    expect(await gateway.authenticate('sandbox', CREDENTIALS)).toEqual({
       ok: false,
-      error: 'unavailable',
+      error: 'rejected_credentials',
     });
-    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 

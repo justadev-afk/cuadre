@@ -33,7 +33,7 @@ import {
   isInterbankTransferencia,
   REFERENCE_TAIL_DIGITS,
 } from './confirmation.client.ts';
-import { BANESCO_ID, BANESCO_SUDEBAN_CODE, hasProductionEndpoints } from './endpoints.ts';
+import { BANESCO_ID, BANESCO_SUDEBAN_CODE } from './endpoints.ts';
 import { type BanescoDevice, serverDevice } from './envelope.ts';
 import { BanescoOauthClient } from './oauth.client.ts';
 
@@ -153,16 +153,6 @@ export class BanescoGateway implements BankGateway {
     environment: BankEnvironment,
     credentials: BankCredentials,
   ): Promise<Result<BankSession, BankFailure>> {
-    // Production has no published hosts yet, so `banescoEndpoints('production')`
-    // throws by design. Reaching it through the OAuth client would surface that
-    // throw as a 500 in the onboarding action; check first and return a clean
-    // failure the wizard can show as a toast. `endpoints.ts` says as much: "check
-    // first, or mean it".
-    if (environment === 'production' && !hasProductionEndpoints()) {
-      logger.warn('banesco_production_unconfigured', {});
-      return err('unavailable');
-    }
-
     const token = await this.oauth.getAccessToken({ environment, credentials });
     if (!token.ok) return token;
 
@@ -246,18 +236,14 @@ export class BanescoGateway implements BankGateway {
    * Are these sandbox credentials accepted by production? If they are, they are
    * production credentials that someone declared as a test.
    *
-   * TODO(banesco-production): the bank has not published the production host, so
-   * the check cannot run yet and a mis-declared production credential would pass
-   * onboarding unnoticed. It degrades to a warning rather than an exception on
-   * purpose — refusing every sandbox onboarding until the bank sends us a
-   * hostname would be a worse failure than the one it guards against.
+   * Live since the bank published the production realm (2026-08-17): until then
+   * this degraded to a warning, because refusing every sandbox onboarding for
+   * want of a hostname would have been a worse failure than the one it guards
+   * against. A QA client is unknown to `realm-api-prd` and comes back 401, so
+   * the honest answer now costs one token round trip at onboarding and nothing
+   * at the counter.
    */
   private async worksInProduction(credentials: BankCredentials): Promise<boolean> {
-    if (!hasProductionEndpoints()) {
-      logger.warn('banesco_environment_probe_skipped', { reason: 'production_endpoints_unknown' });
-      return false;
-    }
-
     // Uncached on purpose: a token minted here belongs to credentials we are
     // about to reject, and caching it would leave it behind for the next request.
     const probe = await this.oauth.requestUncachedToken({

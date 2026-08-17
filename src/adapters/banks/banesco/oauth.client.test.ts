@@ -166,17 +166,20 @@ describe('getAccessToken', () => {
     expect(tokens.store.size).toBe(0);
   });
 
-  it('refuses to reach production while its hosts are unknown', async () => {
-    stubFetch(token(300));
+  it('asks the production realm, not QA’s with the “qa” filed off', async () => {
+    const calls = stubFetch(token(300));
     const { oauth } = oauthClient();
 
-    // The reader gets the Spanish copy for `bank_unavailable`; the reason why
-    // stays in `detail`, which only the log sees.
-    await expect(
-      oauth.getAccessToken({ environment: 'production', credentials: CREDENTIALS }),
-    ).rejects.toMatchObject({
-      code: 'bank_unavailable',
-      detail: expect.stringContaining('production endpoints are not published'),
+    const result = await oauth.getAccessToken({
+      environment: 'production',
+      credentials: CREDENTIALS,
     });
+
+    expect(result).toEqual({ ok: true, value: 'header.payload.signature' });
+    // Different cluster *and* different realm. Pinned in full because deriving
+    // either from the QA name is exactly the mistake this asserts against.
+    expect(calls[0].url).toBe(
+      'https://sso-sso-project.apps.proplakur.banesco.com/auth/realms/realm-api-prd/protocol/openid-connect/token',
+    );
   });
 });
