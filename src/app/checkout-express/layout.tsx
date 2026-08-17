@@ -12,7 +12,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
-import { canReach } from '../../application/session.ts';
+import { canReach, usesExpressTill } from '../../application/session.ts';
 import { Brand } from '../_components/brand.tsx';
 import { Icon } from '../_components/icon.tsx';
 import { PwaResizer } from '../_components/pwa-resizer.tsx';
@@ -30,6 +30,12 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
   const resolved = resolution.active;
   const { session } = resolved;
   if (!canReach(session.role, 'counter')) redirect('/');
+  // The manifest's `start_url` is this window, and a manifest cannot know who
+  // installed the app. A company owner who did lands here on every launch, so
+  // they are sent on to the shell till — the same counter, with their own left
+  // rail on it — rather than being shut inside a surface whose only exit is
+  // signing out. `/checkout` does not forward them back (`usesExpressTill`).
+  if (!usesExpressTill(session.role)) redirect('/checkout');
 
   const detail = session.companyId
     ? await container().companies.getCompany({ companyId: session.companyId })

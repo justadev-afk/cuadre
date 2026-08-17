@@ -129,6 +129,26 @@ export function homeAreaFor(role: Role): Area {
   return AREAS_BY_ROLE[role][0];
 }
 
+/**
+ * Whose surface the express till is — the sidebar-less window an installed PWA
+ * opens at `/checkout-express`.
+ *
+ * The cashier's, and nobody else's. For them the installed app *is* the job: one
+ * screen, no nav, and the only way out is signing out, which is the point — a
+ * till is not somewhere to browse from. A company owner reaches the counter too
+ * (`AREAS_BY_ROLE` says so, and a small merchant is often the one at it), but
+ * for them that same one-way door is a trap: install the app, tap it, and the
+ * shop's own panel is gone until they sign out. So the PWA lands them on the
+ * shell till instead, where their left rail is.
+ *
+ * Three places ask this — the shell's PWA window size, whether `/checkout`
+ * forwards a standalone app onward, and who `/checkout-express` admits — and
+ * they must agree or a redirect becomes a loop, so it is one answer (§11).
+ */
+export function usesExpressTill(role: Role): boolean {
+  return role === 'cashier';
+}
+
 // ── the cookie ─────────────────────────────────────────────────────────────
 
 /**

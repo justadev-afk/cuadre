@@ -9,7 +9,9 @@ import { brandIcon } from './_lib/brand.ts';
  * the installed app is their whole world — the sidebar-less express till, not
  * the shell. A browser tab is the other surface (it opens `/checkout`); the
  * express till is the PWA's, so the app reopens straight there rather than on
- * the shell. The colours are Nocturne's ground so the splash and the status bar
+ * the shell. A manifest cannot know *who* installed it, so the owner who did is
+ * sent on to the shell till by that route's own guard (`usesExpressTill`) —
+ * this document names one start, and the session decides whether it holds. The colours are Nocturne's ground so the splash and the status bar
  * match the first paint. Icons are served from the Worker's own `public/`,
  * never a CDN, and carry `?v=` (`_lib/brand.ts`) — an installed app only picks
  * up new artwork when this document changes, and it does not change when the

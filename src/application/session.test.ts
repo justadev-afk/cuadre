@@ -13,6 +13,7 @@ import {
   type StoredSession,
   sessionCookie,
   toSessionRecord,
+  usesExpressTill,
 } from './session.ts';
 
 const RECORD: SessionRecord = {
@@ -110,6 +111,33 @@ describe('homeAreaFor', () => {
   it('never lands a role somewhere the guard would bounce it', () => {
     for (const role of ['admin', 'company', 'cashier'] as const) {
       expect(canReach(role, homeAreaFor(role))).toBe(true);
+    }
+  });
+});
+
+describe('usesExpressTill', () => {
+  const table: ReadonlyArray<{ role: Role; expected: boolean; why: string }> = [
+    { role: 'cashier', expected: true, why: 'the installed app is the whole job' },
+    {
+      role: 'company',
+      expected: false,
+      // The bug this rule is: an owner installed the PWA, every launch dropped
+      // them in the sidebar-less till, and the only way to their own panel was
+      // signing out.
+      why: 'a one-way door out of their own panel is a trap, not a surface',
+    },
+    { role: 'admin', expected: false, why: 'never reaches the counter at all' },
+  ];
+
+  for (const { role, expected, why } of table) {
+    it(`${role} → ${expected} (${why})`, () => {
+      expect(usesExpressTill(role)).toBe(expected);
+    });
+  }
+
+  it('only ever says yes to somebody who can reach the counter', () => {
+    for (const role of ['admin', 'company', 'cashier'] as const) {
+      if (usesExpressTill(role)) expect(canReach(role, 'counter')).toBe(true);
     }
   });
 });

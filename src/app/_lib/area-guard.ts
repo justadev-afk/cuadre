@@ -28,12 +28,13 @@ export const AREA_HOME: Record<Area, string> = {
   admin: '/admin/companies',
   company: '/validations',
   // The counter's server home is `/checkout` (the shell), where a browser tab
-  // belongs. The installed PWA lives on the sidebar-less `/checkout-express`,
-  // reached by its manifest `start_url` and — as a safety net for a stale cached
-  // manifest — by `StandaloneRedirect`, which forwards a standalone app there
-  // from `/checkout`. Landing everyone on `/checkout` keeps the failure mode
-  // safe: an uncertain "am I a PWA?" reading leaves a browser tab on the shell
-  // rather than exiling it to the express till.
+  // belongs. A *cashier's* installed PWA lives on the sidebar-less
+  // `/checkout-express`, reached by its manifest `start_url` and — as a safety
+  // net for a stale cached manifest — by `StandaloneRedirect`, which forwards a
+  // standalone app there from `/checkout`. Landing everyone on `/checkout` keeps
+  // the failure mode safe: an uncertain "am I a PWA?" reading leaves a browser
+  // tab on the shell rather than exiling it to the express till. A company owner
+  // stays here whatever the surface — see `usesExpressTill`.
   counter: '/checkout',
 };
 

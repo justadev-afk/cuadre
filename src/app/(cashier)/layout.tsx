@@ -14,16 +14,20 @@
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { canReach } from '../../application/session.ts';
+import { canReach, usesExpressTill } from '../../application/session.ts';
 import { AppShell } from '../_components/app-shell.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
-import { container, currentSession } from '../_lib/current-session.ts';
+import { sessionOnce } from '../_lib/area-guard.ts';
+import { container } from '../_lib/current-session.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import { isLiveSession, signedOutPath } from '../_lib/session-exit.ts';
 import { shellModel } from '../_lib/shell-nav.ts';
 
 export default async function CashierLayout({ children }: { children: ReactNode }) {
-  const resolution = await currentSession();
+  // `sessionOnce`, not `currentSession`: the page below asks the same question
+  // to decide whether a standalone app is forwarded on, and the till is the one
+  // screen where a second KV round trip is felt.
+  const resolution = await sessionOnce();
   if (!isLiveSession(resolution)) redirect(signedOutPath(resolution));
 
   const resolved = resolution.active;
@@ -41,9 +45,9 @@ export default async function CashierLayout({ children }: { children: ReactNode 
       model={shellModel(session, company)}
       // A cashier who reaches the shell till is on their way to the express
       // window (StandaloneRedirect) when running as a PWA — size to it so the
-      // hop does not resize twice. A company owner working the till keeps the
-      // roomy panel.
-      pwaSize={session.role === 'cashier' ? PWA_SIZE.express : PWA_SIZE.panel}
+      // hop does not resize twice. A company owner working the till never makes
+      // that hop, so they keep the roomy panel: one rule, `usesExpressTill`.
+      pwaSize={usesExpressTill(session.role) ? PWA_SIZE.express : PWA_SIZE.panel}
     >
       {children}
       {resolved.needsShiftConfirmation && session.role === 'cashier' && (
