@@ -92,6 +92,14 @@ export type ValidationListQuery = {
   /** Omit for both. The company panel's sandbox toggle. */
   readonly isSandbox?: boolean;
   /**
+   * One person's work, by id. Omit for everybody's.
+   *
+   * The company scope is still the `company_id` condition beside it, never this:
+   * a cashier id is a uuid a caller supplies, and narrowing by it alone would be
+   * a query that can be pointed at another merchant's staff.
+   */
+  readonly cashierId?: string;
+  /**
    * Epoch seconds, inclusive. Not optional: an unbounded list of a company's
    * whole history is a table scan, and the panel always has a range on screen.
    */
@@ -311,6 +319,13 @@ export class D1ValidationRepository implements ValidationRepository {
     if (query.isSandbox !== undefined) {
       conditions.push('v.is_sandbox = ?');
       args.push(query.isSandbox ? 1 : 0);
+    }
+
+    // Only the company list asks by cashier; the cashier's own list *is* keyed by
+    // one ('cashier_id' is its owner column), so it never sets this.
+    if (ownerColumn === 'company_id' && 'cashierId' in query && query.cashierId !== undefined) {
+      conditions.push('v.cashier_id = ?');
+      args.push(query.cashierId);
     }
 
     if (query.cursor !== undefined) {

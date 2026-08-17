@@ -8,6 +8,7 @@ const NOW = 1_770_000_000;
 type Query = {
   companyId: string;
   isSandbox?: boolean;
+  cashierId?: string;
   from: number;
   to: number;
   cursor?: PageCursor;
@@ -53,6 +54,7 @@ function fakeValidations(rows: readonly Validation[]) {
         const matching = rows
           .filter((row) => row.companyId === query.companyId)
           .filter((row) => query.isSandbox === undefined || row.isSandbox === query.isSandbox)
+          .filter((row) => query.cashierId === undefined || row.cashierId === query.cashierId)
           .filter((row) => row.createdAt >= query.from && row.createdAt <= query.to)
           .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1))
           .filter((row) => {
@@ -79,6 +81,53 @@ function fakeValidations(rows: readonly Validation[]) {
 }
 
 const RANGE = { companyId: 'la-espiga', from: NOW - 86_400, to: NOW };
+
+describe('by cashier', () => {
+  // The filter the merchant's panel offers beside the sandbox toggle. It is a
+  // condition the database applies, so it narrows the *scan* too, and it is by
+  // id because two cashiers share a first name more often than not.
+  const staff = [
+    validation(0, { cashierId: 'user-maria' }),
+    validation(1, { cashierId: 'user-jose' }),
+    validation(2, { cashierId: 'user-maria' }),
+  ];
+
+  it('asks the repository for one person’s rows, not everybody’s', async () => {
+    const { validations, queries } = fakeValidations(staff);
+    const listValidations = makeListValidations({ validations });
+
+    const page = await listValidations({ ...RANGE, cashierId: 'user-maria' });
+
+    expect(page.items.map((item) => item.id)).toEqual(['validation-0000', 'validation-0002']);
+    expect(queries[0]?.cashierId).toBe('user-maria');
+  });
+
+  it('leaves the filter off when nobody was chosen', async () => {
+    const { validations, queries } = fakeValidations(staff);
+    const listValidations = makeListValidations({ validations });
+
+    const page = await listValidations(RANGE);
+
+    expect(page.items).toHaveLength(3);
+    expect(queries[0]?.cashierId).toBeUndefined();
+  });
+
+  it('narrows a searched page by the same condition', async () => {
+    // The search path is a bounded scan; the cashier must reach the WHERE rather
+    // than being applied to what came back, or the budget is spent on rows that
+    // could never match.
+    const { validations, queries } = fakeValidations([
+      validation(0, { cashierId: 'user-maria', controlCode: '582422' }),
+      validation(1, { cashierId: 'user-jose', controlCode: '582422' }),
+    ]);
+    const listValidations = makeListValidations({ validations });
+
+    const page = await listValidations({ ...RANGE, cashierId: 'user-jose', search: '582422' });
+
+    expect(page.items.map((item) => item.cashierId)).toEqual(['user-jose']);
+    expect(queries.every((query) => query.cashierId === 'user-jose')).toBe(true);
+  });
+});
 
 describe('list validations', () => {
   it('pages twenty at a time in one query', async () => {

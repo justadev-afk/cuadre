@@ -250,6 +250,43 @@ describe('listByCompany', () => {
     expect(fake.calls[0]?.sql).not.toContain('is_sandbox = ?');
   });
 
+  it('narrows to one cashier without loosening the company scope', async () => {
+    const fake = makeFakeD1();
+    fake.reply({ rows: [] });
+
+    await new D1ValidationRepository(fake.db).listByCompany({
+      companyId: 'la-espiga',
+      cashierId: 'user-maria',
+      from: 1,
+      to: 2,
+    });
+
+    // Both conditions, always: a cashier id is a uuid the caller supplies, and
+    // a query narrowed by it *instead* of by the company is one that can be
+    // pointed at another merchant's staff.
+    expect(fake.calls[0]?.sql).toContain('v.company_id = ?');
+    expect(fake.calls[0]?.sql).toContain('v.cashier_id = ?');
+    expect(fake.calls[0]?.args.slice(0, 4)).toEqual([
+      'la-espiga',
+      '1970-01-01T00:00:01Z',
+      '1970-01-01T00:00:02Z',
+      'user-maria',
+    ]);
+  });
+
+  it('omits the cashier condition when nobody was chosen', async () => {
+    const fake = makeFakeD1();
+    fake.reply({ rows: [] });
+
+    await new D1ValidationRepository(fake.db).listByCompany({
+      companyId: 'la-espiga',
+      from: 1,
+      to: 2,
+    });
+
+    expect(fake.calls[0]?.sql).not.toContain('cashier_id = ?');
+  });
+
   it('clamps the page size', async () => {
     const fake = makeFakeD1();
     fake.reply({ rows: [] }, { rows: [] });

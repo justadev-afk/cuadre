@@ -3,8 +3,9 @@
  *
  * There is no status filter, and that is not an omission: a row in
  * `validations` *is* a charged payment, so the only things worth narrowing by
- * are which environment (Todos / Producción / Sandbox), which days, and — when
- * a customer phones about one payment — a reference or a phone number.
+ * are which environment (Todos / Producción / Sandbox), which days, **whose
+ * work** (a cashier, by id), and — when a customer phones about one payment — a
+ * reference or a phone number.
  *
  * Paging is keyset, twenty at a time, because a merchant scrolling their month
  * on a phone at the till must not pay for an OFFSET that re-walks every row
@@ -36,6 +37,7 @@ type ValidationReader = {
   listByCompany(query: {
     readonly companyId: string;
     readonly isSandbox?: boolean;
+    readonly cashierId?: string;
     readonly from: number;
     readonly to: number;
     readonly cursor?: PageCursor;
@@ -59,6 +61,12 @@ export type ListValidationsInput = {
   readonly from: number;
   readonly to: number;
   readonly environment?: EnvironmentFilter;
+  /**
+   * One person's work. By **id**, not by name: two cashiers called María are one
+   * shop's ordinary Tuesday, and the free-text search below — which does match
+   * on the name — cannot tell them apart.
+   */
+  readonly cashierId?: string;
   /** A reference, a payer's phone, a cashier's name, or an amount in bolívares. */
   readonly search?: string;
   readonly cursor?: PageCursor;
@@ -87,9 +95,13 @@ const SCAN_LIMIT = 500;
 
 export function makeListValidations({ validations }: ListValidationsDeps): ListValidations {
   return async (input) => {
+    // The filter every path below shares, searched or not: narrowing by cashier
+    // is a WHERE the database applies, so it costs the scan nothing and it is
+    // exact where a name match would not be.
     const filter = {
       companyId: input.companyId,
       isSandbox: toSandboxFlag(input.environment ?? 'all'),
+      cashierId: input.cashierId,
       from: input.from,
       to: input.to,
     };

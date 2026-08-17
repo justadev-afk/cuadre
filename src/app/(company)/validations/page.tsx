@@ -1,10 +1,17 @@
 /**
  * Screen 09 — the company's full list of validations, every cashier's work.
  *
- * The environment filter (Todos / Producción / Sandbox) travels in the URL, so
- * the view is shareable and the page stays a Server Component. The stat band is
- * today's totals, which by construction exclude sandbox — a cash total that
- * counted test payments would be a lie the panel tells every morning.
+ * Three filters, and all of them travel in the URL, so a view is shareable and
+ * the page stays a Server Component: the environment (Todos / Producción /
+ * Sandbox), a free-text search, and **whose work** — a person, by id, because
+ * two cashiers called María are one shop's ordinary Tuesday and the text search
+ * cannot tell them apart. Only the picker needs a script, and it is the same
+ * `SearchableSelect` the counter picks a bank with.
+ *
+ * The table is always drawn, even with nothing in it. A filter that returns
+ * nothing has to keep showing the columns it was applied to — a screen that
+ * replaces them with a box loses the very thing the merchant is adjusting — so
+ * the "no results" card sits *under* the empty table.
  *
  * Everything is scoped by the session's `companyId`. There is no status column
  * because there are no unconfirmed rows: a row here is a confirmed payment.
@@ -24,6 +31,7 @@ import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
+import { CashierFilter } from './cashier-filter.tsx';
 
 export const metadata = pageMeta('Validaciones');
 
@@ -48,12 +56,21 @@ export default async function ValidationsPage({
   const environment = readEnv(queryValue(params, 'environment'));
   const search = queryValue(params, 'q') ?? undefined;
 
+  // The people to choose from, and the one chosen. An id that is not on this
+  // company's payroll is dropped rather than queried: the list is scoped by
+  // `companyId` anyway, so it would return nothing — but a picker showing a
+  // filter nobody can see is worse than one showing none.
+  const staff = await container().employees.listEmployees({ companyId });
+  const asked = queryValue(params, 'cashier') ?? '';
+  const cashierId = staff.some((person) => person.id === asked) ? asked : '';
+
   const totals = await container().validations.dailyTotals({ companyId });
   const list = await container().validations.listValidations({
     companyId,
     from: totals.from,
     to: totals.to,
     environment,
+    cashierId: cashierId === '' ? undefined : cashierId,
     search,
   });
 
@@ -77,7 +94,7 @@ export default async function ValidationsPage({
             {ENV_TABS.map((tab) => (
               <Link
                 key={tab.value}
-                href={hrefFor(tab.value, search)}
+                href={hrefFor(tab.value, search, cashierId)}
                 className={cn(
                   'inline-flex items-center gap-1.5 border-l border-border px-3 py-[7px] text-[13px] text-foreground/70 no-underline transition-colors first:border-l-0 hover:bg-foreground/[0.06]',
                   tab.value === environment &&
@@ -89,10 +106,12 @@ export default async function ValidationsPage({
               </Link>
             ))}
           </div>
+          <CashierFilter cashiers={staff} value={cashierId} />
           <form>
             {environment !== 'all' && (
               <input type="hidden" name="environment" value={environment} />
             )}
+            {cashierId !== '' && <input type="hidden" name="cashier" value={cashierId} />}
             <Input
               name="q"
               defaultValue={search ?? ''}
@@ -137,20 +156,21 @@ export default async function ValidationsPage({
         <StatCard kicker="Pagos validados" value={String(totals.totalCount)} note="hoy" />
       </div>
 
-      {list.items.length === 0 ? (
+      {/* Always drawn, empty or not — see the note at the top of the file. */}
+      <ValidationList
+        items={list.items}
+        nowSeconds={nowSeconds}
+        showCashier
+        merchantName={merchantName}
+        merchantRif={merchantRif}
+      />
+
+      {list.items.length === 0 && (
         <Card>
           <p className="m-0 py-5 text-center text-sm text-muted-foreground">
-            No hay validaciones en este filtro.
+            {emptyMessage(cashierId, staff, search, environment)}
           </p>
         </Card>
-      ) : (
-        <ValidationList
-          items={list.items}
-          nowSeconds={nowSeconds}
-          showCashier
-          merchantName={merchantName}
-          merchantRif={merchantRif}
-        />
       )}
     </ContentLayout>
   );
@@ -166,9 +186,31 @@ function StatCard({ kicker, value, note }: { kicker: string; value: string; note
   );
 }
 
-function hrefFor(env: EnvFilter, search: string | undefined): string {
+/**
+ * What the empty box says. It names the filter that emptied the list, because
+ * "no hay validaciones" under a table the merchant just narrowed reads as "you
+ * have no payments" — which is a different and much more alarming sentence.
+ */
+function emptyMessage(
+  cashierId: string,
+  staff: readonly { readonly id: string; readonly name: string }[],
+  search: string | undefined,
+  environment: EnvFilter,
+): string {
+  const person = staff.find((member) => member.id === cashierId);
+  if (person !== undefined && search) {
+    return `${person.name} no tiene validaciones que coincidan con «${search}».`;
+  }
+  if (person !== undefined) return `${person.name} no tiene validaciones en este período.`;
+  if (search) return `Ninguna validación coincide con «${search}».`;
+  if (environment === 'sandbox') return 'No hay validaciones de prueba en este período.';
+  return 'No hay validaciones en este filtro.';
+}
+
+function hrefFor(env: EnvFilter, search: string | undefined, cashierId = ''): string {
   const parts: string[] = [];
   if (env !== 'all') parts.push(`environment=${env}`);
+  if (cashierId !== '') parts.push(`cashier=${encodeURIComponent(cashierId)}`);
   if (search) parts.push(`q=${encodeURIComponent(search)}`);
   return parts.length === 0 ? '/validations' : `/validations?${parts.join('&')}`;
 }

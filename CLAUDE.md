@@ -559,6 +559,14 @@ kept) lives in `src/app/globals.css`; the components are Tailwind + shadcn.
   mouse-only), `sonner` toasts — before inventing a parallel one. A table keeps the one bespoke `.table` class inside a `Card`. The
   default `Button` variant is an accent *outline*, never a fill. An error in a
   modal is a **toast**, never a line that resizes the dialog.
+- **A filter never takes the table away.** A list that comes back empty keeps
+  its columns and puts the "no hay resultados" card *underneath* — the merchant
+  is adjusting those columns, and replacing them with a box hides the thing being
+  adjusted. The card names the filter that emptied the list ("Ana Pérez no tiene
+  validaciones en este período"), because a bare "no hay validaciones" under a
+  narrowed table reads as "you have no payments", which is a different and much
+  more alarming sentence. On a phone there is no table to keep, so the card is
+  all there is.
 - **Every screen is a desktop/mobile pair.** The design presents them side by
   side; both are in scope for every change. The shell folds at 900px, most
   desktop/mobile swaps at `md` (768px).
