@@ -38,6 +38,13 @@ type SearchableSelectProps = {
   placeholder?: string;
   searchPlaceholder?: string;
   disabled?: boolean;
+  /**
+   * Off for a short, fixed list. Three named options are read at a glance, and
+   * a filter box over them is a text field that does nothing — worse where the
+   * screen's actual search field is standing right beside it. Everything else
+   * stays: same trigger, same popover, same rows, same gesture (§11).
+   */
+  searchable?: boolean;
 };
 
 /** Diacritic- and case-insensitive, so "merida" finds "Mérida". */
@@ -53,6 +60,7 @@ export function SearchableSelect({
   placeholder = 'Elige una opción',
   searchPlaceholder = 'Buscar…',
   disabled = false,
+  searchable = true,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value) ?? null;
@@ -78,9 +86,9 @@ export function SearchableSelect({
           // Diacritic-folding contains, over the label and the Sudeban code.
           filter={(itemValue, search) => (fold(itemValue).includes(fold(search)) ? 1 : 0)}
         >
-          <CommandInput placeholder={searchPlaceholder} />
+          {searchable && <CommandInput placeholder={searchPlaceholder} />}
           <CommandList>
-            <CommandEmpty>Sin resultados</CommandEmpty>
+            {searchable && <CommandEmpty>Sin resultados</CommandEmpty>}
             <CommandGroup>
               {options.map((option) => (
                 <CommandItem

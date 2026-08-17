@@ -2,11 +2,16 @@
  * Screen 09 — the company's full list of validations, every cashier's work.
  *
  * Three filters, and all of them travel in the URL, so a view is shareable and
- * the page stays a Server Component: the environment (Todos / Producción /
- * Sandbox), a free-text search, and **whose work** — a person, by id, because
- * two cashiers called María are one shop's ordinary Tuesday and the text search
- * cannot tell them apart. Only the picker needs a script, and it is the same
- * `SearchableSelect` the counter picks a bank with.
+ * the page stays a Server Component: the environment, **whose work** — a person,
+ * by id, because two cashiers called María are one shop's ordinary Tuesday and
+ * the text search cannot tell them apart — and a free-text search.
+ *
+ * The two pickers are the same `SearchableSelect` the counter picks a bank with,
+ * and the header is ordered by how often a hand reaches for it: the environment
+ * is a switch a shop sets once (usually never — one production bank, and the
+ * sandbox rows stop existing), so it is a closed control rather than the strip
+ * of tabs it used to be, and the search box got the room. Somebody standing here
+ * with a receipt is looking for a reference.
  *
  * What the URL cannot carry is time passing: the till goes on validating while
  * this screen sits open in the back office. So the header also holds an
@@ -27,7 +32,6 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
-import { cn } from '@/lib/utils.ts';
 import { formatBolivares } from '../../../domain/money.ts';
 import { systemClock } from '../../../shared/clock.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
@@ -38,17 +42,10 @@ import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
 import { CashierFilter } from './cashier-filter.tsx';
+import { type EnvFilter, EnvironmentFilter } from './environment-filter.tsx';
 import { RefreshButton } from './refresh-button.tsx';
 
 export const metadata = pageMeta('Validaciones');
-
-type EnvFilter = 'all' | 'production' | 'sandbox';
-
-const ENV_TABS: readonly { value: EnvFilter; label: string; icon?: 'flask' }[] = [
-  { value: 'all', label: 'Todos' },
-  { value: 'production', label: 'Producción' },
-  { value: 'sandbox', label: 'Sandbox', icon: 'flask' },
-];
 
 export default async function ValidationsPage({
   searchParams,
@@ -97,33 +94,21 @@ export default async function ValidationsPage({
       subtitle={`Hoy · ${totals.totalCount} pagos validados · ${formatBolivares(totals.totalAmountCents)}`}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-stretch overflow-hidden rounded-md border border-border">
-            {ENV_TABS.map((tab) => (
-              <Link
-                key={tab.value}
-                href={hrefFor(tab.value, search, cashierId)}
-                className={cn(
-                  'inline-flex items-center gap-1.5 border-l border-border px-3 py-[7px] text-[13px] text-foreground/70 no-underline transition-colors first:border-l-0 hover:bg-foreground/[0.06]',
-                  tab.value === environment &&
-                    'text-primary shadow-[inset_0_0_0_1px_var(--primary)] hover:bg-transparent',
-                )}
-              >
-                {tab.icon && <Icon name={tab.icon} />}
-                {tab.label}
-              </Link>
-            ))}
-          </div>
+          <EnvironmentFilter value={environment} />
           <CashierFilter cashiers={staff} value={cashierId} />
           <form>
             {environment !== 'all' && (
               <input type="hidden" name="environment" value={environment} />
             )}
             {cashierId !== '' && <input type="hidden" name="cashier" value={cashierId} />}
+            {/* The widest thing in the header, now that the environment is one
+                closed control: this is what somebody reaches for with a receipt
+                in their hand. */}
             <Input
               name="q"
               defaultValue={search ?? ''}
               placeholder="Referencia, monto, cajero…"
-              className="w-[210px]"
+              className="w-[280px] max-[899px]:w-[210px]"
             />
           </form>
           {/* The clock of *this* render, so the button knows when a refresh it
@@ -217,14 +202,6 @@ function emptyMessage(
   if (search) return `Ninguna validación coincide con «${search}».`;
   if (environment === 'sandbox') return 'No hay validaciones de prueba en este período.';
   return 'No hay validaciones en este filtro.';
-}
-
-function hrefFor(env: EnvFilter, search: string | undefined, cashierId = ''): string {
-  const parts: string[] = [];
-  if (env !== 'all') parts.push(`environment=${env}`);
-  if (cashierId !== '') parts.push(`cashier=${encodeURIComponent(cashierId)}`);
-  if (search) parts.push(`q=${encodeURIComponent(search)}`);
-  return parts.length === 0 ? '/validations' : `/validations?${parts.join('&')}`;
 }
 
 function readEnv(value: string | null): EnvFilter {

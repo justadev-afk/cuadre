@@ -6,13 +6,14 @@
  * 3125566' on it; both are the same payer, and storing them as two strings
  * would mean a lookup that matches on phone silently missing.
  *
- * The `+` is part of the format, not decoration. It is what says the digits
- * after it are a country code rather than a trunk prefix — `584143125566` and
- * `0584143125566` are not distinguishable by shape alone — and it is what makes
- * a stored number recognisable as a phone number anywhere it is read: a column
- * in the panel, a CSV a merchant exports, a row somebody eyeballs in the D1
- * console. What a *bank* wants on the wire is that bank's own business: Banesco
- * takes the bare digits, and its client strips the plus on the way out (§4).
+ * Stored that way and *shown* the other: `formatPhoneForDisplay` puts the trunk
+ * zero back, because that is how a number is read aloud, written on a receipt
+ * and saved in a phone here. The two are the same fact in two audiences' words —
+ * the plus is what makes a stored number unambiguous to anything that reads the
+ * column, and the zero is what makes it recognisable to the person holding the
+ * receipt. What a *bank* wants on the wire is a third audience, and that is that
+ * bank's own business: Banesco takes the bare digits, and its client strips the
+ * plus on the way out (§4).
  */
 
 /**
@@ -29,6 +30,9 @@ export const VENEZUELAN_MOBILE_PREFIXES: readonly string[] = [
 ];
 
 const COUNTRY_CODE = '58';
+
+/** The canonical form, split into the operator and the line. */
+const CANONICAL_PHONE = /^\+58(\d{3})(\d{7})$/;
 
 /**
  * `null` when it is not a Venezuelan mobile. Punctuation is discarded first, so
@@ -47,20 +51,26 @@ export function normalisePhone(raw: string): string | null {
 }
 
 /**
- * The number as every screen shows it: '+584143125566'.
+ * The number as every screen shows it: '0414-3125566'.
  *
- * One shape, everywhere — the table, the modal, the tooltip and the printed
- * ticket. The panel used to show three at once (the column printed the stored
- * string raw, the modal rendered '0414-…', the receipt a third thing), and a
+ * Storage is E.164 and reading is not: nobody in Venezuela says "más cincuenta
+ * y ocho". A number is read aloud, written on a receipt and saved in a phone
+ * with its trunk zero, so that is the one shape on screen — the table, the
+ * modal, the tooltip and the printed ticket. The panel used to show two at once
+ * (the column printed the stored string raw, the modal spelled it out), and a
  * merchant comparing a row against a customer's screen should not have to
  * translate between them.
  *
- * Anything this cannot read comes back untouched rather than as an empty
- * string: a display helper that refuses to render is a blank cell on a receipt,
- * and a surprise in the column is better seen than hidden.
+ * It normalises first, so it renders the same whichever spelling it is handed —
+ * a row stored before 0009 and one stored after read identically. Anything it
+ * cannot read comes back untouched rather than as an empty string: a display
+ * helper that refuses to render is a blank cell on a receipt, and a surprise in
+ * the column is better seen than hidden.
  */
 export function formatPhoneForDisplay(stored: string): string {
-  return normalisePhone(stored) ?? stored;
+  const parsed = CANONICAL_PHONE.exec(normalisePhone(stored) ?? '');
+  if (parsed === null) return stored;
+  return `0${parsed[1]}-${parsed[2]}`;
 }
 
 /** The ten digits after any country or trunk prefix, or `null`. */

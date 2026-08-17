@@ -298,13 +298,15 @@ gateway at call time.
   till per counter, and by name alone the two accounts that can do anything sink
   under "Caja 1, Caja 2, Caja 3".
 - **Money is INTEGER cents.** Always, everywhere.
-- **A phone is E.164, plus included** — `+584143125566`, in the column and on
-  every screen. One canonical form (`normalisePhone`), one way of showing it
-  (`formatPhoneForDisplay`, which also repairs a number stored before 0009), and
-  the plus is not decoration: without it `584143125566` is just digits that could
-  as easily be read as a trunk prefix. What a *bank's* field wants is that bank's
-  business — Banesco's `phoneNum` takes bare digits and `wirePhone` drops the
-  plus inside its own folder, which is the §4 seam working as intended.
+- **A phone is stored as E.164 and shown as `0414-3125566`.** One canonical form
+  in the column (`normalisePhone` → `+584143125566`, where the plus is what makes
+  the digits unambiguous), one way of showing it on every screen
+  (`formatPhoneForDisplay`, which normalises first, so a row stored before 0009
+  reads the same as one stored after). Nobody here says "más cincuenta y ocho":
+  the trunk zero is how a number is read aloud and written on a receipt, and the
+  panel is read by the person holding that receipt. A bank's own field is a third
+  spelling and stays that bank's business — Banesco's `phoneNum` takes bare
+  digits and `wirePhone` drops the plus inside its folder (§4).
 - **The domain works in epoch seconds; the database stores ISO-8601 UTC.**
   Timestamps compare and order as epoch-seconds numbers in the domain, but the
   columns hold `2026-08-07T18:42:12Z` TEXT (migration 0004) so a human or an IDE

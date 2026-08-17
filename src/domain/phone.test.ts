@@ -67,13 +67,13 @@ describe('normalisePhone', () => {
 
 describe('formatPhoneForDisplay', () => {
   const table: ReadonlyArray<{ stored: string; expected: string; why: string }> = [
-    { stored: '+584143125566', expected: '+584143125566', why: 'the reference case' },
-    { stored: '+584123125566', expected: '+584123125566', why: 'another operator' },
-    { stored: '+584263125566', expected: '+584263125566', why: 'and another' },
+    { stored: '+584143125566', expected: '0414-3125566', why: 'the reference case' },
+    { stored: '+584123125566', expected: '0412-3125566', why: 'another operator' },
+    { stored: '+584263125566', expected: '0426-3125566', why: 'and another' },
     // A row written before 0009 ran, and a number that arrived some other way:
-    // the column reads as E.164 whatever spelling it is holding.
-    { stored: '584143125566', expected: '+584143125566', why: 'a row from before the plus' },
-    { stored: '0414-3125566', expected: '+584143125566', why: 'as a customer reads it aloud' },
+    // the column reads the same whatever spelling it is holding.
+    { stored: '584143125566', expected: '0414-3125566', why: 'a row from before the plus' },
+    { stored: '0414-3125566', expected: '0414-3125566', why: 'already how it is read aloud' },
     // And what it cannot read is shown, not swallowed.
     { stored: '', expected: '', why: 'empty passes through rather than throwing' },
     { stored: '58414312556', expected: '58414312556', why: 'too short: passed through' },
@@ -86,11 +86,12 @@ describe('formatPhoneForDisplay', () => {
     });
   }
 
-  it('shows every operator in E.164, whichever way it was typed', () => {
+  it('round-trips every operator: what was typed comes back', () => {
     for (const prefix of VENEZUELAN_MOBILE_PREFIXES) {
-      const stored = normalisePhone(`${prefix}-3125566`);
+      const typed = `${prefix}-3125566`;
+      const stored = normalisePhone(typed);
       expect(stored).not.toBeNull();
-      expect(formatPhoneForDisplay(stored ?? '')).toBe(`+58${prefix.slice(1)}3125566`);
+      expect(formatPhoneForDisplay(stored ?? '')).toBe(typed);
     }
   });
 });

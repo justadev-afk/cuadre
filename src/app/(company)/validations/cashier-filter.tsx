@@ -1,24 +1,19 @@
 'use client';
 
 /**
- * "Cajero: todos / María R." — the one control on this screen that needs a
- * script.
+ * "Cajero: todos / María R."
  *
- * The environment tabs are links and the search is a plain form, so both work
- * without JS; a picker cannot be either without a submit button beside it, and a
- * shop with eight tills wants to *find* a name rather than scan a row of tabs.
- * So it is the same `SearchableSelect` the counter uses to pick a bank — a
- * merchant should not learn a second widget for the same gesture (§11).
+ * A shop with eight tills wants to *find* a name rather than scan a row of
+ * tabs, so it is the same `SearchableSelect` the counter picks a bank with — a
+ * merchant should not learn a second widget for the same gesture (§11), which
+ * is also why the environment beside it is now that same control.
  *
- * It navigates rather than filtering in the browser: the list is server-rendered
- * and paged in SQL, and the URL is what makes a filtered view shareable and
- * survive a reload. Every other parameter on the URL is preserved, so choosing a
- * cashier does not silently drop the sandbox toggle or the search term.
+ * It navigates rather than filtering in the browser (`useQueryFilter`): the list
+ * is server-rendered and paged in SQL, and the URL is what makes a filtered view
+ * shareable and survive a reload.
  */
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useTransition } from 'react';
-
 import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
+import { useQueryFilter } from '../../_lib/use-query-filter.ts';
 
 /** The value that means "everybody". Absent from the URL, never `?cashier=all`. */
 const EVERYONE = '';
@@ -32,10 +27,7 @@ export function CashierFilter({
   /** The id on the URL right now, or '' for everybody. */
   value: string;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
-  const [pending, startTransition] = useTransition();
+  const { set, pending } = useQueryFilter();
 
   const options: readonly SelectOption[] = [
     { value: EVERYONE, label: 'Todos los usuarios' },
@@ -49,12 +41,7 @@ export function CashierFilter({
   ];
 
   const choose = (next: string): void => {
-    const query = new URLSearchParams(params.toString());
-    if (next === EVERYONE) query.delete('cashier');
-    else query.set('cashier', next);
-
-    const search = query.toString();
-    startTransition(() => router.push(search === '' ? pathname : `${pathname}?${search}`));
+    set('cashier', next === EVERYONE ? null : next);
   };
 
   return (
