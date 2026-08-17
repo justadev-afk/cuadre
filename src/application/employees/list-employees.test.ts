@@ -28,6 +28,18 @@ function staff() {
 }
 
 describe('listEmployees', () => {
+  it('puts the administrators first, then the cashiers, each alphabetically', async () => {
+    // A shop has one or two people who run the panel and a till per counter, so
+    // sorting by name alone buries the two accounts that can do anything under
+    // "Caja 1, Caja 2, Caja 3".
+    const { listEmployees } = staff();
+
+    const employees = await listEmployees({ companyId: 'la-espiga' });
+
+    expect(employees.map((employee) => employee.id)).toEqual(['ana', 'jose', 'maria']);
+    expect(employees.map((employee) => employee.role)).toEqual(['company', 'cashier', 'cashier']);
+  });
+
   it('returns the company’s people with when each of them last signed in', async () => {
     const { listEmployees } = staff();
 

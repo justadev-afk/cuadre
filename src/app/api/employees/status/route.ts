@@ -20,6 +20,7 @@ import { textField } from '../../../_lib/inputs.ts';
 const MESSAGES: Record<string, string> = {
   not_found: 'No se encontró ese usuario.',
   last_administrator: 'No puedes dejar la empresa sin administrador.',
+  own_access: 'No puedes desactivar tu propio usuario.',
 };
 
 /** What the panel says once it is done. */
@@ -43,6 +44,10 @@ export async function POST(request: Request): Promise<Response> {
   const result = await container().employees.updateEmployee({
     companyId: guard.companyId,
     userId,
+    // Off the session, never off the form: the rule it feeds is "nobody switches
+    // off their own access", and an actor read from the body is an actor the
+    // caller chooses.
+    actorUserId: guard.resolved.session.userId,
     status,
   });
   if (!result.ok) return refusal(MESSAGES[result.error] ?? 'No se pudo cambiar el acceso.');

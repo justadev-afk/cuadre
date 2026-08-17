@@ -4,6 +4,13 @@ import { verifyPassword } from '../../shared/crypto.ts';
 import { makeUpdateEmployee } from './update-employee.ts';
 import { type FakeUserRow, makeFakeSessions, makeFakeUserStore } from './user-store.fake.ts';
 
+/**
+ * Who is making the change. Only one rule reads it — nobody may change their
+ * own access — so every call below is somebody editing *somebody else*, and the
+ * one that is not has its own test at the bottom.
+ */
+const ACTOR = 'the-administrator';
+
 const STAFF: readonly Partial<FakeUserRow>[] = [
   {
     id: 'ana',
@@ -34,6 +41,7 @@ describe('updateEmployee', () => {
     const updated = await updateEmployee({
       companyId: 'la-espiga',
       userId: 'maria',
+      actorUserId: ACTOR,
       name: ' María R. Rodríguez ',
     });
 
@@ -50,6 +58,7 @@ describe('updateEmployee', () => {
     const updated = await updateEmployee({
       companyId: 'la-espiga',
       userId: 'maria',
+      actorUserId: ACTOR,
       pin: '8241',
     });
 
@@ -67,6 +76,7 @@ describe('updateEmployee', () => {
     const refused = await updateEmployee({
       companyId: 'la-espiga',
       userId: 'maria',
+      actorUserId: ACTOR,
       name: 'Otro Nombre',
       pin: '1234',
     });
@@ -83,7 +93,14 @@ describe('updateEmployee', () => {
     // Four digits in `password_hash` would be a password `isValidPassword`
     // would have refused, installed through a field naming a credential this
     // person does not use.
-    expect(await updateEmployee({ companyId: 'la-espiga', userId: 'ana', pin: '8241' })).toEqual({
+    expect(
+      await updateEmployee({
+        companyId: 'la-espiga',
+        userId: 'ana',
+        actorUserId: ACTOR,
+        pin: '8241',
+      }),
+    ).toEqual({
       ok: false,
       error: 'not_a_cashier',
     });
@@ -96,6 +113,7 @@ describe('updateEmployee', () => {
     const updated = await updateEmployee({
       companyId: 'la-espiga',
       userId: 'maria',
+      actorUserId: ACTOR,
       status: 'disabled',
     });
 
@@ -112,6 +130,7 @@ describe('updateEmployee', () => {
     const refused = await updateEmployee({
       companyId: 'la-espiga',
       userId: 'ana',
+      actorUserId: ACTOR,
       status: 'disabled',
     });
 
@@ -134,7 +153,12 @@ describe('updateEmployee', () => {
     ]);
 
     expect(
-      await updateEmployee({ companyId: 'la-espiga', userId: 'ana', status: 'disabled' }),
+      await updateEmployee({
+        companyId: 'la-espiga',
+        userId: 'ana',
+        actorUserId: ACTOR,
+        status: 'disabled',
+      }),
     ).toEqual({ ok: true, value: expect.objectContaining({ status: 'disabled' }) });
   });
 
@@ -153,7 +177,12 @@ describe('updateEmployee', () => {
     ]);
 
     expect(
-      await updateEmployee({ companyId: 'la-espiga', userId: 'ana', status: 'disabled' }),
+      await updateEmployee({
+        companyId: 'la-espiga',
+        userId: 'ana',
+        actorUserId: ACTOR,
+        status: 'disabled',
+      }),
     ).toEqual({ ok: false, error: 'last_administrator' });
   });
 
@@ -166,6 +195,7 @@ describe('updateEmployee', () => {
     const refused = await updateEmployee({
       companyId: 'la-espiga',
       userId: 'luis',
+      actorUserId: ACTOR,
       name: 'Robado',
       pin: '8241',
     });
@@ -179,9 +209,75 @@ describe('updateEmployee', () => {
   it('answers a uuid nobody has the same way as one belonging to somebody else', async () => {
     const { updateEmployee } = editing();
 
-    expect(await updateEmployee({ companyId: 'la-espiga', userId: 'nadie', name: 'x' })).toEqual({
-      ok: false,
-      error: 'not_found',
+    expect(
+      await updateEmployee({
+        companyId: 'la-espiga',
+        userId: 'nadie',
+        actorUserId: ACTOR,
+        name: 'x',
+      }),
+    ).toEqual({ ok: false, error: 'not_found' });
+  });
+});
+
+/**
+ * A merchant who disables themselves is locked out of their own panel, and the
+ * last-administrator count does not catch it: a shop with two owners would let
+ * one of them switch their own access off quite happily.
+ */
+describe('your own access', () => {
+  it('refuses to disable the person making the change, and writes nothing', async () => {
+    const { users, updateEmployee } = editing();
+
+    const refused = await updateEmployee({
+      companyId: 'la-espiga',
+      userId: 'ana',
+      actorUserId: 'ana',
+      status: 'disabled',
     });
+
+    expect(refused).toEqual({ ok: false, error: 'own_access' });
+    expect(users.rows.find((row) => row.id === 'ana')?.status).toBe('active');
+    expect(users.writes).toEqual([]);
+  });
+
+  it('refuses to re-enable yourself too — the id is the rule, not the direction', async () => {
+    // Unreachable through the app (a disabled user's session is revoked on its
+    // next request), which is exactly why it must not depend on the direction.
+    const { updateEmployee } = editing([
+      ...STAFF.filter((row) => row.id !== 'ana'),
+      {
+        id: 'ana',
+        companyId: 'la-espiga',
+        role: 'company',
+        name: 'Ana Pérez',
+        email: 'ana@espiga.ve',
+        username: null,
+        status: 'disabled',
+      },
+    ]);
+
+    expect(
+      await updateEmployee({
+        companyId: 'la-espiga',
+        userId: 'ana',
+        actorUserId: 'ana',
+        status: 'active',
+      }),
+    ).toEqual({ ok: false, error: 'own_access' });
+  });
+
+  it('still lets you rename yourself — a name is not a permission', async () => {
+    const { users, updateEmployee } = editing();
+
+    const renamed = await updateEmployee({
+      companyId: 'la-espiga',
+      userId: 'ana',
+      actorUserId: 'ana',
+      name: 'Ana P. Pérez',
+    });
+
+    expect(renamed).toMatchObject({ ok: true });
+    expect(users.rows.find((row) => row.id === 'ana')?.name).toBe('Ana P. Pérez');
   });
 });

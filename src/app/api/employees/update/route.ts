@@ -16,6 +16,7 @@ import { secretField, textField } from '../../../_lib/inputs.ts';
 
 const MESSAGES: Record<string, string> = {
   not_found: 'No se encontró ese usuario.',
+  own_access: 'No puedes cambiar tu propio acceso.',
   weak_pin: 'El PIN debe tener 4 a 6 dígitos y no ser una secuencia obvia.',
   not_a_cashier: 'Solo se le puede poner PIN a un cajero.',
   last_administrator: 'No puedes dejar la empresa sin administrador.',
@@ -34,6 +35,7 @@ export async function POST(request: Request): Promise<Response> {
   const result = await container().employees.updateEmployee({
     companyId: guard.companyId,
     userId,
+    actorUserId: guard.resolved.session.userId,
     name,
     ...(pin === '' ? {} : { pin }),
   });

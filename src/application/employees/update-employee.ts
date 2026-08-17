@@ -14,6 +14,10 @@
  * a merchant who guessed a uuid could rename — or re-PIN — another merchant's
  * cashier. Nothing is written before it has answered.
  *
+ * **Nobody takes their own access away** (`own_access`). A merchant who
+ * disables themselves is locked out of their own panel, and in a shop with two
+ * owners the last-administrator count would happily let it happen.
+ *
  * **`status` is the whole of hiring and firing here, and it goes both ways.**
  * Nothing deletes a user: `validations.cashier_id` names whoever confirmed each
  * payment and has to keep naming them, so taking access away is a column and
@@ -69,6 +73,11 @@ export interface SessionRevoker {
 export type UpdateEmployeeInput = {
   readonly companyId: string;
   readonly userId: string;
+  /**
+   * Who is making the change — the signed-in user, off the session and never off
+   * a form. It exists for one rule: nobody switches off their own access.
+   */
+  readonly actorUserId: string;
   readonly name?: string;
   /** Access, in both directions. See the note at the top of the file. */
   readonly status?: EmployeeStatus;
@@ -80,7 +89,8 @@ export type UpdateEmployeeFailure =
   | 'not_found'
   | 'weak_pin'
   | 'not_a_cashier'
-  | 'last_administrator';
+  | 'last_administrator'
+  | 'own_access';
 
 export type UpdateEmployee = (
   input: UpdateEmployeeInput,
@@ -106,6 +116,19 @@ export function makeUpdateEmployee({ users, sessions }: UpdateEmployeeDeps): Upd
       // credential they do not use.
       if (!isCashier(found.role)) return err('not_a_cashier');
       if (!isValidPin(input.pin)) return err('weak_pin');
+    }
+
+    // **Nobody changes their own access.** Not disabling — that is a merchant
+    // signing themselves out of their own panel with no way back in, and the
+    // last-administrator count below would not catch it in a shop with two
+    // owners. And not enabling either: a session belonging to a disabled user is
+    // revoked on its next request, so the only way to reach this with your own id
+    // and `active` is a request built by hand.
+    //
+    // The name and the PIN are a different matter and stay editable: renaming
+    // yourself is not a permission.
+    if (input.status !== undefined && input.userId === input.actorUserId) {
+      return err('own_access');
     }
 
     // Only *removing* access can leave a company locked out of itself. Handing

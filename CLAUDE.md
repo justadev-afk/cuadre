@@ -288,6 +288,15 @@ gateway at call time.
   `deleteEmployee` use case any more, and the two-ending "delete if they have no
   history, disable if they do" that used to sit there is gone with it. Disabling
   ends the next sign-in *and* the sessions already open (see §7).
+  **Nobody changes their own access**, in either direction: `updateEmployee`
+  takes the acting user off the session and refuses `own_access`, and the panel
+  does not draw the switch on your own row. The last-administrator count does not
+  cover this — a shop with two owners would let one of them lock themselves out —
+  and the name and the PIN stay editable, because a name is not a permission.
+  The list is ordered administrators first, then cashiers, in `listEmployees`
+  rather than in a screen: a shop is one or two people who run the panel and a
+  till per counter, and by name alone the two accounts that can do anything sink
+  under "Caja 1, Caja 2, Caja 3".
 - **Money is INTEGER cents.** Always, everywhere.
 - **The domain works in epoch seconds; the database stores ISO-8601 UTC.**
   Timestamps compare and order as epoch-seconds numbers in the domain, but the

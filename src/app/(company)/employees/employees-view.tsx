@@ -6,10 +6,14 @@
  * dialog opens from two places at once — the header button (create) and a click
  * on any row (edit) — so both need the same piece of state.
  *
- * **Every row is editable and every row has the access switch**, the merchant's
- * own administrator included. A shop with two owners can take one of them off
- * the panel, and one with a single owner is told why it cannot (the use case
- * counts first). What no row has is a delete: access is a column, because
+ * **Every row is editable, and every row but one has the access switch.** The
+ * exception is the person looking at the screen: nobody switches off their own
+ * access, so their row simply does not draw the control (the endpoint refuses it
+ * too — this is so there is nothing to press). A shop with two owners can still
+ * take the *other* one off the panel, and one with a single owner is told why it
+ * cannot, because the use case counts administrators first.
+ *
+ * What no row has is a delete: access is a column, because
  * `validations.cashier_id` names whoever confirmed each payment for as long as
  * the payment exists. The switch's click is stopped from bubbling into the
  * row's edit so the two never fire together.
@@ -42,9 +46,12 @@ type DialogState =
 export function EmployeesView({
   employees,
   nowSeconds,
+  currentUserId,
 }: {
   employees: readonly Employee[];
   nowSeconds: number;
+  /** The signed-in user. Their own row carries no access switch. */
+  currentUserId: string;
 }) {
   const [dialog, setDialog] = useState<DialogState>(null);
   const cashiers = employees.filter((e) => e.role === 'cashier');
@@ -124,7 +131,9 @@ export function EmployeesView({
                       {e.lastLoginAt === null ? 'Nunca' : formatDayClock(e.lastLoginAt, nowSeconds)}
                     </td>
                     <td className="text-right whitespace-nowrap">
-                      <EmployeeAccessButton userId={e.id} name={e.name} active={active} />
+                      {e.id === currentUserId ? null : (
+                        <EmployeeAccessButton userId={e.id} name={e.name} active={active} />
+                      )}
                     </td>
                   </tr>
                 );
