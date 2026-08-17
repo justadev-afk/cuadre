@@ -20,11 +20,6 @@ import {
   type CreateEmployeeDeps,
   makeCreateEmployee,
 } from './create-employee.ts';
-import {
-  type DeleteEmployee,
-  type DeleteEmployeeDeps,
-  makeDeleteEmployee,
-} from './delete-employee.ts';
 import { type ListEmployees, type ListEmployeesDeps, makeListEmployees } from './list-employees.ts';
 import {
   makeUpdateEmployee,
@@ -35,14 +30,12 @@ import {
 export type EmployeeUseCaseDeps = ListEmployeesDeps &
   CreateEmployeeDeps &
   UpdateEmployeeDeps &
-  DeleteEmployeeDeps &
   ChangeOwnPasswordDeps;
 
 export type EmployeeUseCases = {
   readonly listEmployees: ListEmployees;
   readonly createEmployee: CreateEmployee;
   readonly updateEmployee: UpdateEmployee;
-  readonly deleteEmployee: DeleteEmployee;
   readonly changeOwnPassword: ChangeOwnPassword;
 };
 
@@ -51,7 +44,6 @@ export function makeEmployeeUseCases(deps: EmployeeUseCaseDeps): EmployeeUseCase
     listEmployees: makeListEmployees(deps),
     createEmployee: makeCreateEmployee(deps),
     updateEmployee: makeUpdateEmployee(deps),
-    deleteEmployee: makeDeleteEmployee(deps),
     changeOwnPassword: makeChangeOwnPassword(deps),
   };
 }

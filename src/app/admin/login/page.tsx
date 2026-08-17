@@ -15,14 +15,16 @@ import { Icon } from '../../_components/icon.tsx';
 import { currentSession } from '../../_lib/current-session.ts';
 import { landingFor } from '../../_lib/landing.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
+import { isLiveSession, SESSION_ENDED_PATH } from '../../_lib/session-exit.ts';
 import { AdminLoginForm } from './admin-login-form.tsx';
 
 export const metadata = pageMeta('Administración');
 
 export default async function AdminLoginPage() {
   const resolution = await currentSession();
-  if (resolution.kind === 'superseded') redirect('/session-ended');
-  if (resolution.kind === 'active') redirect(landingFor(resolution.active.session.role));
+  if (isLiveSession(resolution)) redirect(landingFor(resolution.active.session.role));
+  // A cookie that still names something is cleared there before this renders.
+  if (resolution.kind !== 'anonymous') redirect(SESSION_ENDED_PATH);
 
   return (
     <AuthShell>

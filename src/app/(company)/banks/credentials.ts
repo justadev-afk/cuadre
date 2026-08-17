@@ -9,7 +9,7 @@
  * `credentialFieldName`, the actions read them back with `readCredentialPair`,
  * and neither spells the dot itself.
  *
- * Pure and free of `'use server'`, so both sides may import it.
+ * Pure, so the client component and the route handler may both import it.
  */
 import type {
   BankCredentialGroup,

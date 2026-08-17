@@ -21,6 +21,7 @@ import { landingFor } from '../_lib/landing.ts';
 import { groupThousands } from '../_lib/masks.ts';
 import { pageMeta } from '../_lib/page-meta.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
+import { isLiveSession, SESSION_ENDED_PATH } from '../_lib/session-exit.ts';
 import { LoginForm, type LoginNotice, type LoginStatView } from './login-form.tsx';
 import { SessionEndedModal } from './session-ended-modal.tsx';
 
@@ -29,8 +30,8 @@ export const metadata = pageMeta('Entrar');
 export default async function LoginPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const resolution = await currentSession();
-  if (resolution.kind === 'superseded') redirect('/session-ended');
-  if (resolution.kind === 'active') redirect(landingFor(resolution.active.session.role));
+  if (isLiveSession(resolution)) redirect(landingFor(resolution.active.session.role));
+  if (resolution.kind !== 'anonymous') redirect(SESSION_ENDED_PATH);
 
   // `/session-ended` cleared the cookie before forwarding here, so by now this
   // resolves anonymous and the middleware lets the page render.

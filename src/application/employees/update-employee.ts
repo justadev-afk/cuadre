@@ -14,12 +14,12 @@
  * a merchant who guessed a uuid could rename — or re-PIN — another merchant's
  * cashier. Nothing is written before it has answered.
  *
- * `status` can only be set to `'disabled'`. The repository exposes `disable`
- * and no inverse, and a use case may not reach past its port to invent one:
- * re-enabling somebody needs a statement in `src/adapters/d1/user.repository.ts`
- * that does not exist yet. It is called out rather than quietly accepted,
- * because a company with a disabled cashier and no way back is a support call
- * whose fix is one UPDATE.
+ * **`status` is the whole of hiring and firing here, and it goes both ways.**
+ * Nothing deletes a user: `validations.cashier_id` names whoever confirmed each
+ * payment and has to keep naming them, so taking access away is a column and
+ * giving it back is the same column. A shop that disables the wrong cashier on
+ * a Saturday fixes it in the same dialog, which is why the port takes a status
+ * rather than exposing a one-way `disable`.
  */
 import { isValidPin } from '../../domain/credentials.ts';
 import { hashPassword } from '../../shared/crypto.ts';
@@ -28,6 +28,7 @@ import { err, ok, type Result } from '../../shared/result.ts';
 import {
   type Employee,
   type EmployeeRole,
+  type EmployeeStatus,
   isCashier,
   type StoredUser,
   toEmployee,
@@ -39,8 +40,7 @@ type UserWriteFailure =
   | 'username_taken'
   | 'invalid_for_role'
   | 'unknown_company'
-  | 'not_found'
-  | 'has_history';
+  | 'not_found';
 
 /**
  * The narrow port. `updateProfile` is declared with a patch that has only
@@ -57,7 +57,7 @@ export interface CompanyUserWriter {
     patch: { readonly name?: string },
   ): Promise<Result<StoredUser, UserWriteFailure>>;
   setPasswordHash(id: string, passwordHash: string): Promise<Result<void, UserWriteFailure>>;
-  disable(id: string): Promise<Result<StoredUser, UserWriteFailure>>;
+  setStatus(id: string, status: EmployeeStatus): Promise<Result<StoredUser, UserWriteFailure>>;
 }
 
 /** Sessions never expire on their own, so something has to end them. */
@@ -70,8 +70,8 @@ export type UpdateEmployeeInput = {
   readonly companyId: string;
   readonly userId: string;
   readonly name?: string;
-  /** Only `'disabled'`. See the note at the top of the file. */
-  readonly status?: 'disabled';
+  /** Access, in both directions. See the note at the top of the file. */
+  readonly status?: EmployeeStatus;
   /** A new PIN for a cashier. Replaces the old one immediately. */
   readonly pin?: string;
 };
@@ -108,6 +108,8 @@ export function makeUpdateEmployee({ users, sessions }: UpdateEmployeeDeps): Upd
       if (!isValidPin(input.pin)) return err('weak_pin');
     }
 
+    // Only *removing* access can leave a company locked out of itself. Handing
+    // it back never can, so it is not asked about.
     if (input.status === 'disabled' && !isCashier(found.role)) {
       const administrators = await users.listByCompany(input.companyId, 'company');
       if (wouldLeaveNoAdministrator(administrators, found.id)) return err('last_administrator');
@@ -133,14 +135,17 @@ export function makeUpdateEmployee({ users, sessions }: UpdateEmployeeDeps): Upd
       await sessions.deleteAllForUser(found.id);
     }
 
-    if (input.status === 'disabled') {
-      const disabled = await users.disable(found.id);
-      if (!disabled.ok) return failed(disabled.error, 'disable');
-      current = disabled.value;
-      // Disabling stops the *next* sign-in and nothing else. Somebody being
-      // walked off the floor is exactly the case where the tab already open at
-      // the till is the one that matters.
-      await sessions.deleteAllForUser(found.id);
+    if (input.status !== undefined && input.status !== found.status) {
+      const written = await users.setStatus(found.id, input.status);
+      if (!written.ok) return failed(written.error, `status ${input.status}`);
+      current = written.value;
+
+      // Disabling stops the *next* sign-in and nothing else, so the live tabs
+      // are ended here too: somebody being walked off the floor is exactly the
+      // case where the till already open is the one that matters. It is a
+      // best-effort sweep of a KV index — `resolveSession` re-reads the status
+      // column on every request, which is what actually closes the door.
+      if (input.status === 'disabled') await sessions.deleteAllForUser(found.id);
     }
 
     return ok(toEmployee(current));

@@ -12,7 +12,6 @@ import { ContentLayout } from '../../_components/content-layout.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
-import { changeCredentialsAction } from './actions.ts';
 import { BanksPanel } from './banks-panel.tsx';
 import { ChangeCredentialsButton } from './change-credentials-button.tsx';
 import { DeactivateBankButton } from './deactivate-bank-button.tsx';
@@ -60,7 +59,6 @@ export default async function BanksPage() {
                 <>
                   {info && (
                     <ChangeCredentialsButton
-                      action={changeCredentialsAction}
                       accountId={account.id}
                       bankId={account.bank}
                       bankLabel={name}

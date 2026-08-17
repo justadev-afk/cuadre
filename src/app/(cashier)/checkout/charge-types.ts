@@ -1,8 +1,7 @@
 /**
- * Types for the checkout flow. Split from `actions.ts` because a `'use server'`
- * module may only export async functions — a type beside the action fails the
- * RSC build. The `chargeAction` in `actions.ts` returns `ChargeOutcome`; the
- * form imports these to render it.
+ * Types for the checkout flow: what the counter sends to `/api/checkout/charge`
+ * and what it gets back. The handler and the form are the two readers, which is
+ * the whole reason they live in a file of their own.
  */
 import type { PaymentKind } from '../../../application/ports/bank-gateway.ts';
 import type { ValidatePaymentFailure } from '../../../application/validations/validate-payment.ts';

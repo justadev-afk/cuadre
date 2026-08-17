@@ -85,9 +85,9 @@ export function toEmployeeRole(role: string): EmployeeRole {
  *
  * The two disagree on purpose. `toEmployeeRole` folds a role it cannot read
  * *down* to `cashier`, which is the least privilege on a screen — but a
- * cashier is the one role that holds a PIN and the one whose deletion needs no
- * second thought, so a decision like that has to make the unreadable role fall
- * the other way.
+ * cashier is the one role that holds a PIN, and writing four digits into an
+ * administrator's password field is the mistake this guards, so a decision like
+ * that has to make the unreadable role fall the other way.
  */
 export function isCashier(role: string): boolean {
   return role === 'cashier';
@@ -97,7 +97,7 @@ export function isCashier(role: string): boolean {
  * Would revoking this person's access leave the company with nobody who can
  * sign into its panel?
  *
- * A merchant who disables or deletes their own last administrator is locked
+ * A merchant who disables their own last administrator is locked
  * out of their own account, and there is no self-service way back: the reset
  * mail goes to an address on a user row that can no longer sign in, and the
  * cashiers cannot reach the panel at all. It is a support call, and the whole

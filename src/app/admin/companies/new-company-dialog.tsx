@@ -9,10 +9,10 @@
  * keeps them through a refusal — and lets the RIF format itself as it is typed.
  *
  * A refusal is a **toast**, not a note grown inside the dialog, so the modal
- * never resizes under the cursor. On success the action revalidates the list
- * and the dialog closes itself.
+ * never resizes under the cursor. On success the hook refreshes the list behind
+ * it and the dialog closes itself.
  */
-import { useActionState, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -28,14 +28,18 @@ import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { Separator } from '@/components/ui/separator.tsx';
 import { Icon } from '../../_components/icon.tsx';
+import { API } from '../../_lib/endpoints.ts';
 import { maskRif } from '../../_lib/masks.ts';
 import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
-import { createCompanyAction } from './actions.ts';
-import { CREATE_COMPANY_INITIAL } from './form-state.ts';
+import { useEndpointAction } from '../../_lib/use-endpoint-action.ts';
+import { CREATE_COMPANY_INITIAL, type CreateCompanyState } from './form-state.ts';
 
 export function NewCompanyDialog() {
   const [open, setOpen] = useState(false);
-  const [state, action, pending] = useActionState(createCompanyAction, CREATE_COMPANY_INITIAL);
+  const [state, action, pending] = useEndpointAction<CreateCompanyState>(
+    API.companiesCreate,
+    CREATE_COMPANY_INITIAL,
+  );
 
   const [name, setName] = useState('');
   const [rif, setRif] = useState('');

@@ -97,8 +97,20 @@ queue = "cuadre-jobs"
 max_retries = 5
 max_batch_size = 10
 
+# Cloudflare Email Sending. The domain is onboarded account-side
+# (jsansossio.com: enabled, DNS configured) and production delivers — a real
+# password-reset mail from `no-responder@jsansossio.com` shows Delivered in the
+# service's activity log.
+#
+# `remote = true` is what `wrangler dev` needs. Without it the local run
+# simulates the binding, the simulator holds no sending domain, and every send
+# fails with "could not find domain config of sending domain" — a local-only
+# error that reads exactly like a broken production config. With it, the local
+# Worker sends through the real service, which is also the only way to see a mail
+# actually arrive while developing.
 [[send_email]]
 name = "EMAIL"
+remote = true
 
 # One data point per validation attempt, found or not. This is the only trace a
 # failed attempt leaves: `validations` stores confirmed payments only, so the

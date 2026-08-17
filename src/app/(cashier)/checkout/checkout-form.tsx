@@ -46,8 +46,10 @@ import { SearchableSelect, type SelectOption } from '../../_components/searchabl
 import { BankSpinner, ButtonSpinner } from '../../_components/skeleton.tsx';
 import { type ReceiptData, ThermalReceipt } from '../../_components/thermal-receipt.tsx';
 import { ValidatedPaymentModal } from '../../_components/validated-payment-modal.tsx';
+import { API } from '../../_lib/endpoints.ts';
 import { maskCurrency, maskDate, readTypedDate } from '../../_lib/masks.ts';
 import { kindLabel } from '../../_lib/payment-kind.ts';
+import { postJson } from '../../_lib/use-endpoint-action.ts';
 import {
   formatClock,
   formatDateTime,
@@ -59,7 +61,7 @@ import {
   venezuelaToday,
   yesterdayInVenezuela,
 } from '../../_lib/venezuela-format.ts';
-import { chargeAction } from './actions.ts';
+
 import type { ChargeOutcome, ConfirmedCharge, ReceivingAccountView } from './charge-types.ts';
 
 /** A confirmed charge as the thermal receipt states it. */
@@ -408,7 +410,7 @@ export function CheckoutForm({
     setOutcome(null);
     setBusy(true);
 
-    const answer = await chargeAction({
+    const answer = await postJson<ChargeOutcome>(API.charge, {
       kind: spec.kind,
       reference,
       payerPhone,
@@ -423,7 +425,10 @@ export function CheckoutForm({
       paymentDate: spec.needsDate ? (paymentDate ?? venezuelaToday()) : null,
       idempotencyKey: key,
       bankAccountId: accountId,
-    });
+      // A request that never arrives reads exactly like a bank we could not
+      // reach, which is the one thing it certainly means to the cashier. The
+      // idempotency key is unchanged, so *Reintentar* is the same charge.
+    }).catch<ChargeOutcome>(() => ({ status: 'failed', failure: 'unavailable' }));
 
     // A cancelled attempt is not an answer anybody is waiting for any more.
     if (attempt.current !== mine) return;

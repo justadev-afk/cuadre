@@ -19,7 +19,7 @@
  * uncontrolled one. It renders inside a shadcn `Dialog` (see `banks-panel.tsx`),
  * so its heading is a `DialogTitle` and the modal's own close button is the only X.
  */
-import { useActionState, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import { DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog.tsx';
@@ -28,8 +28,9 @@ import { Label } from '@/components/ui/label.tsx';
 import type { SupportedBank } from '../../../application/banking/list-supported-banks.ts';
 import type { BankEnvironment } from '../../../application/ports/bank-gateway.ts';
 import { Icon } from '../../_components/icon.tsx';
+import { API } from '../../_lib/endpoints.ts';
 import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
-import { connectBankAction } from './actions.ts';
+import { useEndpointAction } from '../../_lib/use-endpoint-action.ts';
 import { ConnectingOverlay } from './connecting-overlay.tsx';
 import {
   BankIdentityFields,
@@ -40,27 +41,20 @@ import { requiredCredentialsFilled } from './credentials.ts';
 import { CONNECT_INITIAL, type ConnectState } from './form-state.ts';
 import { ReceivingAccountsField } from './receiving-accounts-field.tsx';
 
-type ConnectBankAction = (previous: ConnectState, form: FormData) => Promise<ConnectState>;
-
 type ConnectWizardProps = {
   /** Every bank a company can connect. One today (Banesco); the form is generic. */
   banks: readonly SupportedBank[];
   onClose: () => void;
-  /** The connect action — defaults to the company's own; the admin panel passes
-   *  its version, scoped to a target company. */
-  connectAction?: ConnectBankAction;
-  /** When present (the admin flow), carried into the form so the action knows
-   *  which company it is setting up. */
+  /** When present (the admin flow), carried into the form as the company being
+   *  set up. One endpoint serves both callers and decides which id it honours. */
   companyId?: string;
 };
 
-export function ConnectWizard({
-  banks,
-  onClose,
-  connectAction = connectBankAction,
-  companyId,
-}: ConnectWizardProps) {
-  const [state, formAction, pending] = useActionState(connectAction, CONNECT_INITIAL);
+export function ConnectWizard({ banks, onClose, companyId }: ConnectWizardProps) {
+  const [state, formAction, pending] = useEndpointAction<ConnectState>(
+    API.banksConnect,
+    CONNECT_INITIAL,
+  );
 
   // The chosen bank drives everything below it — its environments and its
   // declared credential groups. Switching bank resets the environment and

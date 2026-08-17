@@ -25,7 +25,6 @@ import { container } from '../../../_lib/current-session.ts';
 import { formatDate, formatDayClock, initialsOf } from '../../../_lib/venezuela-format.ts';
 import { BanksPanel } from '../../../(company)/banks/banks-panel.tsx';
 import { ChangeCredentialsButton } from '../../../(company)/banks/change-credentials-button.tsx';
-import { changeCredentialsAdminAction, connectBankAdminAction } from './actions.ts';
 
 export default async function CompanyDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   await requireArea('admin');
@@ -157,12 +156,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <h6 className="m-0 text-primary">Bancos conectados</h6>
           {banks.length > 0 && (
-            <BanksPanel
-              banks={banks}
-              hasAccount={connected.length > 0}
-              connectAction={connectBankAdminAction}
-              companyId={slug}
-            />
+            <BanksPanel banks={banks} hasAccount={connected.length > 0} companyId={slug} />
           )}
         </div>
         {connected.length === 0 ? (
@@ -187,7 +181,6 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                   action={
                     info && (
                       <ChangeCredentialsButton
-                        action={changeCredentialsAdminAction}
                         accountId={account.id}
                         companyId={slug}
                         bankId={account.bank}

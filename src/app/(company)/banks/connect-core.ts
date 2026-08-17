@@ -2,13 +2,11 @@
  * The shared body of connecting a bank, for a company the caller has already
  * resolved and guarded.
  *
- * A plain module, not a `'use server'` file: those may export only async server
- * actions, and this is the logic two of them share. The company action
- * (`banks/actions.ts`) runs `requireCompany` and passes its own company; the
- * admin action (`admin/companies/[slug]/actions.ts`) runs `requireArea('admin')`
- * and passes the target company. Revalidation is the caller's — a company
- * revalidates `/banks`, an admin the company-detail path — so this stays free of
- * the route it was reached from.
+ * It is called by one route handler now (`api/banks/connect`), which resolves
+ * *whose* company this is — a merchant's own, or the one a platform admin named
+ * while setting them up. It was two Server Actions over the same body, and the
+ * guard that told them apart is `requireCompanyScope`. Nothing here knows which
+ * screen it was reached from.
  *
  * It used to be two functions, verify then connect, with a KV-parked
  * verification in between while the merchant chose a receiving account. There is

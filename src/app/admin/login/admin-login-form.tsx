@@ -10,7 +10,7 @@
  * the merchant and cashier forms give.
  */
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -18,11 +18,16 @@ import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { DeviceIdField } from '../../_lib/device-id-field.tsx';
-import { NO_SIGN_IN_ERROR } from '../../_lib/sign-in-state.ts';
-import { signInAdminAction } from './actions.ts';
+import { API } from '../../_lib/endpoints.ts';
+import { NO_SIGN_IN_ERROR, type SignInState } from '../../_lib/sign-in-state.ts';
+import { useEndpointAction } from '../../_lib/use-endpoint-action.ts';
 
 export function AdminLoginForm() {
-  const [state, action, pending] = useActionState(signInAdminAction, NO_SIGN_IN_ERROR);
+  const [state, action, pending] = useEndpointAction<SignInState>(
+    API.signInAdmin,
+    NO_SIGN_IN_ERROR,
+    { refresh: false },
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const emailRef = useRef<HTMLInputElement>(null);

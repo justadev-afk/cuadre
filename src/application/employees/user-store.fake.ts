@@ -4,7 +4,7 @@
  *
  * It copies the one asymmetry the real statements have and the port signatures
  * do not: `listByCompany` filters on `company_id`, while `findById`,
- * `updateProfile`, `setPasswordHash`, `disable` and `remove` are keyed by the
+ * `updateProfile`, `setPasswordHash` and `setStatus` are keyed by the
  * uuid **alone** — exactly as the D1 statements in
  * `src/adapters/d1/user.repository.ts` are. That asymmetry is the point of
  * this fake. A use case that writes through an id without first establishing
@@ -35,15 +35,12 @@ type WriteFailure =
   | 'username_taken'
   | 'invalid_for_role'
   | 'unknown_company'
-  | 'not_found'
-  | 'has_history';
+  | 'not_found';
 
 type Visible = Omit<FakeUserRow, 'passwordHash'>;
 
 export type FakeUserStore = {
   readonly rows: FakeUserRow[];
-  /** Ids whose delete SQLite would refuse: `validations.cashier_id` points at them. */
-  readonly withHistory: Set<string>;
   readonly writes: string[];
   createUser(input: {
     readonly id: string;
@@ -63,20 +60,17 @@ export type FakeUserStore = {
     patch: { readonly name?: string },
   ): Promise<Result<Visible, WriteFailure>>;
   setPasswordHash(id: string, passwordHash: string): Promise<Result<void, WriteFailure>>;
-  disable(id: string): Promise<Result<Visible, WriteFailure>>;
-  remove(id: string): Promise<Result<void, WriteFailure>>;
+  setStatus(id: string, status: EmployeeStatus): Promise<Result<Visible, WriteFailure>>;
 };
 
 export function makeFakeUserStore(seed: readonly Partial<FakeUserRow>[] = []): FakeUserStore {
   const rows: FakeUserRow[] = seed.map(userRow);
-  const withHistory = new Set<string>();
   const writes: string[] = [];
 
   const find = (id: string) => rows.find((row) => row.id === id) ?? null;
 
   return {
     rows,
-    withHistory,
     writes,
 
     async createUser(input) {
@@ -128,22 +122,14 @@ export function makeFakeUserStore(seed: readonly Partial<FakeUserRow>[] = []): F
       return ok(undefined);
     },
 
-    async disable(id) {
-      writes.push(`disable:${id}`);
+    // There is no delete. A user row outlives the person's access, because
+    // `validations.cashier_id` names them on every payment they confirmed.
+    async setStatus(id, status) {
+      writes.push(`setStatus:${id}:${status}`);
       const row = find(id);
       if (row === null) return err('not_found');
-      row.status = 'disabled';
+      row.status = status;
       return ok(visible(row));
-    },
-
-    async remove(id) {
-      writes.push(`remove:${id}`);
-      const at = rows.findIndex((row) => row.id === id);
-      if (at === -1) return err('not_found');
-      // The foreign key SQLite refuses to break. See `delete-employee.ts`.
-      if (withHistory.has(id)) return err('has_history');
-      rows.splice(at, 1);
-      return ok(undefined);
     },
   };
 }

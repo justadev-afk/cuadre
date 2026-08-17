@@ -133,35 +133,66 @@ describe('createUser', () => {
   });
 });
 
-describe('remove', () => {
-  it('reads a foreign key failure on delete as history, not an unknown company', async () => {
+describe('setStatus', () => {
+  // Access is a column and nothing deletes a user row: `validations.cashier_id`
+  // names whoever confirmed each payment for as long as the payment exists.
+  it('writes the status it was given, both ways', async () => {
     const fake = makeFakeD1();
-    fake.reply({ throws: new Error('D1_ERROR: FOREIGN KEY constraint failed') });
+    fake.reply({ rows: [row({ status: 'disabled' })] });
 
-    const result = await new D1UserRepository(fake.db).remove('user-1');
+    const disabled = await new D1UserRepository(fake.db).setStatus('user-1', 'disabled');
 
-    expect(result).toEqual({ ok: false, error: 'has_history' });
+    expect(disabled).toEqual({ ok: true, value: expect.objectContaining({ status: 'disabled' }) });
+    expect(fake.calls[0]?.sql).toContain('UPDATE users SET status = ?');
+    expect(fake.calls[0]?.args).toEqual(['disabled', 'user-1']);
   });
 
-  it('clears the reset tokens in the same atomic batch as the user', async () => {
+  it('hands access back, which is what makes a wrong click undoable', async () => {
     const fake = makeFakeD1();
-    fake.reply({ rows: [], changes: 0 }, { rows: [], changes: 1 });
+    fake.reply({ rows: [row({ status: 'active' })] });
 
-    const result = await new D1UserRepository(fake.db).remove('user-1');
+    const active = await new D1UserRepository(fake.db).setStatus('user-1', 'active');
 
-    expect(result.ok).toBe(true);
-    expect(fake.calls[0]?.sql).toContain('DELETE FROM password_resets');
-    expect(fake.calls[1]?.sql).toContain('DELETE FROM users');
+    expect(active).toEqual({ ok: true, value: expect.objectContaining({ status: 'active' }) });
+    expect(fake.calls[0]?.args).toEqual(['active', 'user-1']);
   });
 
-  it('reports not_found when the delete changed nothing', async () => {
+  it('reports not_found when the update matched nobody', async () => {
     const fake = makeFakeD1();
-    fake.reply({ rows: [], changes: 0 }, { rows: [], changes: 0 });
+    fake.reply({ rows: [] });
 
-    expect(await new D1UserRepository(fake.db).remove('ghost')).toEqual({
+    expect(await new D1UserRepository(fake.db).setStatus('ghost', 'disabled')).toEqual({
       ok: false,
       error: 'not_found',
     });
+  });
+});
+
+describe('findStanding', () => {
+  // The read every authenticated request makes. A user who is gone must come
+  // back as `null`, which is what `resolveSession` turns into a signed-out tab.
+  it('answers with the user status and the company status in one row', async () => {
+    const fake = makeFakeD1();
+    fake.reply({ rows: [{ status: 'active', company_id: 'la-espiga', company_status: 'active' }] });
+
+    const standing = await new D1UserRepository(fake.db).findStanding('user-1');
+
+    expect(standing).toEqual({
+      status: 'active',
+      companyId: 'la-espiga',
+      companyStatus: 'active',
+    });
+    // One statement, and a LEFT JOIN so a platform admin — who has no company —
+    // still resolves.
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]?.sql).toContain('LEFT JOIN companies');
+  });
+
+  it('is null for a user who is no longer there', async () => {
+    const fake = makeFakeD1();
+    fake.reply({ rows: [] });
+
+    expect(await new D1UserRepository(fake.db).findStanding('ghost')).toBeNull();
   });
 });
 

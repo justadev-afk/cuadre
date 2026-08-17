@@ -12,10 +12,10 @@
  * never read back. A refusal is a toast, so the modal never resizes.
  *
  * The same component serves the company panel and the admin's company-detail
- * page: the server action arrives as a prop, and an admin passes the target
- * `companyId`, rendered as a hidden field the admin action reads.
+ * page: both post to one endpoint, and an admin passes the target `companyId`,
+ * rendered as a hidden field the endpoint honours only for an admin.
  */
-import { useActionState, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -33,7 +33,9 @@ import type {
   BankReceivingAccountRule,
 } from '../../../application/ports/bank-gateway.ts';
 import { Icon } from '../../_components/icon.tsx';
+import { API } from '../../_lib/endpoints.ts';
 import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
+import { useEndpointAction } from '../../_lib/use-endpoint-action.ts';
 import { ConnectingOverlay } from './connecting-overlay.tsx';
 import {
   BankIdentityFields,
@@ -45,10 +47,8 @@ import { CHANGE_CREDENTIALS_INITIAL, type ChangeCredentialsState } from './form-
 import { ReceivingAccountsField } from './receiving-accounts-field.tsx';
 
 type ChangeCredentialsButtonProps = {
-  /** The server action — `changeCredentialsAction` (company) or the admin one. */
-  action: (previous: ChangeCredentialsState, form: FormData) => Promise<ChangeCredentialsState>;
   accountId: string;
-  /** The target company, for the admin action; omitted for the company's own. */
+  /** The target company, for the admin flow; omitted for the company's own. */
   companyId?: string;
   bankId: string;
   bankLabel: string;
@@ -61,7 +61,6 @@ type ChangeCredentialsButtonProps = {
 };
 
 export function ChangeCredentialsButton({
-  action,
   accountId,
   companyId,
   bankId,
@@ -72,7 +71,10 @@ export function ChangeCredentialsButton({
   receivingAccounts,
 }: ChangeCredentialsButtonProps) {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(action, CHANGE_CREDENTIALS_INITIAL);
+  const [state, formAction, pending] = useEndpointAction<ChangeCredentialsState>(
+    API.banksCredentials,
+    CHANGE_CREDENTIALS_INITIAL,
+  );
   const [values, setValues] = useState<CredentialValues>({});
   const [accounts, setAccounts] = useState<string[]>([...receivingAccounts]);
   const setField = (key: string, value: string) =>

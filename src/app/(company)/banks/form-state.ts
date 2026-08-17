@@ -1,7 +1,6 @@
 /**
- * State shapes for the bank forms. Split from `actions.ts` because a
- * `'use server'` module may only export async functions — a type or a constant
- * beside the actions makes the whole file fail the RSC build.
+ * State shapes for the bank forms — what each dialog renders and what its
+ * endpoint under `/api/banks` answers with.
  */
 import { ACTION_INITIAL, type ActionState } from '../../_lib/action-state.ts';
 

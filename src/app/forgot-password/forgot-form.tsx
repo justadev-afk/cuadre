@@ -4,18 +4,22 @@
  * Screen 04's form. Client so the "revisa tu correo" confirmation replaces the
  * field in place — the same answer whether or not the address was found.
  */
-import { useActionState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { Icon } from '../_components/icon.tsx';
-import { requestResetAction } from './actions.ts';
-import { FORGOT_INITIAL } from './form-state.ts';
+import { API } from '../_lib/endpoints.ts';
+import { useEndpointAction } from '../_lib/use-endpoint-action.ts';
+import { FORGOT_INITIAL, type ForgotState } from './form-state.ts';
 
 export function ForgotForm() {
-  const [state, action, pending] = useActionState(requestResetAction, FORGOT_INITIAL);
+  const [state, action, pending] = useEndpointAction<ForgotState>(
+    API.forgotPassword,
+    FORGOT_INITIAL,
+    { refresh: false },
+  );
 
   if (state.done) {
     return (

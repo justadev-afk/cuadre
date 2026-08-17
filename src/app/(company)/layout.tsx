@@ -13,12 +13,12 @@ import type { ReactNode } from 'react';
 import { canReach } from '../../application/session.ts';
 import { AppShell } from '../_components/app-shell.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
+import { isLiveSession, signedOutPath } from '../_lib/session-exit.ts';
 import { shellModel } from '../_lib/shell-nav.ts';
 
 export default async function CompanyLayout({ children }: { children: ReactNode }) {
   const resolution = await currentSession();
-  if (resolution.kind === 'anonymous') redirect('/login');
-  if (resolution.kind === 'superseded') redirect('/session-ended');
+  if (!isLiveSession(resolution)) redirect(signedOutPath(resolution));
 
   const { session } = resolution.active;
   if (!canReach(session.role, 'company')) redirect('/');

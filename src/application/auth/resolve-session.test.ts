@@ -4,7 +4,7 @@ import { SHIFT_CONFIRMATION_SECONDS } from '../../domain/shift.ts';
 import { fixedClock } from '../../shared/clock.ts';
 import type { ActiveSessionPointer, StoredSession } from '../session.ts';
 import { makeFakeActiveSessions, makeFakeSessions } from './auth.fake.ts';
-import { makeResolveSession } from './resolve-session.ts';
+import { type AccountStanding, makeResolveSession } from './resolve-session.ts';
 
 const SIGNED_IN_AT = 1_770_000_000;
 const DEVICE_A = 'device-a';
@@ -29,19 +29,35 @@ const POINTS_AT_SESS_1: ActiveSessionPointer = {
   at: SIGNED_IN_AT,
 };
 
+/** The user behind `STORED`, present and allowed in — the ordinary case. */
+const STANDING: AccountStanding = {
+  status: 'active',
+  companyId: 'la-espiga',
+  companyStatus: 'active',
+};
+
 function resolveAt(
   now: number,
   stored: StoredSession = STORED,
   pointer: ActiveSessionPointer | null = POINTS_AT_SESS_1,
+  /** What the users table says about them. `null` is a row that is gone. */
+  standing: AccountStanding | null = STANDING,
 ) {
   const sessions = makeFakeSessions({ 'sess-1': stored });
   const active = makeFakeActiveSessions(pointer === null ? {} : { [stored.userId]: pointer });
+  const asked: string[] = [];
   const resolve = makeResolveSession({
     sessions: sessions.sessions,
     activeSessions: active.activeSessions,
+    users: {
+      async findStanding(userId) {
+        asked.push(userId);
+        return standing;
+      },
+    },
     clock: fixedClock(now),
   });
-  return { sessions, active, resolve };
+  return { sessions, active, asked, resolve };
 }
 
 describe('resolveSession', () => {
@@ -72,48 +88,111 @@ describe('resolveSession', () => {
     expect(sessions.touched).toEqual(['sess-1']);
   });
 
-  it('does not ask for a shift confirmation an hour in', async () => {
-    const { resolve } = resolveAt(SIGNED_IN_AT + 3600);
+  // The four-hour prompt is switched off (`SHIFT_CONFIRMATION_ENABLED`). The
+  // rule behind it is still specified, in `domain/shift.test.ts`; what belongs
+  // here is what a session actually resolves to while the switch is off, and
+  // that is: never asked, and never signed out for it.
+  it('never asks for a shift confirmation, however long the shift runs', async () => {
+    for (const elapsed of [3600, SHIFT_CONFIRMATION_SECONDS, SHIFT_CONFIRMATION_SECONDS * 3]) {
+      const { resolve } = resolveAt(SIGNED_IN_AT + elapsed);
 
-    const resolved = await resolve({ sessionId: 'sess-1' });
-    expect(resolved.kind === 'active' && resolved.active.needsShiftConfirmation).toBe(false);
+      const resolved = await resolve({ sessionId: 'sess-1' });
+      expect(resolved.kind === 'active' && resolved.active.needsShiftConfirmation).toBe(false);
+    }
   });
 
-  it('asks for one at exactly four hours', async () => {
-    const { resolve } = resolveAt(SIGNED_IN_AT + SHIFT_CONFIRMATION_SECONDS);
-
-    const resolved = await resolve({ sessionId: 'sess-1' });
-    expect(resolved.kind === 'active' && resolved.active.needsShiftConfirmation).toBe(true);
-  });
-
-  it('keeps asking, and never signs anyone out for not answering', async () => {
+  it('leaves a long-running session exactly where it was', async () => {
     const { resolve, sessions } = resolveAt(SIGNED_IN_AT + SHIFT_CONFIRMATION_SECONDS * 3);
 
     const resolved = await resolve({ sessionId: 'sess-1' });
 
+    // Twelve hours in and nothing has interrupted the till or ended it: a shift
+    // lasts what it lasts.
     expect(resolved.kind).toBe('active');
     if (resolved.kind !== 'active') return;
-    expect(resolved.active.needsShiftConfirmation).toBe(true);
     expect(resolved.active.session.userId).toBe('user-cashier');
     expect(sessions.records.has('sess-1')).toBe(true);
-  });
-
-  it('reads the counter off the record, not off the client', async () => {
-    // Acknowledged an hour ago on a session opened five hours ago: reloading
-    // the page or opening a second tab cannot move this number.
-    const { resolve } = resolveAt(SIGNED_IN_AT + 5 * 3600, {
-      ...STORED,
-      shiftAckAt: SIGNED_IN_AT + 4 * 3600,
-    });
-
-    const resolved = await resolve({ sessionId: 'sess-1' });
-    expect(resolved.kind === 'active' && resolved.active.needsShiftConfirmation).toBe(false);
   });
 
   it('is nobody, not somebody reduced, when the stored role no longer exists', async () => {
     const { resolve } = resolveAt(SIGNED_IN_AT, { ...STORED, role: 'supervisor' });
 
     expect(await resolve({ sessionId: 'sess-1' })).toEqual({ kind: 'anonymous' });
+  });
+});
+
+/**
+ * The bug this whole check exists for: a cashier was deleted and kept working.
+ * Ending their sessions at the moment of deletion is a KV list of a reverse
+ * index, and a session whose index key was never written survives it. The row
+ * is the only thing that cannot lie.
+ */
+describe('the account behind the session', () => {
+  it('revokes a session whose user row is gone, and deletes the record', async () => {
+    const { resolve, sessions } = resolveAt(SIGNED_IN_AT + 60, STORED, POINTS_AT_SESS_1, null);
+
+    expect(await resolve({ sessionId: 'sess-1' })).toEqual({ kind: 'revoked' });
+    // Not left for the thirty-day TTL: it is a live credential for nobody.
+    expect(sessions.records.has('sess-1')).toBe(false);
+  });
+
+  it('revokes a session whose user was disabled instead of deleted', async () => {
+    // The other ending of `deleteEmployee`: a cashier with history keeps their
+    // row and loses their access. From the till it must look identical.
+    const { resolve } = resolveAt(SIGNED_IN_AT + 60, STORED, POINTS_AT_SESS_1, {
+      ...STANDING,
+      status: 'disabled',
+    });
+
+    expect(await resolve({ sessionId: 'sess-1' })).toEqual({ kind: 'revoked' });
+  });
+
+  it('revokes a session whose company was suspended', async () => {
+    const { resolve } = resolveAt(SIGNED_IN_AT + 60, STORED, POINTS_AT_SESS_1, {
+      ...STANDING,
+      companyStatus: 'suspended',
+    });
+
+    expect(await resolve({ sessionId: 'sess-1' })).toEqual({ kind: 'revoked' });
+  });
+
+  it('revokes a merchant user whose company row has vanished', async () => {
+    // `companyStatus: null` means two different things — a platform admin with
+    // no company, and a merchant user pointing at a company that is not there.
+    // Only the first may stay signed in.
+    const { resolve } = resolveAt(SIGNED_IN_AT + 60, STORED, POINTS_AT_SESS_1, {
+      ...STANDING,
+      companyStatus: null,
+    });
+
+    expect(await resolve({ sessionId: 'sess-1' })).toEqual({ kind: 'revoked' });
+  });
+
+  it('keeps a platform admin, who has no company to be suspended', async () => {
+    const admin: StoredSession = {
+      ...STORED,
+      userId: 'user-admin',
+      role: 'admin',
+      companyId: null,
+      username: null,
+      email: 'julio@cuadre.ve',
+    };
+    const { resolve } = resolveAt(
+      SIGNED_IN_AT + 60,
+      admin,
+      { ...POINTS_AT_SESS_1 },
+      { status: 'active', companyId: null, companyStatus: null },
+    );
+
+    expect((await resolve({ sessionId: 'sess-1' })).kind).toBe('active');
+  });
+
+  it('asks about the user the record names, never one the caller supplied', async () => {
+    const { resolve, asked } = resolveAt(SIGNED_IN_AT + 60);
+
+    await resolve({ sessionId: 'sess-1' });
+
+    expect(asked).toEqual(['user-cashier']);
   });
 });
 

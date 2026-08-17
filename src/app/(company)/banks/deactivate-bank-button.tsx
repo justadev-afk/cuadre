@@ -6,7 +6,7 @@
  * (a bank going dark at the counter is not a stray-click affordance) and reports
  * a refusal as a toast so the confirm dialog never resizes under it.
  */
-import { useActionState, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -18,9 +18,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog.tsx';
+import { API } from '../../_lib/endpoints.ts';
 import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
-import { removeBankAccountAction } from './actions.ts';
-import { REMOVE_BANK_INITIAL } from './form-state.ts';
+import { useEndpointAction } from '../../_lib/use-endpoint-action.ts';
+import { REMOVE_BANK_INITIAL, type RemoveBankState } from './form-state.ts';
 
 export function DeactivateBankButton({
   accountId,
@@ -33,7 +34,10 @@ export function DeactivateBankButton({
   label: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [state, action, pending] = useActionState(removeBankAccountAction, REMOVE_BANK_INITIAL);
+  const [state, action, pending] = useEndpointAction<RemoveBankState>(
+    API.banksDeactivate,
+    REMOVE_BANK_INITIAL,
+  );
 
   useActionOutcome(state, () => setOpen(false));
 

@@ -20,11 +20,11 @@ import { SessionHeartbeat } from '../_components/session-heartbeat.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
+import { isLiveSession, signedOutPath } from '../_lib/session-exit.ts';
 
 export default async function CheckoutExpressLayout({ children }: { children: ReactNode }) {
   const resolution = await currentSession();
-  if (resolution.kind === 'anonymous') redirect('/login');
-  if (resolution.kind === 'superseded') redirect('/session-ended');
+  if (!isLiveSession(resolution)) redirect(signedOutPath(resolution));
 
   const resolved = resolution.active;
   const { session } = resolved;

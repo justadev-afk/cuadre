@@ -1,19 +1,26 @@
 'use client';
 
 /**
- * Screen 12 — the employee dialog, for both creating a cashier and editing one.
+ * Screen 12 — the employee dialog, for creating a cashier and for editing
+ * anybody on the payroll.
  *
- * A company's staff are cashiers with a username and a PIN; there is no role to
- * choose. Editing changes the name and, when a new PIN is typed, resets it —
- * the username is the login tuple `(company, username)` and never changes, so
- * it is read-only in edit mode and not even submitted.
+ * **What it creates is always a cashier**: a username and a PIN, no role to
+ * choose. What it *edits* can also be the merchant's own administrator, who
+ * signs in with an email and a password — so the PIN field is a cashier's field
+ * and simply is not rendered for anyone else. Their password is not resettable
+ * from another person's screen; `/forgot-password` is the channel for that, and
+ * it is the one that proves the inbox.
+ *
+ * The login handle never changes either way: a cashier's username is half of
+ * the tuple `(company, username)` and an administrator's email is their
+ * identity, so it is read-only in edit mode and not even submitted.
  *
  * Every field is controlled so a refusal keeps what was typed instead of React
  * resetting the form, and the refusal is a **toast** rather than a note in the
  * dialog — Radix keeps the modal a fixed size, and a growing error line would
  * jump it under the cursor.
  */
-import { useActionState, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -26,15 +33,19 @@ import {
 } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
+import { API } from '../../_lib/endpoints.ts';
 import { useActionOutcome } from '../../_lib/use-action-outcome.ts';
-import { createEmployeeAction, updateEmployeeAction } from './actions.ts';
-import { CREATE_EMPLOYEE_INITIAL } from './form-state.ts';
+import { useEndpointAction } from '../../_lib/use-endpoint-action.ts';
+import { CREATE_EMPLOYEE_INITIAL, type CreateEmployeeState } from './form-state.ts';
 
-/** The cashier being edited — enough to prefill the form and scope the update. */
+/** The person being edited — enough to prefill the form and scope the update. */
 export type EditableEmployee = {
   readonly id: string;
   readonly name: string;
+  /** Their login handle: a cashier's username, or an administrator's email. */
   readonly username: string;
+  /** A PIN is a cashier's credential, so only a cashier is offered one. */
+  readonly isCashier: boolean;
 };
 
 export function EmployeeDialog({
@@ -46,8 +57,10 @@ export function EmployeeDialog({
   onClose: () => void;
 }) {
   const editing = employee != null;
-  const [state, action, pending] = useActionState(
-    editing ? updateEmployeeAction : createEmployeeAction,
+  // Creating always makes a cashier; editing offers a PIN only to one.
+  const hasPin = !editing || employee.isCashier;
+  const [state, action, pending] = useEndpointAction<CreateEmployeeState>(
+    editing ? API.employeesUpdate : API.employeesCreate,
     CREATE_EMPLOYEE_INITIAL,
   );
 
@@ -69,9 +82,11 @@ export function EmployeeDialog({
         <DialogHeader>
           <DialogTitle>{editing ? 'Editar empleado' : 'Nuevo empleado'}</DialogTitle>
           <DialogDescription>
-            {editing
-              ? 'Cambia el nombre o restablece el PIN. El usuario no cambia.'
-              : 'Entra con el código de la empresa y su PIN.'}
+            {!editing
+              ? 'Entra con el código de la empresa y su PIN.'
+              : hasPin
+                ? 'Cambia el nombre o restablece el PIN. El usuario no cambia.'
+                : 'Cambia el nombre. El correo no cambia, y la contraseña se restablece desde «¿Olvidaste tu contraseña?».'}
           </DialogDescription>
         </DialogHeader>
 
@@ -92,7 +107,7 @@ export function EmployeeDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="emp-username">Usuario</Label>
+            <Label htmlFor="emp-username">{editing && !hasPin ? 'Correo' : 'Usuario'}</Label>
             {editing ? (
               <Input id="emp-username" value={employee.username} readOnly className="opacity-70" />
             ) : (
@@ -111,20 +126,22 @@ export function EmployeeDialog({
             )}
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="emp-pin">{editing ? 'Nuevo PIN (opcional)' : 'PIN de caja'}</Label>
-            <Input
-              id="emp-pin"
-              name="pin"
-              inputMode="numeric"
-              placeholder={editing ? 'Dejar en blanco para no cambiarlo' : '4 a 6 dígitos'}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-              maxLength={6}
-              disabled={pending}
-              required={!editing}
-            />
-          </div>
+          {hasPin && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="emp-pin">{editing ? 'Nuevo PIN (opcional)' : 'PIN de caja'}</Label>
+              <Input
+                id="emp-pin"
+                name="pin"
+                inputMode="numeric"
+                placeholder={editing ? 'Dejar en blanco para no cambiarlo' : '4 a 6 dígitos'}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                maxLength={6}
+                disabled={pending}
+                required={!editing}
+              />
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>

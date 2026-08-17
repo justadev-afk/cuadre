@@ -107,6 +107,8 @@ aliases `src/` (declared in both `vite.config.ts` and `tsconfig.json`).
 worker/index.ts          Worker entry: fetch (delegates to vinext) + queue. Wiring only.
 src/
 ├── app/                 vinext App Router — the UI and HTTP adapter
+│   ├── api/             every mutation, one route handler each (see §3)
+│   └── _lib/            the guards, the endpoint table, the client hook
 ├── container.ts         builds adapters from env, returns use cases
 ├── env.ts               bindings + vars, parsed with zod
 ├── domain/              pure rules: match, money, phone, slug, control code, shift
@@ -132,7 +134,7 @@ migrations/              numbered SQL, forward-only
 |---|---|---|
 | **Domain** (`src/domain`) | Payment match, money, phone, slug, control code, shift rule. Pure functions, plain data. | Nothing but its own types |
 | **Application** (`src/application`) | One use case per file: `validatePayment`, `connectBankAccount`, `signIn`. | Domain + **port interfaces** |
-| **Adapters** (`src/app`, `src/adapters`, `worker`) | Pages, server actions, route handlers, D1, KV, bank clients, mail, queue. | Everything |
+| **Adapters** (`src/app`, `src/adapters`, `worker`) | Pages, route handlers, D1, KV, bank clients, mail, queue. | Everything |
 
 Hard rules:
 
@@ -142,6 +144,26 @@ Hard rules:
   consumed. Never `Repository<T>`.
 - **A use case never imports a concrete adapter.** If it does, its test needs
   `vi.mock` on our own code — that is the smell.
+- **Every mutation is a route handler under `src/app/api/`. There are no Server
+  Actions.** They were all of them, and they were replaced after one connected a
+  bank, committed the row, and never answered — the merchant sat under a spinner
+  over work that had already succeeded. A handler is a `Request` in and a
+  `Response` out, which is a contract the framework cannot half-finish, and it is
+  the one part of the Next surface that vinext does not reimplement. The shape is
+  fixed and shared:
+  - `src/app/_lib/api-guard.ts` — `requireApi(area)`, `requireApiCompany()`,
+    `requireCompanyScope(form)`. A refusal is a **200** with `{ ok: false, error }`
+    (the form renders it); a caller with no usable session is a **401**, never a
+    redirect — an endpoint that answers a `fetch` with an HTML login page is a
+    page the caller parses as JSON.
+  - `src/app/_lib/endpoints.ts` — every URL, named once. The folder and this
+    table are the two halves of one contract, and only this file spells a path.
+  - `src/app/_lib/use-endpoint-action.ts` — `useEndpointAction(url, initial)`
+    returns `useActionState`'s exact triple, so a screen moved across by changing
+    one import. It refreshes the route on success (what `revalidatePath` did),
+    turns a 401 into a sign-out, and turns a dead network into a refusal — so no
+    dialog can spin forever again. `postJson` is the same for the two screens that
+    speak JSON (the counter's charge, the cashier's list).
 
 ### Functions or classes — the line
 
@@ -258,6 +280,14 @@ gateway at call time.
   A company is renamed through `name`; its slug never changes.
 - **The cashier login tuple is `(company_id, username)`**, which is literally
   what is typed on the login screen: `la-espiga` + `maria.r`.
+- **A user row is never deleted. Access is `users.status`, and it goes both
+  ways.** `validations.cashier_id` names whoever confirmed each payment and has
+  to keep naming them years later, so somebody who leaves is `disabled` and
+  somebody disabled by mistake is switched back to `active` from the same button.
+  The repository offers `setStatus` and no delete at all — there is no
+  `deleteEmployee` use case any more, and the two-ending "delete if they have no
+  history, disable if they do" that used to sit there is gone with it. Disabling
+  ends the next sign-in *and* the sessions already open (see §7).
 - **Money is INTEGER cents.** Always, everywhere.
 - **The domain works in epoch seconds; the database stores ISO-8601 UTC.**
   Timestamps compare and order as epoch-seconds numbers in the domain, but the
@@ -295,6 +325,31 @@ gateway at call time.
 - **The session never expires on its own.** In a shop, throwing a cashier out
   mid-sale is worse than the risk it avoids. The KV TTL slides on every request
   and the cookie is persistent.
+- **But it is checked against the row it names, on every request.** `resolveSession`
+  reads `users.findStanding` — one indexed statement that answers "is this user
+  still active" and "is their company still active" together — and a session whose
+  account is gone, disabled or suspended resolves to **`revoked`**: the KV record
+  is deleted on the spot, pages redirect through `/session-ended`, and the
+  endpoints answer **401**, which the client turns into a sign-out.
+  This is not belt-and-braces. Revoking a user's sessions at the moment it
+  happens (`deleteAllForUser`) is a `list` over a KV reverse index, and a session
+  whose index key was never written survives it — which is exactly what happened:
+  a deleted cashier kept a working till. The KV sweep is still done, because it is
+  instant for the sessions it does find; the row is what makes the answer true.
+- **Not-a-live-session has one place that decides where it goes**
+  (`app/_lib/session-exit.ts`): anonymous → the area's login, superseded or
+  revoked → `/session-ended`, which clears the cookie first. Nine screens made
+  that call inline and each knew about two of the three states.
+- **Shift confirmation is switched off.** `SHIFT_CONFIRMATION_ENABLED` in
+  `src/domain/shift.ts` is `false`, so `needsShiftConfirmation` never answers
+  true and nothing interrupts a till: a shift lasts what it lasts, and a session
+  ends when somebody signs out, signs in elsewhere, or loses the account behind
+  it. It is a constant rather than a deletion — the rule, the acknowledgement use
+  case, the dialog and `POST /api/shift-ack` are all intact and tested, one flip
+  away from live. Everything below this line describes the feature **as it
+  behaves when that constant is `true`**; do not restate it as current behaviour.
+  The switch is the only place that decides: never gate the prompt a second time
+  in a layout or a screen.
 - **Shift confirmation at 4 h.** Four hours after sign-in the app blocks the
   screen with the name and username of whoever holds the session — *Continuar*
   or *Cerrar sesión*. Nothing logs out automatically if nobody answers.
@@ -438,17 +493,38 @@ added against the bank's own `receivingAccountRule` (length, prefix, copy), and
 **editable afterwards** from the bank card. `scripts/seed-demo.ts` seeds the demo
 connection exactly as `connect` writes one.
 
+### Production credentials — live since 2026-08-17
+
+The bank sent the production pair for DOÑA AURORA, and both halves were verified
+against the real hosts the same day:
+
+- **The token endpoint answers.** Same password grant with the client as its own
+  resource owner, on realm **`realm-api-prd`** of the `proplakur` cluster. A
+  300-second token, same reply shape as QA.
+- **The confirmation endpoint answers**, and its path is **not QA's**:
+  `/financial-account/transactions`, with no `/transactions` prefix — production
+  sits behind a 3scale gateway and the QA path returns `404 · No Mapping Rule
+  matched`. A search for a reference that does not exist comes back as the bank's
+  own envelope, `70001 · Consulta sin resultados`, carried on an HTTP **400**
+  rather than QA's 200 — which the client already handles, because it parses the
+  body before it looks at the status.
+- Auth is enforced there: no token and a bad token both answer **403**
+  (QA answers 401), and `failureForHttpStatus` reads both as
+  `rejected_credentials`.
+
+So `banescoEndpoints` no longer throws, `hasProductionEndpoints` is gone, and the
+environment-mismatch probe on a sandbox onboarding is **live** — a QA client is
+unknown to the production realm and comes back 401, which is what says a
+connection filed as a test really is one.
+
 ### Still open with Banesco
 
-1. **Production hosts/realm unknown.** Only QA supplied. `endpoints.ts` throws
-   rather than guessing. Production credentials come after the bank validates
-   the evidence of these changes (their action item from 2026-08-11).
-2. **QA has no interbank test data.** The bank said so in the meeting, so the
+1. **QA has no interbank test data.** The bank said so in the meeting, so the
    only movements we can prove end to end — pago móvil and transferencia alike —
    are their own Banesco→Banesco ones. The interbank request is built from the
    manual and answers `70001`, which is the honest evidence to send: the shape is
    provable, the match is not.
-3. **`cuadre.ve` is not owned.** The app runs on `cuadre.jsansossio.com` and
+2. **`cuadre.ve` is not owned.** The app runs on `cuadre.jsansossio.com` and
    mail sends from the same zone. All three move together when the domain is
    bought: the route, `APP_BASE_URL` and `MAIL_FROM` in `wrangler.toml`.
    (`cuadre.julio.com.ve` was the first choice; Cloudflare accepted the custom
@@ -500,12 +576,12 @@ to a copy.
 The rule is not "don't repeat yourself" everywhere; it is narrower and it binds:
 
 - **A form is shared by its fields**, and what wraps them is the caller's — the
-  title, the hidden ids, the server action, what happens on success. When one
+  title, the hidden ids, the endpoint it posts to, what happens on success. When one
   flow may not change a field (bank and environment are a connected account's
   identity), it renders **the same control, disabled**, never a different widget.
   A merchant should recognise the form they already filled.
 - **A wire format is declared once and read once.** `<groupKey>.clientId` is a
-  contract between a client component and a server action; both sides get it from
+  contract between a client component and a route handler; both sides get it from
   `banks/credentials.ts` and neither spells the dot itself. A convention that
   lives in two files drifts in one of them, silently, and drops credentials.
 - **A rule that decides money is written once.** "Every filled group is
@@ -518,9 +594,16 @@ The rule is not "don't repeat yourself" everywhere; it is narrower and it binds:
 - **One failure, one sentence.** Bank failure copy is a single table
   (`banks/bank-messages.ts`), and the bank is a *parameter*: a bank's name
   hardcoded in shared copy is the §4 leak in prose form.
-- **One answer shape for actions.** `ActionState` (`{ ok, error }`) and
-  `useActionOutcome` — close on success, toast on refusal — so a dialog does not
-  hand-roll the two effects and get the dependency array subtly right by luck.
+- **One answer shape for every mutation.** `ActionState` (`{ ok, error }`) is
+  what a route handler answers and what `useActionOutcome` reacts to — close on
+  success, toast on refusal — so a dialog does not hand-roll the two effects and
+  get the dependency array subtly right by luck.
+- **One endpoint per question, not one per caller.** Connecting a bank was two
+  Server Actions over one shared core, because a merchant and a platform admin
+  ask it from different screens. It is one handler now, and *whose* company is
+  being touched is `requireCompanyScope`: an admin names the company in the form,
+  a merchant's own id comes off the session and a `companyId` field in their
+  request is ignored.
 
 Before adding a screen, search for the one that already asks the question. The
 second copy is cheaper to write today and is the whole cost of the feature
@@ -536,7 +619,7 @@ one — but when it appears, extract, do not paste.
 | Domain unit | Payment match, money, phone, slug, control code, shift. Table-driven — **the table is the specification**. |
 | Use case | Hand-written fakes of the ports. Orchestration and failure paths. |
 | Adapter | Row→domain mapping; the UNIQUE-index outcome parsing; bank response parsing against recorded fixtures. |
-| Form wire (`src/app`) | What a client component names and an action reads back — `banks/credentials.test.ts`. The contract, never the JSX. |
+| Form wire (`src/app`) | What a client component names and a route handler reads back — `banks/credentials.test.ts`. The contract, never the JSX. |
 
 - Tests live next to their subject as `*.test.ts`.
 - **Fakes over mock frameworks.** `vi.mock` on our own module means a missing port.

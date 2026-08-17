@@ -12,7 +12,7 @@
  */
 
 import Link from 'next/link';
-import { type CSSProperties, useActionState, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -24,8 +24,9 @@ import { authPanel } from '../_components/auth-shell.tsx';
 import { Brand } from '../_components/brand.tsx';
 import { Icon, type IconName } from '../_components/icon.tsx';
 import { DeviceIdField } from '../_lib/device-id-field.tsx';
-import { NO_SIGN_IN_ERROR } from '../_lib/sign-in-state.ts';
-import { signInCashierAction, signInCompanyAction } from './actions.ts';
+import { API } from '../_lib/endpoints.ts';
+import { NO_SIGN_IN_ERROR, type SignInState } from '../_lib/sign-in-state.ts';
+import { useEndpointAction } from '../_lib/use-endpoint-action.ts';
 
 /**
  * The company code, remembered per device — screen 02's «Recordar el código en
@@ -195,7 +196,13 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 function CompanyForm({ next }: { next: string | null }) {
-  const [state, action, pending] = useActionState(signInCompanyAction, NO_SIGN_IN_ERROR);
+  // `refresh: false` — a sign-in navigates. Re-rendering the login screen it is
+  // leaving would only race the redirect the endpoint just handed back.
+  const [state, action, pending] = useEndpointAction<SignInState>(
+    API.signInCompany,
+    NO_SIGN_IN_ERROR,
+    { refresh: false },
+  );
   // Controlled, so a refused sign-in keeps what was typed: React resets an
   // uncontrolled form once its action returns, which would wipe the fields on
   // the exact error the person needs to correct. The password lives only in
@@ -303,7 +310,11 @@ function CompanyForm({ next }: { next: string | null }) {
 }
 
 function CashierForm({ next }: { next: string | null }) {
-  const [state, action, pending] = useActionState(signInCashierAction, NO_SIGN_IN_ERROR);
+  const [state, action, pending] = useEndpointAction<SignInState>(
+    API.signInCashier,
+    NO_SIGN_IN_ERROR,
+    { refresh: false },
+  );
   const [slug, setSlug] = useState('');
   // On by default: a till belongs to one shop, so remembering the código is the
   // helpful default — the cashier just types their usuario and PIN each shift.

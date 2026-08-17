@@ -11,6 +11,7 @@
  */
 import type { Result } from '../../shared/result.ts';
 import type { ActiveSessionPointer, SessionRecord, StoredSession } from '../session.ts';
+import type { AccountStanding } from './resolve-session.ts';
 import type { AuthenticatingUser, RateLimitPolicy } from './sign-in.ts';
 
 // ── sessions ───────────────────────────────────────────────────────────────
@@ -106,19 +107,25 @@ export type FakeUsers = {
       companyId: string,
       username: string,
     ): Promise<AuthenticatingUser | null>;
+    findById(id: string): Promise<AuthenticatingUser | null>;
+    findStanding(id: string): Promise<AccountStanding | null>;
     touchLastLogin(id: string, at: number): Promise<void>;
     setPasswordHash(id: string, passwordHash: string): Promise<Result<void, string>>;
   };
   readonly rows: AuthenticatingUser[];
   readonly lastLogins: { id: string; at: number }[];
   /** Exactly what each lookup was asked for, so normalisation is testable. */
-  readonly lookups: { by: 'email' | 'login'; key: string }[];
+  readonly lookups: { by: 'email' | 'login' | 'id'; key: string }[];
 };
 
-export function makeFakeUsers(seed: readonly AuthenticatingUser[] = []): FakeUsers {
+export function makeFakeUsers(
+  seed: readonly AuthenticatingUser[] = [],
+  /** Company statuses, for the sessions that resolve against a suspended one. */
+  companyStatuses: Record<string, string> = {},
+): FakeUsers {
   const rows = [...seed];
   const lastLogins: { id: string; at: number }[] = [];
-  const lookups: { by: 'email' | 'login'; key: string }[] = [];
+  const lookups: { by: 'email' | 'login' | 'id'; key: string }[] = [];
 
   return {
     rows,
@@ -133,6 +140,27 @@ export function makeFakeUsers(seed: readonly AuthenticatingUser[] = []): FakeUse
       async findByCompanyAndUsername(companyId, username) {
         lookups.push({ by: 'login', key: `${companyId}:${username}` });
         return rows.find((row) => row.companyId === companyId && row.username === username) ?? null;
+      },
+
+      // The reset path's read-back: it knows whose account it just wrote to, so
+      // it asks by id rather than by a credential nobody typed.
+      async findById(id) {
+        lookups.push({ by: 'id', key: id });
+        return rows.find((row) => row.id === id) ?? null;
+      },
+
+      // A user missing from `rows` has been deleted, which is exactly what the
+      // resolve path must read as revoked. A company nobody named a status for
+      // is active, so a test only mentions the one it is about.
+      async findStanding(id) {
+        const row = rows.find((r) => r.id === id);
+        if (row === undefined) return null;
+        return {
+          status: row.status,
+          companyId: row.companyId,
+          companyStatus:
+            row.companyId === null ? null : (companyStatuses[row.companyId] ?? 'active'),
+        };
       },
 
       async touchLastLogin(id, at) {

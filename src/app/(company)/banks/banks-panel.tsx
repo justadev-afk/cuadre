@@ -16,20 +16,18 @@ import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog.tsx
 import type { SupportedBank } from '../../../application/banking/list-supported-banks.ts';
 import { Icon } from '../../_components/icon.tsx';
 import { ConnectWizard } from './connect-wizard.tsx';
-import type { ConnectState } from './form-state.ts';
 
 type BanksPanelProps = {
   /** Every bank a company can connect. Passed whole; the form picks one. */
   banks: readonly SupportedBank[];
   /** Whether the company already has one, which changes the button copy. */
   hasAccount: boolean;
-  /** The admin panel passes its own connect action + the target company to set a
-   *  company up; omit them for a company's own /banks page. */
-  connectAction?: (previous: ConnectState, form: FormData) => Promise<ConnectState>;
+  /** The admin panel passes the company it is setting up; a merchant's own
+   *  /banks page omits it and the endpoint uses the session's company. */
   companyId?: string;
 };
 
-export function BanksPanel({ banks, hasAccount, connectAction, companyId }: BanksPanelProps) {
+export function BanksPanel({ banks, hasAccount, companyId }: BanksPanelProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -42,12 +40,7 @@ export function BanksPanel({ banks, hasAccount, connectAction, companyId }: Bank
       </DialogTrigger>
 
       <DialogContent className="w-[min(480px,calc(100%-2rem))]">
-        <ConnectWizard
-          banks={banks}
-          onClose={() => setOpen(false)}
-          connectAction={connectAction}
-          companyId={companyId}
-        />
+        <ConnectWizard banks={banks} onClose={() => setOpen(false)} companyId={companyId} />
       </DialogContent>
     </Dialog>
   );

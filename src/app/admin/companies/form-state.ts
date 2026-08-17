@@ -1,5 +1,4 @@
-/** State for the "nueva empresa" form. Out of the `'use server'` module, which
- * may only export async functions. */
+/** State for the "nueva empresa" form, shared with the endpoint it posts to. */
 import { ACTION_INITIAL, type ActionState } from '../../_lib/action-state.ts';
 
 export type CreateCompanyState = ActionState;

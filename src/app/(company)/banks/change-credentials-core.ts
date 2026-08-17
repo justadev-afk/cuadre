@@ -1,12 +1,10 @@
 /**
- * The shared body of "cambiar credenciales", used by both the company action
- * (`banks/actions.ts`) and the admin one (`admin/companies/[slug]/actions.ts`).
+ * The shared body of "cambiar credenciales", called by `api/banks/credentials`
+ * for whichever company the guard resolved — a merchant's own, or the one a
+ * platform admin is setting up.
  *
- * It is a plain module, not a `'use server'` file: those may only export async
- * server actions, and this is a helper the two actions call after each has run
- * its own guard and resolved the `companyId` it is allowed to touch. Which bank
- * an account is on decides the credential-group keys, and the action does not
- * know the bank — so the credential pairs are harvested generically from the
+ * Which bank an account is on decides the credential-group keys, and this does
+ * not know the bank — so the credential pairs are harvested generically from the
  * form (`<groupKey>.clientId` / `<groupKey>.clientSecret`) and the use case
  * validates them against the account's declared groups.
  */
@@ -19,8 +17,6 @@ import type { ChangeCredentialsState } from './form-state.ts';
 
 /**
  * Runs the change for a company already resolved by the caller's guard.
- * Revalidation is the caller's — a company revalidates `/banks`, an admin the
- * company-detail path — so this stays free of the route it was reached from.
  *
  * The dialog edits two things, so this writes two: the credentials (which cost
  * a bank round trip to prove) and the accounts that receive transferencias

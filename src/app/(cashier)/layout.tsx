@@ -19,12 +19,12 @@ import { AppShell } from '../_components/app-shell.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
+import { isLiveSession, signedOutPath } from '../_lib/session-exit.ts';
 import { shellModel } from '../_lib/shell-nav.ts';
 
 export default async function CashierLayout({ children }: { children: ReactNode }) {
   const resolution = await currentSession();
-  if (resolution.kind === 'anonymous') redirect('/login');
-  if (resolution.kind === 'superseded') redirect('/session-ended');
+  if (!isLiveSession(resolution)) redirect(signedOutPath(resolution));
 
   const resolved = resolution.active;
   const { session } = resolved;

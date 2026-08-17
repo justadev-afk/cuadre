@@ -26,7 +26,15 @@ import type { PageCursor } from '../../../application/validations/list-validatio
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { NoValidations, ValidationList } from '../../_components/validation-list.tsx';
-import { fetchMyValidations } from './my-validations-actions.ts';
+import { API } from '../../_lib/endpoints.ts';
+import { postJson } from '../../_lib/use-endpoint-action.ts';
+
+/** What `/api/my-validations` answers with — one page and the clock it used. */
+type MyValidationsPage = {
+  readonly items: readonly Validation[];
+  readonly nextCursor: PageCursor | null;
+  readonly nowSeconds: number;
+};
 
 const RANGE_TABS: readonly { range: NamedRange; label: string }[] = [
   { range: 'today', label: 'Hoy' },
@@ -100,12 +108,18 @@ export function MyValidationsView({
     setLoading(true);
 
     const mine = ++reqId.current;
-    const page = await fetchMyValidations({
+    const page = await postJson<MyValidationsPage>(API.myValidations, {
       range: next.range,
       search: next.search,
       cursor: next.cursor,
-    });
+    }).catch(() => null);
+    // A stale response is nobody's; so is a failed one, and the list keeps what
+    // it is already showing rather than blanking under the cashier.
     if (reqId.current !== mine) return;
+    if (page === null) {
+      setLoading(false);
+      return;
+    }
 
     setItems(page.items);
     setNextCursor(page.nextCursor);

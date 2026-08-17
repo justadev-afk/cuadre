@@ -12,6 +12,7 @@
  * the hash has to ask for `UserWithSecret` by name, so no serialiser can put it
  * in a response by accident.
  */
+import type { AccountStanding } from '../../application/auth/resolve-session.ts';
 import { epochToIso } from '../../shared/clock.ts';
 import { AppError } from '../../shared/errors.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
@@ -66,8 +67,7 @@ export type UserWriteFailure =
   | 'username_taken'
   | 'invalid_for_role'
   | 'unknown_company'
-  | 'not_found'
-  | 'has_history';
+  | 'not_found';
 
 export interface UserRepository {
   createUser(input: NewUser): Promise<Result<User, UserWriteFailure>>;
@@ -76,12 +76,13 @@ export interface UserRepository {
   /** THE cashier login tuple, exactly as it is typed on the login screen. */
   findByCompanyAndUsername(companyId: string, username: string): Promise<UserWithSecret | null>;
   findById(id: string): Promise<User | null>;
+  /** The one read every authenticated request makes. See the method. */
+  findStanding(id: string): Promise<AccountStanding | null>;
   listByCompany(companyId: string, role?: UserRole): Promise<readonly User[]>;
   updateProfile(id: string, patch: UserProfilePatch): Promise<Result<User, UserWriteFailure>>;
   setPasswordHash(id: string, passwordHash: string): Promise<Result<void, UserWriteFailure>>;
   touchLastLogin(id: string, at: number): Promise<void>;
-  disable(id: string): Promise<Result<User, UserWriteFailure>>;
-  remove(id: string): Promise<Result<void, UserWriteFailure>>;
+  setStatus(id: string, status: UserStatus): Promise<Result<User, UserWriteFailure>>;
 }
 
 const EMAIL_INDEX: UniqueIndex = { name: 'ux_users_email', columns: ['users.email'] };
@@ -102,6 +103,34 @@ export class D1UserRepository implements UserRepository {
       .bind(id)
       .first<D1Row>();
     return row === null ? null : toUser(row);
+  }
+
+  /**
+   * Is this user still allowed in, and is their company? One statement, because
+   * `resolveSession` asks it on **every** authenticated request and two round
+   * trips there would be two round trips everywhere.
+   *
+   * A `LEFT JOIN`, not an inner one: a platform admin has no `company_id` and
+   * must still resolve. It selects three small columns off two primary keys, so
+   * it is an index lookup on both sides and never a scan.
+   */
+  async findStanding(id: string): Promise<AccountStanding | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT u.status AS status, u.company_id AS company_id, c.status AS company_status
+           FROM users u
+           LEFT JOIN companies c ON c.id = u.company_id
+          WHERE u.id = ?`,
+      )
+      .bind(id)
+      .first<{ status: string; company_id: string | null; company_status: string | null }>();
+
+    if (row === null) return null;
+    return {
+      status: row.status,
+      companyId: row.company_id,
+      companyStatus: row.company_status,
+    };
   }
 
   async createUser(input: NewUser): Promise<Result<User, UserWriteFailure>> {
@@ -227,37 +256,23 @@ export class D1UserRepository implements UserRepository {
   }
 
   /**
-   * Disabling stops the *next* login. It does not end the sessions already in
-   * KV — the caller must also call `deleteAllForUser` on the session store,
-   * because a cashier being walked off the floor is exactly the case where
-   * the live tab is the one that matters.
+   * Access is a column, and it is the **only** way a user stops or starts being
+   * able to sign in. There is no delete here on purpose: `validations.cashier_id`
+   * names the person who confirmed each payment, and a payment is an accounting
+   * fact that has to keep naming them years after they left. A merchant who
+   * lets somebody go disables them — which ends their next login, and (once the
+   * caller has also cleared KV, and the resolve path has re-read this column)
+   * the tab already open at the till.
+   *
+   * It writes both directions because a wrong click needs an undo: a shop that
+   * disables the wrong cashier on a Saturday cannot be told to wait for a
+   * migration.
    */
-  disable(id: string): Promise<Result<User, UserWriteFailure>> {
-    return this.writeAndReturn(
-      `UPDATE users SET status = 'disabled' WHERE id = ? RETURNING ${COLUMNS}`,
-      [id],
-    );
-  }
-
-  /**
-   * A hard delete, for a user who never did anything — a mistyped invitation.
-   * `validations.cashier_id` is a foreign key, so a cashier who has confirmed
-   * even one payment cannot be deleted and comes back as `has_history`; that
-   * user gets `disable` instead. The reset tokens go first in the same batch,
-   * which is atomic, so a refused delete leaves them standing too.
-   */
-  async remove(id: string): Promise<Result<void, UserWriteFailure>> {
-    try {
-      const results = await this.db.batch([
-        this.db.prepare('DELETE FROM password_resets WHERE user_id = ?').bind(id),
-        this.db.prepare('DELETE FROM users WHERE id = ?').bind(id),
-      ]);
-      const deleted = results.at(-1);
-      if (deleted === undefined || deleted.meta.changes === 0) return err('not_found');
-      return ok(undefined);
-    } catch (error) {
-      return err(classify(error, 'has_history'));
-    }
+  setStatus(id: string, status: UserStatus): Promise<Result<User, UserWriteFailure>> {
+    return this.writeAndReturn(`UPDATE users SET status = ? WHERE id = ? RETURNING ${COLUMNS}`, [
+      status,
+      id,
+    ]);
   }
 
   private async writeAndReturn(
