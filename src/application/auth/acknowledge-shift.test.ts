@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { SHIFT_CONFIRMATION_SECONDS } from '../../domain/shift.ts';
+import { SHIFT_CONFIRMATION_SECONDS, shiftWindowElapsed } from '../../domain/shift.ts';
 import { fixedClock } from '../../shared/clock.ts';
 import type { StoredSession } from '../session.ts';
 import { makeAcknowledgeShift } from './acknowledge-shift.ts';
-import { makeFakeActiveSessions, makeFakeSessions } from './auth.fake.ts';
-import { makeResolveSession } from './resolve-session.ts';
+import { makeFakeSessions } from './auth.fake.ts';
 
 const SIGNED_IN_AT = 1_770_000_000;
 const FOUR_HOURS_LATER = SIGNED_IN_AT + SHIFT_CONFIRMATION_SECONDS;
@@ -37,31 +36,26 @@ describe('acknowledgeShift', () => {
     expect(sessions.records.get('sess-1')?.shiftAckAt).toBe(FOUR_HOURS_LATER);
   });
 
-  it('silences the prompt for another four hours and no longer', async () => {
+  it('silences the rule for another four hours and no longer', async () => {
     const sessions = makeFakeSessions({ 'sess-1': STORED });
     await makeAcknowledgeShift({
       sessions: sessions.sessions,
       clock: fixedClock(FOUR_HOURS_LATER),
     })({ sessionId: 'sess-1' });
 
-    // No pointer is seeded, so resolution fails open to 'active' — exactly the
-    // path that carries `needsShiftConfirmation`.
-    const activeSessions = makeFakeActiveSessions();
-    const justInside = makeResolveSession({
-      sessions: sessions.sessions,
-      activeSessions: activeSessions.activeSessions,
-      clock: fixedClock(FOUR_HOURS_LATER + SHIFT_CONFIRMATION_SECONDS - 1),
-    });
-    const justOutside = makeResolveSession({
-      sessions: sessions.sessions,
-      activeSessions: activeSessions.activeSessions,
-      clock: fixedClock(FOUR_HOURS_LATER + SHIFT_CONFIRMATION_SECONDS),
-    });
-
-    const inside = await justInside({ sessionId: 'sess-1' });
-    const outside = await justOutside({ sessionId: 'sess-1' });
-    expect(inside.kind === 'active' && inside.active.needsShiftConfirmation).toBe(false);
-    expect(outside.kind === 'active' && outside.active.needsShiftConfirmation).toBe(true);
+    // Read against the rule rather than through `resolveSession`: the prompt is
+    // switched off (`SHIFT_CONFIRMATION_ENABLED`), so the resolve path answers
+    // `false` at every instant and can no longer tell these two apart. What this
+    // use case is responsible for — where the stamp lands, and so when the
+    // window would reopen — is the same in both positions of the switch.
+    const stamped = sessions.records.get('sess-1')?.shiftAckAt ?? 0;
+    expect(stamped).toBe(FOUR_HOURS_LATER);
+    expect(
+      shiftWindowElapsed({ shiftAckAt: stamped, now: stamped + SHIFT_CONFIRMATION_SECONDS - 1 }),
+    ).toBe(false);
+    expect(
+      shiftWindowElapsed({ shiftAckAt: stamped, now: stamped + SHIFT_CONFIRMATION_SECONDS }),
+    ).toBe(true);
   });
 
   it('leaves everything else about the session alone', async () => {

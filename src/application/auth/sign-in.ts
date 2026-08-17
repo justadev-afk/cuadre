@@ -55,6 +55,22 @@ export type AuthenticatingUser = {
   readonly passwordHash: string;
 };
 
+/**
+ * What a session record is stamped from — strictly less than a login needs.
+ *
+ * `openSession` is called by the three doors *and* by the password reset, which
+ * opens one without ever verifying a password and therefore never reads a hash.
+ * Asking that caller for an `AuthenticatingUser` would mean handing a hash to
+ * code that has no use for one, so the parameter says only what it touches.
+ */
+export type SessionSubject = {
+  readonly id: string;
+  readonly companyId: string | null;
+  readonly name: string;
+  readonly email: string | null;
+  readonly username: string | null;
+};
+
 export type SessionWriter = {
   put(id: string, record: SessionRecord): Promise<void>;
 };
@@ -179,6 +195,18 @@ export async function verifyAgainstDummy(
 /** The roles that sign in with an email and a password. A cashier does not. */
 export type PasswordRole = Extract<Role, 'admin' | 'company'>;
 
+/**
+ * A role string off a database row, narrowed to the two that hold an email.
+ *
+ * The password reset needs it: the link is only ever mailed to an address, so
+ * the row behind a token is one of these — but the *row* says `string`, and a
+ * value this build does not know must fail closed rather than be trusted into
+ * a session.
+ */
+export function isPasswordRole(role: string): role is PasswordRole {
+  return role === 'admin' || role === 'company';
+}
+
 export async function signInWithPassword(
   deps: PasswordSignInDeps,
   expectedRole: PasswordRole,
@@ -223,9 +251,9 @@ export async function signInWithPassword(
  * it cannot happen — and if it ever does, it is a user with no tenant, which is
  * the one thing that must never reach a company-scoped query.
  */
-async function refuseSuspendedCompany(
+export async function refuseSuspendedCompany(
   companies: CompanyStatusReader,
-  user: AuthenticatingUser,
+  user: { readonly companyId: string | null },
   expectedRole: PasswordRole,
 ): Promise<SignInFailure | null> {
   if (user.companyId === null) {
@@ -236,20 +264,23 @@ async function refuseSuspendedCompany(
   return company !== null && company.status === 'active' ? null : 'company_suspended';
 }
 
+/** Everything minting a session needs, and nothing a particular door needs. */
+export type OpenSessionDeps = {
+  readonly sessions: SessionWriter;
+  readonly users: LastLoginWriter;
+  readonly activeSessions: ActiveSessionWriter;
+  readonly clock: Clock;
+  readonly ids: IdGen;
+};
+
 /**
  * Mints the session. The id is new on every sign-in, never the one the caller
  * arrived with: a session id captured over someone's shoulder must not survive
  * the next login, and rotating here is what makes fixing one impossible.
  */
 export async function openSession(
-  deps: {
-    readonly sessions: SessionWriter;
-    readonly users: LastLoginWriter;
-    readonly activeSessions: ActiveSessionWriter;
-    readonly clock: Clock;
-    readonly ids: IdGen;
-  },
-  user: AuthenticatingUser,
+  deps: OpenSessionDeps,
+  user: SessionSubject,
   role: Role,
   ipHash: string,
   deviceId: string,

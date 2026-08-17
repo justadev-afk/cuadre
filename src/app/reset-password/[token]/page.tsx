@@ -22,7 +22,8 @@ export default async function ResetPasswordPage({
     <AuthShell>
       <h3 className="m-0 mb-1.5 font-heading text-[25px] font-medium">Crea una contraseña nueva</h3>
       <p className="mb-[18px] text-[13px] text-muted-foreground">
-        Escríbela dos veces. Al guardarla, cerramos cualquier sesión abierta de tu cuenta.
+        Escríbela dos veces. Al guardarla cerramos cualquier sesión abierta de tu cuenta y te
+        dejamos adentro con la nueva.
       </p>
 
       <ResetForm token={token} />

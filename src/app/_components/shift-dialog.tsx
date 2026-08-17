@@ -8,14 +8,20 @@
  * throwing a cashier out mid-sale is worse than the risk it avoids.
  *
  * No script, on purpose — so this stays a plain server-rendered overlay rather
- * than a Radix dialog. Both answers are `<form>` submissions (the `Button` is
- * hookless, safe in a Server Component), so a failed hydration bundle cannot
- * leave a till stuck behind a modal it cannot dismiss.
+ * than a Radix dialog. Both answers are `<form method="post">` submissions to a
+ * route handler that answers a redirect (the `Button` is hookless, safe in a
+ * Server Component), so a failed hydration bundle cannot leave a till stuck
+ * behind a modal it cannot dismiss.
+ *
+ * Currently switched off: `SHIFT_CONFIRMATION_ENABLED` in `domain/shift.ts` is
+ * `false`, so `needsShiftConfirmation` never answers true and nothing renders
+ * this. Everything below is kept whole and tested for the day it is flipped
+ * back on.
  */
 import { Button } from '@/components/ui/button.tsx';
+import { API } from '../_lib/endpoints.ts';
 import { formatTime, initialsOf } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
-import { acknowledgeShiftAction } from './shift-dialog.actions.ts';
 
 type ShiftDialogProps = {
   /** The person the session says is here. */
@@ -78,7 +84,7 @@ export function ShiftDialog({ name, username, since, where }: ShiftDialogProps) 
               <button type="submit">Cerrar sesión</button>
             </Button>
           </form>
-          <form action={acknowledgeShiftAction} className="flex-1">
+          <form action={API.shiftAck} method="post" className="flex-1">
             <Button asChild size="block" className="h-11">
               <button type="submit">Sigo yo, continuar</button>
             </Button>

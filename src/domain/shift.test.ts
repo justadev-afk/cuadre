@@ -2,16 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   needsShiftConfirmation,
+  SHIFT_CONFIRMATION_ENABLED,
   SHIFT_CONFIRMATION_SECONDS,
   SHIFT_RESUME_GAP_SECONDS,
   shiftAckOnResume,
+  shiftWindowElapsed,
 } from './shift.ts';
 
 const NOW = 1_770_000_000;
 const FOUR_HOURS = SHIFT_CONFIRMATION_SECONDS;
 const GAP = SHIFT_RESUME_GAP_SECONDS;
 
-describe('needsShiftConfirmation', () => {
+describe('shiftWindowElapsed', () => {
   const table: ReadonlyArray<{
     shiftAckAt: number | null;
     now: number;
@@ -68,19 +70,39 @@ describe('needsShiftConfirmation', () => {
 
   for (const { shiftAckAt, now, expected, why } of table) {
     it(`${expected} — ${why}`, () => {
-      expect(needsShiftConfirmation({ shiftAckAt, now })).toBe(expected);
+      expect(shiftWindowElapsed({ shiftAckAt, now })).toBe(expected);
     });
   }
 
   it('is monotonic: once it asks, more time never un-asks', () => {
     const ackAt = NOW - FOUR_HOURS;
     for (const elapsed of [0, 1, 60, 3600, 86_400]) {
-      expect(needsShiftConfirmation({ shiftAckAt: ackAt, now: NOW + elapsed })).toBe(true);
+      expect(shiftWindowElapsed({ shiftAckAt: ackAt, now: NOW + elapsed })).toBe(true);
     }
   });
 
   it('measures four hours in seconds, the unit every timestamp column uses', () => {
     expect(SHIFT_CONFIRMATION_SECONDS).toBe(14_400);
+  });
+
+  describe('the switch in front of it', () => {
+    it('is what every screen actually asks, rule and all', () => {
+      // Written as the composition rather than as a list of `false`s, so this
+      // test says the same true thing in both positions of the constant: flip
+      // it and the table above comes back to life untouched.
+      for (const { shiftAckAt, now } of table) {
+        expect(needsShiftConfirmation({ shiftAckAt, now })).toBe(
+          SHIFT_CONFIRMATION_ENABLED && shiftWindowElapsed({ shiftAckAt, now }),
+        );
+      }
+    });
+
+    it('is off, so nothing interrupts a shift', () => {
+      // The current decision, pinned: a till is never asked "¿sigues en caja?".
+      expect(SHIFT_CONFIRMATION_ENABLED).toBe(false);
+      expect(needsShiftConfirmation({ shiftAckAt: null, now: NOW })).toBe(false);
+      expect(needsShiftConfirmation({ shiftAckAt: NOW - 86_400, now: NOW })).toBe(false);
+    });
   });
 });
 
@@ -124,12 +146,12 @@ describe('shiftAckOnResume', () => {
 
   it('a resumed session no longer needs confirmation', () => {
     const restarted = shiftAckOnResume({ shiftAckAt: Due, lastSeenAt: NOW - GAP, now: NOW });
-    expect(needsShiftConfirmation({ shiftAckAt: restarted, now: NOW })).toBe(false);
+    expect(shiftWindowElapsed({ shiftAckAt: restarted, now: NOW })).toBe(false);
   });
 
   it('a quiet reload still faces the prompt', () => {
     const kept = shiftAckOnResume({ shiftAckAt: Due, lastSeenAt: NOW - 5, now: NOW });
-    expect(needsShiftConfirmation({ shiftAckAt: kept, now: NOW })).toBe(true);
+    expect(shiftWindowElapsed({ shiftAckAt: kept, now: NOW })).toBe(true);
   });
 
   it('the resume gap is fifteen minutes', () => {
