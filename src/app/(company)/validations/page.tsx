@@ -8,6 +8,11 @@
  * cannot tell them apart. Only the picker needs a script, and it is the same
  * `SearchableSelect` the counter picks a bank with.
  *
+ * What the URL cannot carry is time passing: the till goes on validating while
+ * this screen sits open in the back office. So the header also holds an
+ * *Actualizar* button, and the same soft refresh runs by itself every thirty
+ * seconds — see `refresh-button.tsx`.
+ *
  * The table is always drawn, even with nothing in it. A filter that returns
  * nothing has to keep showing the columns it was applied to — a screen that
  * replaces them with a box loses the very thing the merchant is adjusting — so
@@ -24,6 +29,7 @@ import { Card } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { cn } from '@/lib/utils.ts';
 import { formatBolivares } from '../../../domain/money.ts';
+import { systemClock } from '../../../shared/clock.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { ValidationList } from '../../_components/validation-list.tsx';
@@ -32,6 +38,7 @@ import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
 import { CashierFilter } from './cashier-filter.tsx';
+import { RefreshButton } from './refresh-button.tsx';
 
 export const metadata = pageMeta('Validaciones');
 
@@ -119,6 +126,11 @@ export default async function ValidationsPage({
               className="w-[210px]"
             />
           </form>
+          {/* The clock of *this* render, so the button knows when a refresh it
+              asked for has landed. Milliseconds rather than `totals.to`: two
+              renders a second apart are common, two in the same millisecond are
+              not, and an unchanged value would leave the icon turning. */}
+          <RefreshButton renderedAt={systemClock.nowMillis()} />
         </div>
       }
     >
