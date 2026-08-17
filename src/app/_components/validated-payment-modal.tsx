@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils.ts';
 import type { PaymentKind } from '../../application/ports/bank-gateway.ts';
 import { formatBolivares } from '../../domain/money.ts';
 import { formatPhoneForDisplay } from '../../domain/phone.ts';
-import { formatDateTime } from '../_lib/venezuela-format.ts';
+import { formatBankDateTime, formatDateTime } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 import { PrintReceiptButton, type ReceiptData, ThermalReceipt } from './thermal-receipt.tsx';
 
@@ -131,7 +131,7 @@ export function ValidatedPaymentModal({
           {view.cashierName ? <Row label="Cajero" value={view.cashierName} /> : null}
           {/* The customer's date, then the shop's. A payment made last night and
               charged this morning is two different days, and both are true. */}
-          <Row label="Fecha del pago" value={formatDateTime(view.paidAt)} />
+          <Row label="Fecha del pago" value={formatBankDateTime(view.paidAt)} />
           <Row label="Cobrado" value={formatDateTime(view.chargedAt)} />
         </div>
 

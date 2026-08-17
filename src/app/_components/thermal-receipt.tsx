@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button.tsx';
 import type { PaymentKind } from '../../application/ports/bank-gateway.ts';
 import { formatBolivares } from '../../domain/money.ts';
 import { formatPhoneForDisplay } from '../../domain/phone.ts';
-import { formatDateTime } from '../_lib/venezuela-format.ts';
+import { formatBankDateTime, formatDateTime } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 
 export type ReceiptData = {
@@ -83,7 +83,7 @@ export function ThermalReceipt({ data }: { data: ReceiptData }) {
           {/* Two dates, because they answer different questions: the customer's
               receipt says when they paid, and the shop's books say when it was
               charged. A ticket carrying only one of them cannot settle either. */}
-          <Line label="Fecha del pago" value={formatDateTime(data.paidAt)} />
+          <Line label="Fecha del pago" value={formatBankDateTime(data.paidAt)} />
           <Line label="Cobrado" value={formatDateTime(data.atSeconds)} />
         </div>
 

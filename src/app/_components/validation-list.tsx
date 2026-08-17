@@ -18,7 +18,7 @@ import type { Validation } from '../../adapters/d1/validation.repository.ts';
 import { formatBolivares } from '../../domain/money.ts';
 import { formatPhoneForDisplay } from '../../domain/phone.ts';
 import { findBank } from '../../domain/sudeban.ts';
-import { amountDigits, formatClock, formatDayClock } from '../_lib/venezuela-format.ts';
+import { amountDigits, formatValidatedAt } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 import { PaymentKindMark } from './payment-kind-mark.tsx';
 import { ValidatedPaymentModal } from './validated-payment-modal.tsx';
@@ -57,7 +57,9 @@ export function ValidationList({
                   from the mark's own aria-label. */}
               <th className="w-5" />
               <th>Control</th>
-              <th>Hora</th>
+              {/* Not "Hora": the cell holds an hour only while the row is
+                  today's, and a date once it is not — see `formatValidatedAt`. */}
+              <th>Validado</th>
               <th>Referencia</th>
               <th className="text-right">Monto (Bs)</th>
               <th>Teléfono</th>
@@ -89,7 +91,11 @@ export function ValidationList({
                 <td className="font-heading tabular-nums text-[var(--color-accent-300)]">
                   {v.controlCode}
                 </td>
-                <td className="whitespace-nowrap text-muted-foreground">{formatClock(v.trnAt)}</td>
+                {/* `createdAt`, which is also what the list is ordered by, so
+                    the column reads in the order the rows are in. */}
+                <td className="whitespace-nowrap text-muted-foreground">
+                  {formatValidatedAt(v.createdAt, nowSeconds)}
+                </td>
                 <td className="tabular-nums">{v.reference}</td>
                 <td className="text-right font-heading tabular-nums">
                   {amountDigits(v.amountCents)}
@@ -143,7 +149,7 @@ export function ValidationList({
               )}
             </div>
             <span className="text-xs text-muted-foreground">
-              {formatDayClock(v.trnAt, nowSeconds)} · ref{' '}
+              {formatValidatedAt(v.createdAt, nowSeconds)} · ref{' '}
               <span className="tabular-nums">{v.reference}</span>
               {v.payerPhone !== null && (
                 <>

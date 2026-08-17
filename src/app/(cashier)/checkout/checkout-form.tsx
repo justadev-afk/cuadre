@@ -51,6 +51,7 @@ import { maskCurrency, maskDate, readTypedDate } from '../../_lib/masks.ts';
 import { kindLabel } from '../../_lib/payment-kind.ts';
 import { postJson } from '../../_lib/use-endpoint-action.ts';
 import {
+  formatBankDateTime,
   formatClock,
   formatDateTime,
   formatIsoDay,
@@ -1345,7 +1346,7 @@ function ChargeRows({
           says, and on a payment made last night it is not today. "Cobrado" is
           the shop's own — the two are different facts and the counter states
           both rather than picking one and calling it "Fecha". */}
-      <Row label="Fecha del pago" value={formatDateTime(charge.paidAt)} />
+      <Row label="Fecha del pago" value={formatBankDateTime(charge.paidAt)} />
       <Row label="Cobrado" value={formatDateTime(charge.createdAt)} />
     </div>
   );

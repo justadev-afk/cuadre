@@ -131,6 +131,44 @@ export function formatDayClock(epochSeconds: number, nowSeconds: number): string
 }
 
 /**
+ * '11:02' today, '04/08/2026' any earlier day — the *when* column of a list of
+ * validations.
+ *
+ * Two different questions wear the same column. Under today's list the date is
+ * on the header already, so the hour is the only thing that tells two rows
+ * apart; on a row from last Tuesday the hour is noise — nobody reconciles a
+ * receipt against 09:12, they reconcile it against the day. So the value says
+ * whichever of the two is still information.
+ *
+ * What it is given matters as much: this reads the moment the *counter*
+ * validated, never the bank's `trnAt`. Banesco reports a pago móvil with
+ * `trnTime` "00.00.00" — the movement carries a date and no time at all — so an
+ * hour drawn from it was 00:00 on every row ever validated.
+ */
+export function formatValidatedAt(epochSeconds: number, nowSeconds: number): string {
+  const today = startOfVenezuelaDay(nowSeconds);
+  return epochSeconds >= today ? formatClock(epochSeconds) : formatDate(epochSeconds);
+}
+
+/**
+ * A timestamp the **bank** reported: '06/08/2026 · 10:42 a.m.', or '06/08/2026'
+ * alone when the bank gave no time of day.
+ *
+ * Banesco sends `trnDate` and `trnTime` in two fields and fills the second with
+ * "00.00.00" for the movements we search, so `trnAt` is midnight of the day the
+ * payment happened. Printing that as "12:00 a.m." on a receipt is a time the
+ * bank never said — precision invented by the formatter — and a customer
+ * reading it would take it for the minute they paid. A payment genuinely made
+ * in the first minute of a day loses its hour here, which is the cheaper of the
+ * two mistakes by a wide margin.
+ */
+export function formatBankDateTime(epochSeconds: number): string {
+  const { hour, minute } = localParts(epochSeconds);
+  if (hour === 0 && minute === 0) return formatDate(epochSeconds);
+  return formatDateTime(epochSeconds);
+}
+
+/**
  * 'hace 3 minutos', 'hace 2 horas', or the exact date once it is older than a
  * day. The counter uses it for "ya fue cobrado": when a payment was charged
  * reads fastest as elapsed time, and is reconciled against a date only once it

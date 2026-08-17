@@ -99,7 +99,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         <Stat kicker="Bancos" value={String(connected.length)} note="conectados" />
         <Stat
           kicker="Última validación"
-          value={lastValidation === null ? '—' : formatDayClock(lastValidation.trnAt, now)}
+          value={lastValidation === null ? '—' : formatDayClock(lastValidation.createdAt, now)}
           note={lastValidation === null ? 'sin actividad' : `ref ${lastValidation.reference}`}
         />
       </div>
