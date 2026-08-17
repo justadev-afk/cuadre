@@ -18,6 +18,7 @@ import { Icon } from '../_components/icon.tsx';
 import { PwaResizer } from '../_components/pwa-resizer.tsx';
 import { SessionHeartbeat } from '../_components/session-heartbeat.tsx';
 import { ShiftDialog } from '../_components/shift-dialog.tsx';
+import { SignOut } from '../_components/sign-out.tsx';
 import { container, currentSession } from '../_lib/current-session.ts';
 import { PWA_SIZE } from '../_lib/pwa-size.ts';
 import { isLiveSession, signedOutPath } from '../_lib/session-exit.ts';
@@ -52,12 +53,12 @@ export default async function CheckoutExpressLayout({ children }: { children: Re
           </div>
         </div>
 
-        <form action="/logout" method="post">
-          <Button type="submit" variant="secondary" size="sm">
+        <SignOut>
+          <Button type="button" variant="secondary" size="sm">
             <Icon name="sign-out" />
             Salir
           </Button>
-        </form>
+        </SignOut>
       </header>
 
       {/* No padding here: ContentLayout owns the gutters, so the express till

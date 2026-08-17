@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { cn } from '@/lib/utils.ts';
+import type { PaymentKind } from '../../application/ports/bank-gateway.ts';
 import { formatBolivares } from '../../domain/money.ts';
 import { formatPhoneForDisplay } from '../../domain/phone.ts';
 import { formatDateTime } from '../_lib/venezuela-format.ts';
@@ -26,6 +27,17 @@ export type ValidatedPaymentView = {
   readonly amountCents: number;
   readonly reference: string;
   readonly payerPhone: string | null;
+  /**
+   * Pago móvil or transferencia. The modal reads it to decide whether the payer's
+   * bank is part of this payment's story — the rule lives here, once, rather
+   * than in each surface that opens the modal.
+   */
+  readonly kind: PaymentKind;
+  /**
+   * The bank the money came *from* — the "banco emisor" the cashier picked, by
+   * name ("Bancamiga"), or its Sudeban code when the code is not one we know.
+   */
+  readonly payerBankName?: string | null;
   /** The bank that answered, as a name (e.g. "Banesco"). */
   readonly bankName: string;
   readonly cashierName?: string | null;
@@ -106,7 +118,16 @@ export function ValidatedPaymentModal({
           {view.payerPhone !== null ? (
             <Row label="Teléfono" value={formatPhoneForDisplay(view.payerPhone)} />
           ) : null}
-          {view.accountLabel ? <Row label="Banco" value={view.accountLabel} /> : null}
+          {/* The payer's side of a pago móvil: it is made *from* a phone at a
+              bank, and the counter asked for both. The same field on a
+              transferencia is a routing detail of the search, not something the
+              merchant recognises on a receipt, so it stays off there. */}
+          {view.kind === 'pago_movil' && view.payerBankName ? (
+            <Row label="Banco emisor" value={view.payerBankName} />
+          ) : null}
+          {/* And the shop's side — which connection received it. Named in full
+              beside "Banco emisor" so the two are never read as one bank. */}
+          {view.accountLabel ? <Row label="Banco receptor" value={view.accountLabel} /> : null}
           {view.cashierName ? <Row label="Cajero" value={view.cashierName} /> : null}
           {/* The customer's date, then the shop's. A payment made last night and
               charged this morning is two different days, and both are true. */}

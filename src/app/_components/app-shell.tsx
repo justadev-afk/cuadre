@@ -26,6 +26,7 @@ import { Brand } from './brand.tsx';
 import { Icon } from './icon.tsx';
 import { PwaResizer } from './pwa-resizer.tsx';
 import { SessionHeartbeat } from './session-heartbeat.tsx';
+import { SignOut } from './sign-out.tsx';
 
 /** A link is current when the path is it or sits below it. */
 function isCurrent(pathname: string, href: string): boolean {
@@ -109,15 +110,15 @@ export function AppShell({
             <span className="block truncate text-xs">{model.user.name}</span>
             <span className="text-[11px] text-muted-foreground">{model.user.sub}</span>
           </span>
-          <form action="/logout" method="post" className="inline-flex">
+          <SignOut>
             <button
-              type="submit"
+              type="button"
               aria-label="Cerrar sesión"
               className="inline-flex cursor-pointer text-foreground/50 transition-colors hover:text-primary"
             >
               <Icon name="sign-out" />
             </button>
-          </form>
+          </SignOut>
         </div>
       </aside>
 
@@ -130,11 +131,11 @@ export function AppShell({
           <Badge variant="accent" className="ml-auto text-[10px]">
             {model.roleLabel}
           </Badge>
-          <form action="/logout" method="post" className="inline-flex">
-            <Button type="submit" variant="ghost" size="icon" aria-label="Cerrar sesión">
+          <SignOut>
+            <Button type="button" variant="ghost" size="icon" aria-label="Cerrar sesión">
               <Icon name="sign-out" />
             </Button>
-          </form>
+          </SignOut>
         </div>
 
         {children}

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import type { Validation } from '../../adapters/d1/validation.repository.ts';
 import { formatBolivares } from '../../domain/money.ts';
+import { findBank } from '../../domain/sudeban.ts';
 import { amountDigits, formatClock, formatDayClock } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 import { PaymentKindMark } from './payment-kind-mark.tsx';
@@ -162,6 +163,11 @@ export function ValidationList({
             amountCents: viewing.amountCents,
             reference: viewing.reference,
             payerPhone: viewing.payerPhone,
+            kind: viewing.kind,
+            // The stored Sudeban code, as a name. An unknown code shows as the
+            // four digits rather than as nothing: the row says what the bank was
+            // asked with, and that is true even when the list has moved on.
+            payerBankName: findBank(viewing.sourceBankId)?.name ?? viewing.sourceBankId,
             bankName: BANK_NAMES[viewing.bank] ?? viewing.bank,
             cashierName: viewing.cashierName,
             paidAt: viewing.trnAt,

@@ -261,7 +261,7 @@ export function CheckoutForm({
   const [outcome, setOutcome] = useState<ChargeOutcome | null>(null);
   const [copied, setCopied] = useState(false);
   /** A past charge the cashier tapped in "mi turno", shown read-only in a modal. */
-  const [viewing, setViewing] = useState<ConfirmedCharge | null>(null);
+  const [viewing, setViewing] = useState<RecentCharge | null>(null);
 
   // Which connected bank receives. Always one, defaulting to the first the
   // server listed (production before sandbox, most recently verified first).
@@ -888,7 +888,7 @@ function MiTurno({
   recent: readonly RecentCharge[];
   turnoCount: number;
   turnoCents: number;
-  onOpen: (charge: ConfirmedCharge) => void;
+  onOpen: (charge: RecentCharge) => void;
   /**
    * The express till is a one-way door — the cashier's only *exit* is logout —
    * so its link to `/my-validations` opens a new tab (the full, searchable list
@@ -1254,7 +1254,11 @@ function ValidatedModal({
   cashierName,
   onClose,
 }: {
-  charge: ConfirmedCharge;
+  /**
+   * A row of "mi turno", not any confirmed charge: only that list opens this
+   * modal, and it is what carries the payer's bank down to it.
+   */
+  charge: RecentCharge;
   accounts: readonly CheckoutAccount[];
   merchantName?: string;
   merchantRif?: string;
@@ -1274,6 +1278,8 @@ function ValidatedModal({
         amountCents: charge.amountCents,
         reference: charge.reference,
         payerPhone: charge.payerPhone,
+        kind: charge.kind,
+        payerBankName: findBank(charge.sourceBankId)?.name ?? charge.sourceBankId,
         bankName,
         cashierName,
         accountLabel: accountLabel(accounts, charge.bankAccountId),

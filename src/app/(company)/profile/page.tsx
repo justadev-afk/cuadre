@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import { ContentLayout } from '../../_components/content-layout.tsx';
+import { SignOut } from '../../_components/sign-out.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
 import { initialsOf } from '../../_lib/venezuela-format.ts';
@@ -44,11 +45,11 @@ export default async function ProfilePage() {
 
         <div className="my-0.5 h-px bg-border" />
 
-        <form action="/logout" method="post">
-          <Button type="submit" variant="secondary" size="block">
+        <SignOut>
+          <Button type="button" variant="secondary" size="block">
             Cerrar sesión
           </Button>
-        </form>
+        </SignOut>
       </Card>
     </ContentLayout>
   );
