@@ -36,10 +36,28 @@ function CommandInput({
       <Search className="size-4 shrink-0" />
       <CommandPrimitive.Input
         data-slot="command-input"
-        className={cn(
-          'flex h-6 w-full bg-transparent text-sm text-foreground caret-primary outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-50',
-          className,
-        )}
+        // Nothing autofills a dropdown's filter box. It is an `<input>` only
+        // because it has to take typing — it holds no value the browser or a
+        // password manager could ever have a saved answer for, and a suggestion
+        // panel over an open popover covers the list the person is reading.
+        //
+        // It takes all of them because each vendor reads its own: `autoComplete`
+        // for the browser (Chrome ignores `off` on inputs it thinks it
+        // recognises, which is why there is no `name` here for it to recognise),
+        // then one attribute each for 1Password, LastPass, Bitwarden and
+        // Dashlane. The mobile keyboard's corrections go too — this is a filter
+        // over names and codes, and autocapitalising "banesco" helps nobody.
+        //
+        // They sit before the spread on purpose: a caller that genuinely wants
+        // autofill in some future box can still say so.
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        data-1p-ignore=""
+        data-lpignore="true"
+        data-bwignore=""
+        data-form-type="other"
         {...props}
       />
     </div>
