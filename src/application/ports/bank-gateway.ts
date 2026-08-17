@@ -202,7 +202,18 @@ export type BankMovement = {
    */
   accountMasked: string;
   occurredAt: number;
-  /** Sudeban code of the paying bank, 4 digits, zero-padded. */
+  /**
+   * The Sudeban code on the bank's own row, 4 digits, zero-padded — and **not**
+   * the payer's bank, whatever the field is called.
+   *
+   * Banesco answers '0134' here on a pago móvil made from Banco de Venezuela:
+   * it names the bank whose books the movement sits in, which for a movement
+   * Banesco is reporting is always Banesco. Who paid is the `sourceBankId` the
+   * query was *asked* with, because the search matches on it — a wrong bank
+   * comes back `70001 · sin resultados`, so a movement at all is the bank
+   * confirming that code. Nothing stores this one; like `accountMasked` it stays
+   * because reading the bank's row honestly means parsing what is in it.
+   */
   sourceBankId: string | null;
   concept: string | null;
   /** The receiving party's id as the bank reports it. */

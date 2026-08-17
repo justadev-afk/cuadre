@@ -17,11 +17,12 @@ const SECONDS_PER_DAY = 86_400;
  */
 describe('formatValidatedAt', () => {
   const table: ReadonlyArray<[number, string, string]> = [
-    [NOW, '11:02', 'today is an hour — the date is already on the header'],
-    [NOW - 3 * 3600, '08:02', 'and so is earlier this morning'],
+    [NOW, '11:02 a.m.', 'today is an hour — the date is already on the header'],
+    [NOW + 5 * 3600, '4:02 p.m.', 'in the twelve-hour form a counter says out loud'],
+    [NOW - 3 * 3600, '8:02 a.m.', 'and so is earlier this morning'],
     [
       Date.parse('2026-08-17T04:10:00Z') / 1000,
-      '00:10',
+      '12:10 a.m.',
       'ten past midnight is still today in Caracas, and still an hour',
     ],
     [

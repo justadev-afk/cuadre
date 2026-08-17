@@ -500,15 +500,15 @@ export function makeValidatePayment({
       amountCents: movement.amountCents,
       currency: movement.currency.trim().toUpperCase(),
       payerPhone: claim.payerPhone,
-      // The bank knows who paid it better than the picker does: a customer who
-      // chose the wrong bank on the screen still made the payment the bank
-      // reports. But only when what it reports *names a bank* — Banesco returns
-      // its own two-digit `01` for its own customers, which pads to '0001' and
-      // is no Sudeban code at all. Storing that would put a number nothing can
-      // resolve where the payer's bank belongs, and the counter would print it
-      // raw beside the charge. An unrecognisable code is not better information
-      // than the one the cashier picked off the receipt.
-      sourceBankId: reportedBank(movement.sourceBankId) ?? claim.sourceBankId,
+      // The payer's bank is the code the payment was *found* with, not the one
+      // the reply echoes back. `bankId` is a field the search matches on — a
+      // wrong bank answers `70001 · sin resultados`, never a movement — so a
+      // movement in hand is the bank agreeing with what the cashier picked.
+      // Banesco's own `sourceBankId` is a different fact: it came back '0134',
+      // Banesco, on a pago móvil made from Banco de Venezuela, because it names
+      // the bank whose books the movement sits in. Preferring it printed
+      // "Banco emisor · Banesco" over a payment nobody at Banesco had made.
+      sourceBankId: claim.sourceBankId,
       trnAt: movement.occurredAt,
       searchMode: payment.strategy,
       idempotencyKey: claim.idempotencyKey,
@@ -583,11 +583,6 @@ export function makeValidatePayment({
       `control code collided ${CONTROL_CODE_MAX_ATTEMPTS} times for ${input.companyId}`,
     );
   };
-}
-
-/** The bank's own code for the payer's bank, if it is one we can name. */
-function reportedBank(sourceBankId: string | null): string | null {
-  return sourceBankId !== null && findBank(sourceBankId) !== null ? sourceBankId : null;
 }
 
 /** Nothing in here is a failure; the counter has a screen for each of them. */

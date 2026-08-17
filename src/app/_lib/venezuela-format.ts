@@ -131,14 +131,17 @@ export function formatDayClock(epochSeconds: number, nowSeconds: number): string
 }
 
 /**
- * '11:02' today, '04/08/2026' any earlier day — the *when* column of a list of
- * validations.
+ * '11:02 a.m.' today, '04/08/2026' any earlier day — the *when* column of a
+ * list of validations.
  *
  * Two different questions wear the same column. Under today's list the date is
  * on the header already, so the hour is the only thing that tells two rows
  * apart; on a row from last Tuesday the hour is noise — nobody reconciles a
  * receipt against 09:12, they reconcile it against the day. So the value says
- * whichever of the two is still information.
+ * whichever of the two is still information. The hour is the receipt's own
+ * twelve-hour form, the way it is said out loud at a counter — the same
+ * `formatTime` the confirmation and the printed ticket use, so one payment is
+ * never two spellings of one minute.
  *
  * What it is given matters as much: this reads the moment the *counter*
  * validated, never the bank's `trnAt`. Banesco reports a pago móvil with
@@ -147,7 +150,7 @@ export function formatDayClock(epochSeconds: number, nowSeconds: number): string
  */
 export function formatValidatedAt(epochSeconds: number, nowSeconds: number): string {
   const today = startOfVenezuelaDay(nowSeconds);
-  return epochSeconds >= today ? formatClock(epochSeconds) : formatDate(epochSeconds);
+  return epochSeconds >= today ? formatTime(epochSeconds) : formatDate(epochSeconds);
 }
 
 /**

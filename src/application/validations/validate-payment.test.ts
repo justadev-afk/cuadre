@@ -820,13 +820,20 @@ describe('validate payment', () => {
     expect(points[0]?.latencyMs).toBeGreaterThan(0);
   });
 
-  it("prefers the bank's paying bank over the one the customer picked", async () => {
+  /**
+   * The bug this replaced: a pago móvil from Banco de Venezuela was recorded,
+   * and re-opened, as "Banco emisor · Banesco". Banesco's `sourceBankId` names
+   * the bank whose books the movement sits in — itself — and we were preferring
+   * it over the code the cashier picked. The picked code is the one the search
+   * matched on, so a movement coming back at all is the bank confirming it.
+   */
+  it("records the bank the payment was found with, not the one on the bank's row", async () => {
     const { validatePayment, validations } = await harness({
-      script: { payment: ok(found({ sourceBankId: '0172' })) },
+      script: { payment: ok(found({ sourceBankId: '0134' })) },
     });
 
-    await validatePayment(INPUT);
+    await validatePayment({ ...INPUT, sourceBankId: '0102' });
 
-    expect(validations.rows[0]?.sourceBankId).toBe('0172');
+    expect(validations.rows[0]?.sourceBankId).toBe('0102');
   });
 });
