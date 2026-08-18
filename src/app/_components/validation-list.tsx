@@ -22,6 +22,7 @@ import { bankAccountLabel } from '../_lib/bank-account-label.ts';
 import { amountDigits, formatValidatedAt } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 import { PaymentKindMark } from './payment-kind-mark.tsx';
+import { SkeletonCards } from './skeleton.tsx';
 import { ValidatedPaymentModal } from './validated-payment-modal.tsx';
 
 const BANK_NAMES: Record<string, string> = { banesco: 'Banesco' };
@@ -65,29 +66,7 @@ export function ValidationList({
       {/* Wide screen: a table, each row a button that re-opens the receipt. */}
       <Card className="hidden overflow-x-auto p-0 min-[900px]:block">
         <table className="table">
-          <thead>
-            <tr>
-              {/* No heading: the column is one glyph wide and its meaning is
-                  under the pointer. The word still reaches a screen reader,
-                  from the mark's own aria-label. */}
-              <th className="w-5" />
-              <th>Control</th>
-              {/* Not "Hora": the cell holds an hour only while the row is
-                  today's, and a date once it is not — see `formatValidatedAt`. */}
-              <th>Validado</th>
-              <th>Referencia</th>
-              <th className="text-right">Monto (Bs)</th>
-              <th>Teléfono</th>
-              {/* The payer's side, then the shop's, in the order the receipt
-                  reads and the modal lists them — two banks side by side, which
-                  is the only way "de dónde vino" is a comparison and not two
-                  lookups. "Banco" alone was the receiving one, and a table that
-                  names one bank on a payment between two says which. */}
-              <th>Banco emisor</th>
-              <th>Banco receptor</th>
-              {showCashier && <th>Cajero</th>}
-            </tr>
-          </thead>
+          <ValidationsHead showCashier={showCashier} />
           <tbody>
             {items.map((v) => (
               <tr
@@ -153,6 +132,9 @@ export function ValidationList({
             type="button"
             key={v.id}
             onClick={() => open(v)}
+            // A phone has no cells to blink: under a `SkeletonMask` the whole
+            // card is the placeholder, which is what `SkeletonCards` draws.
+            data-sk="block"
             className="flex cursor-pointer flex-col gap-1 rounded-md bg-card px-3.5 py-3 text-left shadow-[var(--shadow-sm)] transition-colors hover:bg-foreground/[0.04]"
           >
             <div className="flex items-center gap-1.5">
@@ -228,6 +210,86 @@ export function ValidationList({
         />
       )}
     </>
+  );
+}
+
+/**
+ * The table's head, in one place, because two tables draw it: the list and the
+ * skeleton that stands in for it while the rows are on their way. A column
+ * added to one and not the other is a screen that jumps when the data lands,
+ * which is exactly what the skeleton exists to prevent.
+ */
+function ValidationsHead({ showCashier }: { showCashier: boolean }) {
+  return (
+    <thead>
+      <tr>
+        {/* No heading: the column is one glyph wide and its meaning is under
+            the pointer. The word still reaches a screen reader, from the mark's
+            own aria-label. */}
+        <th className="w-5" />
+        <th>Control</th>
+        {/* Not "Hora": the cell holds an hour only while the row is today's,
+            and a date once it is not — see `formatValidatedAt`. */}
+        <th>Validado</th>
+        <th>Referencia</th>
+        <th className="text-right">Monto (Bs)</th>
+        <th>Teléfono</th>
+        {/* The payer's side, then the shop's, in the order the receipt reads
+            and the modal lists them — two banks side by side, which is the only
+            way "de dónde vino" is a comparison and not two lookups. "Banco"
+            alone was the receiving one, and a table that names one bank on a
+            payment between two says which. */}
+        <th>Banco emisor</th>
+        <th>Banco receptor</th>
+        {showCashier && <th>Cajero</th>}
+      </tr>
+    </thead>
+  );
+}
+
+/**
+ * The same list, before it has anything to list.
+ *
+ * It is the real markup with a plausible row in it, wearing `.sk-mask` — every
+ * cell's ink becomes a bar and the columns land where the data will, because
+ * the widths are measured from a control code and a reference rather than from
+ * numbers somebody picked to look right. `aria-hidden`, since what is under the
+ * bars is furniture: a screen reader announcing six invented references would
+ * be worse than the silence.
+ */
+const SKELETON_ROWS = ['a', 'b', 'c', 'd', 'e', 'f'];
+
+/** A card on a phone is three lines in a 12px box — see the list above. */
+const SKELETON_CARD_HEIGHT = 84;
+
+export function ValidationListSkeleton({ showCashier = false }: { showCashier?: boolean }) {
+  return (
+    <div className="sk-mask" aria-hidden="true">
+      <Card className="hidden overflow-x-auto p-0 min-[900px]:block">
+        <table className="table">
+          <ValidationsHead showCashier={showCashier} />
+          <tbody>
+            {SKELETON_ROWS.map((row) => (
+              <tr key={row}>
+                <td className="pr-0">•</td>
+                <td className="font-heading tabular-nums">582422</td>
+                <td className="whitespace-nowrap">10:24</td>
+                <td className="tabular-nums">12346090431</td>
+                <td className="text-right font-heading tabular-nums">630,00</td>
+                <td className="tabular-nums">0414-3125566</td>
+                <td className="whitespace-nowrap">Banesco</td>
+                <td className="whitespace-nowrap">Banesco · Caja</td>
+                {showCashier && <td className="whitespace-nowrap">María Rodríguez</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      <div className="min-[900px]:hidden">
+        <SkeletonCards count={SKELETON_ROWS.length} height={SKELETON_CARD_HEIGHT} />
+      </div>
+    </div>
   );
 }
 

@@ -17,7 +17,7 @@
  * the cashier beside it and the counter uses for a bank (§11).
  */
 import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
-import { useQueryFilter } from '../../_lib/use-query-filter.ts';
+import { useQueryFilter } from '../../_lib/query-filter.tsx';
 
 /** The URL's spelling of each option. `all` is the absence of the parameter. */
 export type EnvFilter = 'all' | 'production' | 'sandbox';

@@ -328,6 +328,44 @@ figcaption {
   }
 }
 
+/* ══ a region waiting on a re-query ════════════════════════════════════════
+   `SkeletonMask` puts `.sk-mask` on a region whose filter has just changed.
+   The content it is already showing stays in the DOM at its exact size and
+   only its ink is swapped for a bar, so the table does not collapse into a
+   skeleton of a different shape and back while the merchant is typing. There
+   is no utility for "replace every descendant's text with a bar" — which is
+   why this is the second bespoke class, after `.table`.
+
+   A `<td>` is a bar by being one; anything else asks with `data-sk`, either a
+   `line` (a number in a stat box) or a `block` (a whole card on a phone, which
+   is what `SkeletonCards` draws). `--sk-w`/`--sk-h` size the bar where the
+   default full-width 11px strip is wrong for the text under it.
+
+   Unlayered, unlike `.table`, and for the mirror image of that reason: this one
+   has to *beat* the utilities on the elements it masks. A `text-muted-foreground`
+   on the very span being blanked wins over anything in `@layer components`,
+   whatever the specificity, and what that looks like is a stat box showing its
+   number and a bar beside it. */
+.sk-mask {
+  pointer-events: none;
+}
+.sk-mask :is(td, [data-sk='line']) {
+  color: transparent;
+  background-image: linear-gradient(var(--color-neutral-800), var(--color-neutral-800));
+  background-origin: content-box;
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: var(--sk-w, 100%) var(--sk-h, 11px);
+  animation: sk 0.85s ease-in-out infinite;
+}
+.sk-mask [data-sk='block'] {
+  animation: sk 0.85s ease-in-out infinite;
+}
+/* The real content keeps its space — `visibility`, never `display`. */
+.sk-mask :is(td, [data-sk]) > * {
+  visibility: hidden;
+}
+
 /* The two keyframes the skeletons animate via `animate-[sk_…]`/`animate-[spin_…]`. */
 @keyframes sk {
   0%,

@@ -13,7 +13,7 @@
  * shareable and survive a reload.
  */
 import { SearchableSelect, type SelectOption } from '../../_components/searchable-select.tsx';
-import { useQueryFilter } from '../../_lib/use-query-filter.ts';
+import { useQueryFilter } from '../../_lib/query-filter.tsx';
 
 /** The value that means "everybody". Absent from the URL, never `?cashier=all`. */
 const EVERYONE = '';

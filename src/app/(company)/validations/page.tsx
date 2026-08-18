@@ -7,11 +7,16 @@
  * the text search cannot tell them apart — and a free-text search.
  *
  * The two pickers are the same `SearchableSelect` the counter picks a bank with,
- * and the header is ordered by how often a hand reaches for it: the environment
- * is a switch a shop sets once (usually never — one production bank, and the
- * sandbox rows stop existing), so it is a closed control rather than the strip
- * of tabs it used to be, and the search box got the room. Somebody standing here
- * with a receipt is looking for a reference.
+ * and they stay in the header: the environment is a switch a shop sets once
+ * (usually never — one production bank, and the sandbox rows stop existing) and
+ * the cashier one is a question asked at the end of a shift.
+ *
+ * The search box is neither. It is what somebody standing here with a receipt
+ * reaches for, so it is a full-width row of its own between the day's totals and
+ * the table it filters, it searches by itself as the term is typed, and it never
+ * takes the screen away while it does — see `validations-search.tsx` and
+ * `SkeletonMask`. Cornered in the header at 280px, answering the Enter key and
+ * nothing else, it read as broken.
  *
  * What the URL cannot carry is time passing: the till goes on validating while
  * this screen sits open in the back office. So the header also holds an
@@ -31,19 +36,22 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
-import { Input } from '@/components/ui/input.tsx';
 import { formatBolivares } from '../../../domain/money.ts';
 import { systemClock } from '../../../shared/clock.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
+import { SkeletonMask } from '../../_components/skeleton-mask.tsx';
 import { ValidationList } from '../../_components/validation-list.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { queryValue, type SearchParams } from '../../_lib/inputs.ts';
 import { pageMeta } from '../../_lib/page-meta.ts';
+import { QueryFilterProvider } from '../../_lib/query-filter.tsx';
 import { CashierFilter } from './cashier-filter.tsx';
 import { type EnvFilter, EnvironmentFilter } from './environment-filter.tsx';
 import { RefreshButton } from './refresh-button.tsx';
+import { StatCard } from './stat-card.tsx';
+import { ValidationsSearch } from './validations-search.tsx';
 
 export const metadata = pageMeta('Validaciones');
 
@@ -89,97 +97,87 @@ export default async function ValidationsPage({
     totals.totalCount === 0 ? 0 : Math.round(totals.totalAmountCents / totals.totalCount);
 
   return (
-    <ContentLayout
-      title="Validaciones"
-      subtitle={`Hoy · ${totals.totalCount} pagos validados · ${formatBolivares(totals.totalAmountCents)}`}
-      actions={
-        <div className="flex flex-wrap items-center gap-2">
-          <EnvironmentFilter value={environment} />
-          <CashierFilter cashiers={staff} value={cashierId} />
-          <form>
-            {environment !== 'all' && (
-              <input type="hidden" name="environment" value={environment} />
-            )}
-            {cashierId !== '' && <input type="hidden" name="cashier" value={cashierId} />}
-            {/* The widest thing in the header, now that the environment is one
-                closed control: this is what somebody reaches for with a receipt
-                in their hand. */}
-            <Input
-              name="q"
-              defaultValue={search ?? ''}
-              placeholder="Referencia, monto, cajero…"
-              className="w-[280px] max-[899px]:w-[210px]"
-            />
-          </form>
-          {/* The clock of *this* render, so the button knows when a refresh it
-              asked for has landed. Milliseconds rather than `totals.to`: two
-              renders a second apart are common, two in the same millisecond are
-              not, and an unchanged value would leave the icon turning. */}
-          <RefreshButton renderedAt={systemClock.nowMillis()} />
-        </div>
-      }
-    >
-      {!hasBank && (
-        <div className="flex items-center gap-3.5 rounded-md bg-primary/[0.08] p-4 ring-1 ring-inset ring-primary/35">
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--color-accent-800)] text-xl text-[var(--color-accent-100)]">
-            <Icon name="bank" />
-          </span>
-          <div className="flex-1">
-            <div className="font-heading text-[15px]">Conecta un banco para empezar a validar</div>
-            <span className="text-xs text-muted-foreground">
-              Sin una cuenta conectada, la caja no tiene a quién preguntarle por un pago.
-            </span>
+    <QueryFilterProvider>
+      <ContentLayout
+        title="Validaciones"
+        subtitle={`Hoy · ${totals.totalCount} pagos validados · ${formatBolivares(totals.totalAmountCents)}`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <EnvironmentFilter value={environment} />
+            <CashierFilter cashiers={staff} value={cashierId} />
+            {/* The clock of *this* render, so the button knows when a refresh it
+                asked for has landed. Milliseconds rather than `totals.to`: two
+                renders a second apart are common, two in the same millisecond are
+                not, and an unchanged value would leave the icon turning. */}
+            <RefreshButton renderedAt={systemClock.nowMillis()} />
           </div>
-          <Button asChild className="whitespace-nowrap">
-            <Link href="/banks">
-              <Icon name="plus" />
-              Conectar banco
-            </Link>
-          </Button>
-        </div>
-      )}
+        }
+      >
+        {!hasBank && (
+          <div className="flex items-center gap-3.5 rounded-md bg-primary/[0.08] p-4 ring-1 ring-inset ring-primary/35">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--color-accent-800)] text-xl text-[var(--color-accent-100)]">
+              <Icon name="bank" />
+            </span>
+            <div className="flex-1">
+              <div className="font-heading text-[15px]">
+                Conecta un banco para empezar a validar
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Sin una cuenta conectada, la caja no tiene a quién preguntarle por un pago.
+              </span>
+            </div>
+            <Button asChild className="whitespace-nowrap">
+              <Link href="/banks">
+                <Icon name="plus" />
+                Conectar banco
+              </Link>
+            </Button>
+          </div>
+        )}
 
-      <div className="flex flex-wrap gap-3">
-        <StatCard
-          kicker="Cobrado hoy"
-          value={formatBolivares(totals.totalAmountCents)}
-          note={`${totals.totalCount} pagos aprobados`}
-        />
-        <StatCard
-          kicker="Ticket promedio"
-          value={formatBolivares(avgCents)}
-          note="excluye sandbox"
-        />
-        <StatCard kicker="Pagos validados" value={String(totals.totalCount)} note="hoy" />
-      </div>
+        {/* The two regions a filter changes, and the only two that blink while
+            it is being answered: the day's numbers and the list. Everything
+            else — the title, the pickers, the field being typed in — stays
+            exactly where it is, holding its size. */}
+        <SkeletonMask className="flex flex-wrap gap-3">
+          <StatCard
+            kicker="Cobrado hoy"
+            value={formatBolivares(totals.totalAmountCents)}
+            note={`${totals.totalCount} pagos aprobados`}
+          />
+          <StatCard
+            kicker="Ticket promedio"
+            value={formatBolivares(avgCents)}
+            note="excluye sandbox"
+          />
+          <StatCard kicker="Pagos validados" value={String(totals.totalCount)} note="hoy" />
+        </SkeletonMask>
 
-      {/* Always drawn, empty or not — see the note at the top of the file. */}
-      <ValidationList
-        items={list.items}
-        nowSeconds={nowSeconds}
-        showCashier
-        merchantName={merchantName}
-        merchantRif={merchantRif}
-      />
+        <ValidationsSearch value={search ?? ''} />
 
-      {list.items.length === 0 && (
-        <Card>
-          <p className="m-0 py-5 text-center text-sm text-muted-foreground">
-            {emptyMessage(cashierId, staff, search, environment)}
-          </p>
-        </Card>
-      )}
-    </ContentLayout>
-  );
-}
+        <SkeletonMask className="flex flex-col gap-4">
+          {/* Always drawn, empty or not — see the note at the top of the file. */}
+          <ValidationList
+            items={list.items}
+            nowSeconds={nowSeconds}
+            showCashier
+            merchantName={merchantName}
+            merchantRif={merchantRif}
+          />
 
-function StatCard({ kicker, value, note }: { kicker: string; value: string; note: string }) {
-  return (
-    <div className="flex min-w-[180px] flex-1 flex-col gap-0.5 rounded-md bg-card p-3 shadow-[var(--shadow-sm)]">
-      <div className="text-[10px] tracking-[0.1em] text-primary uppercase">{kicker}</div>
-      <div className="font-heading text-2xl">{value}</div>
-      <span className="text-xs text-muted-foreground">{note}</span>
-    </div>
+          {list.items.length === 0 && (
+            <Card>
+              <p
+                data-sk="line"
+                className="m-0 py-5 text-center text-sm text-muted-foreground [--sk-h:12px]"
+              >
+                {emptyMessage(cashierId, staff, search, environment)}
+              </p>
+            </Card>
+          )}
+        </SkeletonMask>
+      </ContentLayout>
+    </QueryFilterProvider>
   );
 }
 
