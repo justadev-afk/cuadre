@@ -9,7 +9,7 @@
  * this stays a pure controlled input.
  */
 import { Check } from 'lucide-react';
-import { type KeyboardEvent, useState } from 'react';
+import { type FocusEvent, type KeyboardEvent, useRef, useState } from 'react';
 
 import {
   Command,
@@ -47,6 +47,34 @@ type SearchableSelectProps = {
   searchable?: boolean;
 };
 
+/**
+ * Everything a Tab can land on, so the popover can hand the next Tab onward to
+ * the field after the trigger instead of into the portal it lives in.
+ */
+const TABBABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * The field before or after `from`, as the browser would have reached it.
+ *
+ * The popover is portalled to the end of `<body>`, so a plain Tab out of its
+ * filter box walks off the end of the document rather than into the next field
+ * of the form — which is the whole reason the dropdown is on the tab route in
+ * the first place. Its own contents are skipped (it is closing), and so are
+ * Radix's focus guards, which are tabbable by design and belong to nobody.
+ */
+function focusAdjacentField(from: HTMLElement, back: boolean): void {
+  const fields = Array.from(document.querySelectorAll<HTMLElement>(TABBABLE)).filter(
+    (element) =>
+      element === from ||
+      (element.offsetParent !== null &&
+        element.closest('[data-radix-popper-content-wrapper], [data-radix-focus-guard]') === null),
+  );
+  const at = fields.indexOf(from);
+  if (at === -1) return;
+  fields[at + (back ? -1 : 1)]?.focus();
+}
+
 /** Diacritic- and case-insensitive, so "merida" finds "Mérida". */
 function fold(text: string): string {
   return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -70,6 +98,58 @@ export function SearchableSelect({
    */
   const [search, setSearch] = useState('');
   const selected = options.find((option) => option.value === value) ?? null;
+
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  /** Focus this component put back on the trigger itself, which must not re-open. */
+  const returning = useRef(false);
+  /** A pointer is down on the trigger: the click it becomes is what toggles. */
+  const pressing = useRef(false);
+  /** Where focus goes when the popover closes — Radix's answer is overridden. */
+  const exit = useRef<'trigger' | 'away'>('trigger');
+
+  /**
+   * Closing on our own terms — a choice, or a Tab out. `onOpenChange` only hears
+   * about the closes Radix itself decides (Escape, a click outside), so the
+   * filter has to be cleared here too or the next open re-opens onto the last
+   * search: one bank listed, and no sign of why.
+   */
+  function close(): void {
+    setOpen(false);
+    setSearch('');
+  }
+
+  function focusTrigger(): void {
+    returning.current = true;
+    triggerRef.current?.focus();
+    returning.current = false;
+  }
+
+  /**
+   * Focus opens it. Tabbing to a dropdown and finding it shut is a stop: the
+   * next key does nothing until you have guessed that this one needs opening
+   * first, and on a till that guess is made with a customer waiting. So the list
+   * is already down and the caret is already in its filter — the field is asking
+   * its question by the time the eye arrives.
+   *
+   * Two kinds of focus are *not* somebody arriving here, and both would make the
+   * dropdown look broken:
+   *
+   *  - **A click.** The press focuses the button and the click then toggles it,
+   *    so opening on the focus too is a dropdown that flickers shut when tapped.
+   *  - **The focus we hand back when it closes.** Choosing an option returns the
+   *    caret to the trigger; re-opening on that is a list that cannot be closed.
+   *
+   * `:focus-visible` already answers the first — a mouse press on a button does
+   * not raise it — but the pointer flag is kept because that failure is the one
+   * the whole counter would hit, and this is two lines against it.
+   */
+  function openOnFocus(event: FocusEvent<HTMLButtonElement>): void {
+    const byPointer = pressing.current;
+    pressing.current = false;
+    if (returning.current || byPointer || disabled) return;
+    if (!event.currentTarget.matches(':focus-visible')) return;
+    setOpen(true);
+  }
 
   /**
    * Typing on the closed trigger opens the popover with that letter already in
@@ -100,10 +180,18 @@ export function SearchableSelect({
     >
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           id={id}
           disabled={disabled}
           aria-expanded={open}
+          onPointerDown={() => {
+            pressing.current = true;
+          }}
+          onBlur={() => {
+            pressing.current = false;
+          }}
+          onFocus={openOnFocus}
           onKeyDown={typeToOpen}
           className="flex h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-card px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:border-foreground/45 disabled:cursor-default disabled:opacity-55 data-[state=open]:border-primary"
         >
@@ -113,7 +201,33 @@ export function SearchableSelect({
           <Icon name="caret-down" className="shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+      <PopoverContent
+        align="start"
+        className="w-(--radix-popover-trigger-width) p-0"
+        // Radix returns focus to the trigger on every close, which a trigger
+        // that opens on focus would answer by opening again. So the answer is
+        // this component's: back to the trigger after a choice or an Escape,
+        // and left alone when the person is already somewhere else — they
+        // clicked outside, or they tabbed on and the handler below placed it.
+        onInteractOutside={() => {
+          exit.current = 'away';
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (exit.current === 'trigger') focusTrigger();
+          exit.current = 'trigger';
+        }}
+        // Tab means "next field", even from inside a popover that is portalled
+        // to the end of the document. Without this it means "off the end of the
+        // page", and the form is only walkable in one direction.
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab' || triggerRef.current === null) return;
+          event.preventDefault();
+          exit.current = 'away';
+          close();
+          focusAdjacentField(triggerRef.current, event.shiftKey);
+        }}
+      >
         <Command
           // Diacritic-folding contains, over the label and the Sudeban code.
           filter={(itemValue, query) => (fold(itemValue).includes(fold(query)) ? 1 : 0)}
@@ -134,7 +248,7 @@ export function SearchableSelect({
                   value={`${option.label} ${option.hint ?? ''}`}
                   onSelect={() => {
                     onChange(option.value);
-                    setOpen(false);
+                    close();
                   }}
                   aria-selected={option.value === value}
                   className={cn(option.value === value && 'text-primary')}
