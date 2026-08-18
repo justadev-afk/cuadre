@@ -137,3 +137,48 @@ export function groupThousands(digits: string): string {
   }
   return out;
 }
+
+/** What a masked field holds after an edit, and where the caret belongs in it. */
+export type MaskedEdit = {
+  readonly value: string;
+  readonly caret: number;
+};
+
+/**
+ * Re-masking an edit **in place**.
+ *
+ * A mask runs on every keystroke and rewrites the whole value; React then
+ * writes that value back into the field, and a field whose value is replaced
+ * parks its caret at the end. While somebody is appending that is invisible —
+ * the end is where they were. The moment they go back to fix one digit of a
+ * phone number it is the bug that makes the field unusable: correct the digit,
+ * and the next one they type lands at the far end, on top of a number that has
+ * already shifted under them.
+ *
+ * So the caret is carried across in **digits, not characters**. The separators
+ * belong to the mask and move under the caret; the digits are the person's, and
+ * "six digits to my left" means the same thing before and after the mask ran.
+ */
+export function remask(raw: string, caret: number, mask: (raw: string) => string): MaskedEdit {
+  const masked = mask(raw);
+  return { value: masked, caret: afterDigit(masked, countDigits(raw.slice(0, caret))) };
+}
+
+function countDigits(text: string): number {
+  let count = 0;
+  for (const character of text) if (character >= '0' && character <= '9') count++;
+  return count;
+}
+
+/**
+ * The offset just past the nth digit — the end of the text when it holds fewer,
+ * which is what a mask that caps its length (`slice`) leaves behind.
+ */
+function afterDigit(text: string, nth: number): number {
+  if (nth <= 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] >= '0' && text[i] <= '9' && ++seen === nth) return i + 1;
+  }
+  return text.length;
+}

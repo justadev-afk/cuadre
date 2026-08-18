@@ -322,6 +322,107 @@ describe('dailyTotals', () => {
   });
 });
 
+describe('stats', () => {
+  /** The six replies, in the order `stats` batches its statements. */
+  function replies() {
+    return [
+      { rows: [{ local_date: '2026-08-05', total_count: 12, total_amount_cents: 480_000 }] },
+      { rows: [{ bucket_key: '14', total_count: 5, total_amount_cents: 200_000 }] },
+      {
+        rows: [
+          {
+            bucket_key: 'user-1',
+            cashier_name: 'María R.',
+            total_count: 12,
+            total_amount_cents: 480_000,
+          },
+        ],
+      },
+      { rows: [{ bucket_key: '0102', total_count: 7, total_amount_cents: 300_000 }] },
+      { rows: [{ bucket_key: 'pago_movil', total_count: 12, total_amount_cents: 480_000 }] },
+      {
+        rows: [
+          {
+            total_count: 12,
+            total_amount_cents: 480_000,
+            max_amount_cents: 90_000,
+            payers: 9,
+          },
+        ],
+      },
+    ];
+  }
+
+  it('maps every breakdown, and the cashier name off the join', async () => {
+    const fake = makeFakeD1();
+    fake.reply(...replies());
+
+    const stats = await new D1ValidationRepository(fake.db).stats({
+      companyId: 'la-espiga',
+      from: 1,
+      to: 2,
+    });
+
+    expect(stats.byDay).toEqual([{ date: '2026-08-05', count: 12, amountCents: 480_000 }]);
+    expect(stats.byHour).toEqual([{ key: '14', count: 5, amountCents: 200_000 }]);
+    expect(stats.byCashier).toEqual([
+      { key: 'user-1', name: 'María R.', count: 12, amountCents: 480_000 },
+    ]);
+    expect(stats.bySourceBank).toEqual([{ key: '0102', count: 7, amountCents: 300_000 }]);
+    expect(stats.byKind).toEqual([{ key: 'pago_movil', count: 12, amountCents: 480_000 }]);
+    expect(stats.summary).toEqual({
+      count: 12,
+      amountCents: 480_000,
+      maxAmountCents: 90_000,
+      payers: 9,
+    });
+  });
+
+  it('scopes and de-sandboxes every one of the six statements', async () => {
+    const fake = makeFakeD1();
+    fake.reply(...replies());
+
+    await new D1ValidationRepository(fake.db).stats({ companyId: 'la-espiga', from: 1, to: 2 });
+
+    expect(fake.calls).toHaveLength(6);
+    for (const call of fake.calls) {
+      expect(call.sql).toContain('v.company_id = ?');
+      // A total is money, and a test payment is not. There is no parameter that
+      // could turn this off, and no statement here is allowed to forget it.
+      expect(call.sql).toContain('v.is_sandbox = 0');
+      expect(call.args).toContain('la-espiga');
+    }
+    // The day and the hour are both shifted to Caracas by the same modifier, so
+    // an eleven-at-night payment cannot land on tomorrow in one and today in
+    // the other.
+    expect(fake.calls[0]?.args[0]).toBe('-240 minutes');
+    expect(fake.calls[1]?.args[0]).toBe('-240 minutes');
+  });
+
+  it('reads an empty span as zeros rather than refusing a null sum', async () => {
+    const fake = makeFakeD1();
+    // COALESCE is the repository's, so an empty range answers with a row of
+    // zeros; what this proves is that the mapping does not then trip over it.
+    fake.reply(
+      { rows: [] },
+      { rows: [] },
+      { rows: [] },
+      { rows: [] },
+      { rows: [] },
+      { rows: [{ total_count: 0, total_amount_cents: 0, max_amount_cents: 0, payers: 0 }] },
+    );
+
+    const stats = await new D1ValidationRepository(fake.db).stats({
+      companyId: 'la-espiga',
+      from: 1,
+      to: 2,
+    });
+
+    expect(stats.byDay).toEqual([]);
+    expect(stats.summary).toEqual({ count: 0, amountCents: 0, maxAmountCents: 0, payers: 0 });
+  });
+});
+
 describe('validation cursor', () => {
   it('round-trips', () => {
     const cursor = { createdAt: 1_770_000_060, id: 'a5f0c1e2-0000-4000-8000-000000000001' };

@@ -14,6 +14,11 @@ import { initialsOf } from './venezuela-format.ts';
 export type ShellNavItem = {
   readonly href: string;
   readonly label: string;
+  /**
+   * What the phone's bottom bar calls it, when the sidebar's name is too long
+   * for a sixth of a 390px screen. Absent means the label fits as it is.
+   */
+  readonly shortLabel?: string;
   readonly icon: IconName;
 };
 export type ShellNavGroup = { readonly label: string; readonly items: readonly ShellNavItem[] };
@@ -47,6 +52,12 @@ const COMPANY_GROUPS: readonly ShellNavGroup[] = [
     items: [
       { href: '/validations', label: 'Validaciones', icon: 'list-checks' },
       { href: '/checkout', label: 'Cobrar', icon: 'cash-register' },
+      {
+        href: '/statistics',
+        label: 'Estadísticas',
+        shortLabel: 'Cifras',
+        icon: 'chart-line-up',
+      },
     ],
   },
   {

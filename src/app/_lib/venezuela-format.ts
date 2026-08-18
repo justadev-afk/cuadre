@@ -209,3 +209,29 @@ export function initialsOf(name: string): string {
   const last = words.length > 1 ? words[words.length - 1][0] : '';
   return `${first}${last}`.toUpperCase();
 }
+
+/** '26/01' — a day on a chart's axis, where the year is on the heading already. */
+export function shortIsoDay(iso: string): string {
+  const [, month, day] = iso.split('-');
+  return `${day}/${month}`;
+}
+
+/**
+ * 'lunes 26/01' — a day as a person names it, for the tooltip over a column.
+ *
+ * The weekday is the whole point: "el martes flojo" is a thing a shopkeeper
+ * knows about their week, and a bare date makes them count it out. `fromIsoDay`
+ * builds the day at *local* midnight, so `getDay` reads the day the merchant
+ * had, not the one UTC was having.
+ */
+const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+export function namedIsoDay(iso: string): string {
+  return `${WEEKDAYS[fromIsoDay(iso).getDay()]} ${shortIsoDay(iso)}`;
+}
+
+/** '2 p.m.' — an hour of the day, the way a counter says it. */
+export function formatHour(hour: number): string {
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelve} ${hour < 12 ? 'a.m.' : 'p.m.'}`;
+}

@@ -21,6 +21,11 @@
  *
  * A search box asks with `replace: true`: typing is not history. Six keystrokes
  * must not be six entries the back button walks out through.
+ *
+ * `set` is one parameter; `setAll` is several in one navigation. Some filters
+ * are genuinely more than one parameter — a date range is a preset *or* two
+ * days, and picking either has to clear the other — and doing that as two calls
+ * would be two navigations, the first of which puts a nonsense state on the URL.
  */
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -32,12 +37,15 @@ import {
   useTransition,
 } from 'react';
 
+type FilterOptions = { readonly replace?: boolean };
+
 type QueryFilter = {
   /** `null` removes the parameter — that is what "todos" is on the URL. */
-  readonly set: (
-    param: string,
-    value: string | null,
-    options?: { readonly replace?: boolean },
+  readonly set: (param: string, value: string | null, options?: FilterOptions) => void;
+  /** Several parameters, one navigation. `null` removes, as above. */
+  readonly setAll: (
+    values: Readonly<Record<string, string | null>>,
+    options?: FilterOptions,
   ) => void;
   readonly pending: boolean;
 };
@@ -50,11 +58,13 @@ export function QueryFilterProvider({ children }: { children: ReactNode }) {
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
 
-  const set = useCallback(
-    (param: string, value: string | null, options?: { readonly replace?: boolean }): void => {
+  const setAll = useCallback(
+    (values: Readonly<Record<string, string | null>>, options?: FilterOptions): void => {
       const query = new URLSearchParams(params.toString());
-      if (value === null) query.delete(param);
-      else query.set(param, value);
+      for (const [param, value] of Object.entries(values)) {
+        if (value === null) query.delete(param);
+        else query.set(param, value);
+      }
 
       const search = query.toString();
       const url = search === '' ? pathname : `${pathname}?${search}`;
@@ -66,7 +76,14 @@ export function QueryFilterProvider({ children }: { children: ReactNode }) {
     [params, pathname, router],
   );
 
-  const value = useMemo<QueryFilter>(() => ({ set, pending }), [set, pending]);
+  const set = useCallback(
+    (param: string, value: string | null, options?: FilterOptions): void => {
+      setAll({ [param]: value }, options);
+    },
+    [setAll],
+  );
+
+  const value = useMemo<QueryFilter>(() => ({ set, setAll, pending }), [set, setAll, pending]);
 
   return <QueryFilterContext.Provider value={value}>{children}</QueryFilterContext.Provider>;
 }

@@ -51,6 +51,7 @@ import { API } from '../../_lib/endpoints.ts';
 import { maskCurrency, maskDate, readTypedDate } from '../../_lib/masks.ts';
 import { kindLabel } from '../../_lib/payment-kind.ts';
 import { postJson } from '../../_lib/use-endpoint-action.ts';
+import { useMaskedInput } from '../../_lib/use-masked-input.ts';
 import {
   formatBankDateTime,
   formatClock,
@@ -250,6 +251,16 @@ export function CheckoutForm({
   const [kind, setKind] = useState<PaymentKind>('pago_movil');
   const [reference, setReference] = useState('');
   const [phone, setPhone] = useState('');
+  /**
+   * The phone is the one field on this form that is rewritten as it is typed,
+   * so it is the one that has to carry its caret across the rewrite: a cashier
+   * reading a number off a customer's screen corrects a digit in the middle of
+   * it about as often as they type it straight through.
+   */
+  const phoneField = useMaskedInput(formatPhoneLoose, (next) => {
+    setPhone(next);
+    edited();
+  });
   /** The transferencia's receiving account — one of the connection's own. */
   const [receivingAccount, setReceivingAccount] = useState('');
   const [bankCode, setBankCode] = useState('');
@@ -586,18 +597,21 @@ export function CheckoutForm({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={phoneId}>Teléfono del pagador</Label>
               <Input
+                {...phoneField}
                 id={phoneId}
                 aria-invalid={phoneInvalid}
                 disabled={transferBlocked}
                 value={phone}
                 inputMode="tel"
                 autoComplete="off"
-                maxLength={12}
+                // No `maxLength`: the mask already caps the number at its eleven
+                // digits, and a character count beside it is the same rule
+                // written twice — one that measures the hyphen too, and that
+                // freezes the field the moment it is full. A cashier who spots
+                // a missing digit halfway through a complete number could then
+                // type nothing at all, which is exactly what "no me deja
+                // editar" looks like.
                 placeholder="0414-3125566"
-                onChange={(event) => {
-                  setPhone(formatPhoneLoose(event.target.value));
-                  edited();
-                }}
               />
             </div>
           )}

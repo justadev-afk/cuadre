@@ -152,7 +152,7 @@ export function AppShell({
               )}
             >
               <Icon name={item.icon} />
-              {item.label}
+              <span className="max-w-full truncate">{item.shortLabel ?? item.label}</span>
             </Link>
           ))}
         </nav>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { maskDate, readTypedDate } from './masks.ts';
+import { maskDate, readTypedDate, remask } from './masks.ts';
 
 /**
  * The date the cashier types. It is the one masked field whose value reaches the
@@ -76,5 +76,57 @@ describe('readTypedDate', () => {
 
   it('round-trips whatever the mask produced', () => {
     expect(readTypedDate(maskDate('10072026'), Today)).toBe('2026-07-10');
+  });
+});
+
+/**
+ * The caret, across a re-format. This is the rule that decides whether a masked
+ * field can be *edited* rather than only typed into: without it every keystroke
+ * throws the caret to the end, so correcting one digit of a phone number the
+ * customer is reading out shifts the rest of it and the next digit lands
+ * somewhere else again. The cashier's word for that was "se rompe todo".
+ *
+ * The counter's phone mask, `formatPhoneLoose`: digits, a hyphen after the
+ * trunk, nothing invented.
+ */
+describe('remask', () => {
+  const phone = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '').slice(0, 11);
+    return digits.length <= 4 ? digits : `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  };
+
+  const table: ReadonlyArray<[string, number, string, number, string]> = [
+    ['04143125566', 11, '0414-3125566', 12, 'typing on: the caret follows the last digit'],
+    ['0414', 4, '0414', 4, 'and does not jump the hyphen that has not appeared yet'],
+    ['04145', 5, '0414-5', 6, 'the hyphen appears under the caret, which steps over it'],
+    [
+      '0414-31255669',
+      6,
+      '0414-3125566',
+      6,
+      'a digit typed into a full number: the caret stays where it was typed, not at the end',
+    ],
+    [
+      '0414-125566',
+      5,
+      '0414-125566',
+      4,
+      'a digit deleted mid-number leaves the caret on the same digit boundary — the far side of the hyphen is the same place to type the replacement',
+    ],
+    ['044-3125566', 3, '0443-125566', 3, 'even where every digit after it shifted left'],
+    ['0414-3125566', 0, '0414-3125566', 0, 'the start is the start'],
+    ['', 0, '', 0, 'an emptied field'],
+  ];
+
+  for (const [raw, caret, value, at, why] of table) {
+    it(`${raw || '∅'}@${caret} → ${value || '∅'}@${at} — ${why}`, () => {
+      expect(remask(raw, caret, phone)).toEqual({ value, caret: at });
+    });
+  }
+
+  it('never points past the end of what the mask kept', () => {
+    // The mask caps at eleven digits, so a twelfth typed at the end has nowhere
+    // for the caret to go but the end of what survived.
+    expect(remask('041431255669', 12, phone)).toEqual({ value: '0414-3125566', caret: 12 });
   });
 });

@@ -24,6 +24,12 @@
  * will replace them wearing `skeleton`. Nothing outside those two boxes moves,
  * and the cursor never leaves the search box.
  *
+ * The three numbers over it are **today's**, and only today's — that is what
+ * "cobrado hoy" says and it is the number a merchant closes the till against.
+ * The table under them is the last seven days, because the other thing somebody
+ * does on this screen is find the receipt a customer is holding, and that is
+ * rarely from today. Two spans on one screen, each labelled with its own.
+ *
  * What the URL cannot carry is time passing: the till goes on validating while
  * this screen sits open in the back office. So the header also holds an
  * *Actualizar* button, and the same soft refresh runs by itself every thirty
@@ -43,12 +49,12 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 
 import { Button } from '@/components/ui/button.tsx';
-import { Card } from '@/components/ui/card.tsx';
 import type { DailyTotalsResult } from '../../../application/validations/daily-totals.ts';
 import { formatBolivares } from '../../../domain/money.ts';
 import { systemClock } from '../../../shared/clock.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
+import { StatCard } from '../../_components/stat-card.tsx';
 import { ValidationList } from '../../_components/validation-list.tsx';
 import { requireCompany } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
@@ -58,7 +64,7 @@ import { QueryFilterProvider } from '../../_lib/query-filter.tsx';
 import { CashierFilter } from './cashier-filter.tsx';
 import { type EnvFilter, EnvironmentFilter } from './environment-filter.tsx';
 import { RefreshButton } from './refresh-button.tsx';
-import { StatCard } from './stat-card.tsx';
+import { ValidationsPages } from './validations-pages.tsx';
 import { ValidationsSearch } from './validations-search.tsx';
 
 export const metadata = pageMeta('Validaciones');
@@ -90,10 +96,16 @@ export default async function ValidationsPage({
   const bankAccounts = await container().banking.listBankAccounts({ companyId });
   const hasBank = bankAccounts.some((a) => a.status !== 'removed');
 
-  // Started here, awaited twice — by the totals and by the list, which needs the
-  // day range this resolves. One promise, so it is still one query, and neither
-  // region has to wait for the other's.
-  const totals = container().validations.dailyTotals({ companyId });
+  // Today, and nothing but today. The default is a week, and taking it was the
+  // bug: three cards headed "hoy" were quietly summing the last seven days, so a
+  // slow morning read as a good one because Tuesday was still in the number.
+  const totals = container().validations.dailyTotals({ companyId, days: 1 });
+
+  // The server's clock at this render, in milliseconds — the refresh button's
+  // way of knowing its answer has landed. Milliseconds rather than the day's
+  // end: two renders a second apart are common, two in the same millisecond are
+  // not, and an unchanged value would leave the icon turning.
+  const renderedAt = systemClock.nowMillis();
 
   // What makes the two regions blink: a *filter* changed, so the answer under
   // them is stale. `Actualizar` and the thirty-second refresh leave it alone.
@@ -112,11 +124,7 @@ export default async function ValidationsPage({
           <div className="flex flex-wrap items-center gap-2">
             <EnvironmentFilter value={environment} />
             <CashierFilter cashiers={staff} value={cashierId} />
-            {/* The clock of *this* render, so the button knows when a refresh it
-                asked for has landed. Milliseconds rather than the day's end: two
-                renders a second apart are common, two in the same millisecond are
-                not, and an unchanged value would leave the icon turning. */}
-            <RefreshButton renderedAt={systemClock.nowMillis()} />
+            <RefreshButton renderedAt={renderedAt} />
           </div>
         }
       >
@@ -153,7 +161,6 @@ export default async function ValidationsPage({
         <Suspense key={`list:${filterKey}`} fallback={<ValidationsTable skeleton />}>
           <ValidationsTable
             companyId={companyId}
-            totals={totals}
             environment={environment}
             cashierId={cashierId}
             search={search}
@@ -171,7 +178,7 @@ export default async function ValidationsPage({
  */
 async function TotalsSubtitle({ totals }: { totals: Promise<DailyTotalsResult> }) {
   const day = await totals;
-  return `Hoy · ${day.totalCount} pagos validados · ${formatBolivares(day.totalAmountCents)}`;
+  return `Hoy · ${day.totalCount} ${day.totalCount === 1 ? 'pago validado' : 'pagos validados'} · ${formatBolivares(day.totalAmountCents)}`;
 }
 
 function SubtitleSkeleton() {
@@ -219,9 +226,14 @@ async function TotalsCards({ totals }: { totals?: Promise<DailyTotalsResult> }) 
 }
 
 /**
- * The list itself, and the card that explains an empty one. `skeleton` renders
- * the same table — same head, same columns — with rows of bars, so what lands
- * lands where the placeholder was.
+ * The list itself: the first page, rendered here, handed to the client view
+ * that pages and prefetches from it. `skeleton` renders the same table — same
+ * head, same columns — with rows of bars, so what lands lands where the
+ * placeholder was.
+ *
+ * The range is the use case's own — the last seven Venezuelan days, resolved
+ * against the clock when it is asked rather than when this rendered. The
+ * *today* the cards above show is a different question and is asked separately.
  */
 async function ValidationsTable(
   props:
@@ -229,46 +241,64 @@ async function ValidationsTable(
     | {
         readonly skeleton?: false;
         readonly companyId: string;
-        readonly totals: Promise<DailyTotalsResult>;
         readonly environment: EnvFilter;
         readonly cashierId: string;
         readonly search: string | undefined;
         readonly staff: readonly StaffMember[];
       },
 ) {
-  if (props.skeleton === true) return <ValidationList skeleton showCashier />;
+  if (props.skeleton === true) {
+    return (
+      <div className="flex flex-col gap-2">
+        <ListHeading />
+        <ValidationList skeleton showCashier />
+      </div>
+    );
+  }
 
   const { companyId, environment, cashierId, search, staff } = props;
-  const day = await props.totals;
   const companyDetail = await container().companies.getCompany({ companyId });
   const list = await container().validations.listValidations({
     companyId,
-    from: day.from,
-    to: day.to,
     environment,
     cashierId: cashierId === '' ? undefined : cashierId,
     search,
   });
 
   return (
-    <>
-      {/* Always drawn, empty or not — see the note at the top of the file. */}
-      <ValidationList
-        items={list.items}
-        nowSeconds={day.to}
-        showCashier
+    <div className="flex flex-col gap-2">
+      <ListHeading />
+      <ValidationsPages
+        initialItems={list.items}
+        initialNextCursor={list.nextCursor}
+        initialNowSeconds={list.to}
+        environment={environment}
+        cashierId={cashierId}
+        search={search ?? ''}
         merchantName={companyDetail.ok ? companyDetail.value.company.name : undefined}
         merchantRif={companyDetail.ok ? companyDetail.value.company.rif : undefined}
+        emptyMessage={emptyMessage(cashierId, staff, search, environment)}
       />
+    </div>
+  );
+}
 
-      {list.items.length === 0 && (
-        <Card>
-          <p className="m-0 py-5 text-center text-sm text-muted-foreground">
-            {emptyMessage(cashierId, staff, search, environment)}
-          </p>
-        </Card>
-      )}
-    </>
+/**
+ * The cards above say "hoy"; this says what the table is. Two spans on one
+ * screen, and neither of them left for the reader to infer. It is drawn by the
+ * placeholder too, so it does not pop in when the rows land.
+ */
+function ListHeading() {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <h6 className="m-0 text-primary">Últimos 7 días</h6>
+      <Link
+        href="/statistics"
+        className="text-xs text-muted-foreground no-underline transition-colors hover:text-primary"
+      >
+        Ver estadísticas
+      </Link>
+    </div>
   );
 }
 
@@ -287,10 +317,10 @@ function emptyMessage(
   if (person !== undefined && search) {
     return `${person.name} no tiene validaciones que coincidan con «${search}».`;
   }
-  if (person !== undefined) return `${person.name} no tiene validaciones en este período.`;
+  if (person !== undefined) return `${person.name} no tiene validaciones en los últimos 7 días.`;
   if (search) return `Ninguna validación coincide con «${search}».`;
-  if (environment === 'sandbox') return 'No hay validaciones de prueba en este período.';
-  return 'No hay validaciones en este filtro.';
+  if (environment === 'sandbox') return 'No hay validaciones de prueba en los últimos 7 días.';
+  return 'No hay validaciones en los últimos 7 días.';
 }
 
 function readEnv(value: string | null): EnvFilter {

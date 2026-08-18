@@ -9,7 +9,7 @@
  * this stays a pure controlled input.
  */
 import { Check } from 'lucide-react';
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 
 import {
   Command,
@@ -63,16 +63,48 @@ export function SearchableSelect({
   searchable = true,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
+  /**
+   * The filter, held here rather than by cmdk, so a key pressed on the *closed*
+   * trigger can seed it — see `typeToOpen`. Cleared on close, so the list is
+   * whole again the next time it is opened.
+   */
+  const [search, setSearch] = useState('');
   const selected = options.find((option) => option.value === value) ?? null;
 
+  /**
+   * Typing on the closed trigger opens the popover with that letter already in
+   * the filter — what every native `<select>` does, and what a cashier's hands
+   * expect after tabbing here from the phone field. The trigger is a `<button>`,
+   * and a button swallows a letter silently: without this, tab-then-type looks
+   * exactly like a broken field until somebody reaches for the mouse.
+   *
+   * Space is left alone — it is how a button is pressed — and so is any chord,
+   * which belongs to the browser.
+   */
+  function typeToOpen(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (!searchable || open) return;
+    if (event.key.length !== 1 || event.key === ' ') return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    event.preventDefault();
+    setSearch(event.key);
+    setOpen(true);
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearch('');
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
           id={id}
           disabled={disabled}
           aria-expanded={open}
+          onKeyDown={typeToOpen}
           className="flex h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-card px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:border-foreground/45 disabled:cursor-default disabled:opacity-55 data-[state=open]:border-primary"
         >
           <span className={cn('truncate', !selected && 'text-muted-foreground/70')}>
@@ -84,9 +116,15 @@ export function SearchableSelect({
       <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
         <Command
           // Diacritic-folding contains, over the label and the Sudeban code.
-          filter={(itemValue, search) => (fold(itemValue).includes(fold(search)) ? 1 : 0)}
+          filter={(itemValue, query) => (fold(itemValue).includes(fold(query)) ? 1 : 0)}
         >
-          {searchable && <CommandInput placeholder={searchPlaceholder} />}
+          {searchable && (
+            <CommandInput
+              placeholder={searchPlaceholder}
+              value={search}
+              onValueChange={setSearch}
+            />
+          )}
           <CommandList>
             {searchable && <CommandEmpty>Sin resultados</CommandEmpty>}
             <CommandGroup>

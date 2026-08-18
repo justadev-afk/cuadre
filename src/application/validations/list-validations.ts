@@ -7,9 +7,11 @@
  * work** (a cashier, by id), and — when a customer phones about one payment — a
  * reference or a phone number.
  *
- * Paging is keyset, twenty at a time, because a merchant scrolling their month
+ * Paging is keyset, fifty at a time, because a merchant scrolling their week
  * on a phone at the till must not pay for an OFFSET that re-walks every row
- * before the page they asked for.
+ * before the page they asked for. The screen prefetches the two pages after
+ * the one being read, which only works because a page costs one indexed range
+ * scan and nothing else.
  *
  * The search is the interesting part. The repository has no LIKE and is not
  * ours to grow one, so a searched page is a bounded scan: rows are pulled in
@@ -21,6 +23,8 @@
  * not a bigger budget here.
  */
 import type { Validation } from '../../adapters/d1/validation.repository.ts';
+import type { Clock } from '../../shared/clock.ts';
+import { lastVenezuelaDays } from './day-range.ts';
 import { matchesValidation } from './validation-search.ts';
 
 /**
@@ -50,6 +54,7 @@ type ValidationReader = {
 
 export type ListValidationsDeps = {
   readonly validations: ValidationReader;
+  readonly clock: Clock;
 };
 
 /** The three segments of the panel's toggle, in the order they are shown. */
@@ -57,9 +62,15 @@ export type EnvironmentFilter = 'all' | 'production' | 'sandbox';
 
 export type ListValidationsInput = {
   readonly companyId: string;
-  /** Epoch seconds, both inclusive. The panel always has a range on screen. */
-  readonly from: number;
-  readonly to: number;
+  /**
+   * Epoch seconds, both inclusive. Omitted means the panel's own window — the
+   * last `DEFAULT_DAYS` Venezuelan days — resolved here against the clock
+   * rather than at whatever moment a screen rendered. A till stays open all
+   * night, and a range frozen into a page load would quietly start asking
+   * about yesterday at eight in the morning.
+   */
+  readonly from?: number;
+  readonly to?: number;
   readonly environment?: EnvironmentFilter;
   /**
    * One person's work. By **id**, not by name: two cashiers called María are one
@@ -76,12 +87,26 @@ export type ValidationList = {
   readonly items: readonly Validation[];
   /** `null` when this was the last page. */
   readonly nextCursor: PageCursor | null;
+  /** The window actually asked about, echoed so the screen can label it. */
+  readonly from: number;
+  readonly to: number;
 };
 
 export type ListValidations = (input: ListValidationsInput) => Promise<ValidationList>;
 
-/** One page, as the design shows it. */
-const PAGE_SIZE = 20;
+/**
+ * One page. Fifty rows is what a merchant reconciling a shift wants in front of
+ * them at once, and it is still one indexed range scan — the repository's own
+ * ceiling is a hundred.
+ */
+const PAGE_SIZE = 50;
+
+/**
+ * The window the panel reads when the caller names none: today and the six days
+ * before it. Longer is what the statistics screen is for; shorter and a
+ * merchant cannot find yesterday's receipt from the screen they land on.
+ */
+const DEFAULT_DAYS = 7;
 
 /** The repository's own ceiling: one round trip per hundred rows scanned. */
 const SCAN_BATCH = 100;
@@ -93,8 +118,12 @@ const SCAN_BATCH = 100;
  */
 const SCAN_LIMIT = 500;
 
-export function makeListValidations({ validations }: ListValidationsDeps): ListValidations {
+export function makeListValidations({ validations, clock }: ListValidationsDeps): ListValidations {
   return async (input) => {
+    const window = lastVenezuelaDays(DEFAULT_DAYS, clock.nowSeconds());
+    const from = input.from ?? window.from;
+    const to = input.to ?? window.to;
+
     // The filter every path below shares, searched or not: narrowing by cashier
     // is a WHERE the database applies, so it costs the scan nothing and it is
     // exact where a name match would not be.
@@ -102,8 +131,8 @@ export function makeListValidations({ validations }: ListValidationsDeps): ListV
       companyId: input.companyId,
       isSandbox: toSandboxFlag(input.environment ?? 'all'),
       cashierId: input.cashierId,
-      from: input.from,
-      to: input.to,
+      from,
+      to,
     };
 
     const term = (input.search ?? '').trim();
@@ -114,7 +143,7 @@ export function makeListValidations({ validations }: ListValidationsDeps): ListV
         cursor: input.cursor,
         limit: PAGE_SIZE,
       });
-      return { items: page.items, nextCursor: page.nextCursor };
+      return { items: page.items, nextCursor: page.nextCursor, from, to };
     }
 
     const items: Validation[] = [];
@@ -123,7 +152,7 @@ export function makeListValidations({ validations }: ListValidationsDeps): ListV
 
     while (items.length < PAGE_SIZE && examined < SCAN_LIMIT) {
       const page = await validations.listByCompany({ ...filter, cursor, limit: SCAN_BATCH });
-      if (page.items.length === 0) return { items, nextCursor: null };
+      if (page.items.length === 0) return { items, nextCursor: null, from, to };
 
       for (const item of page.items) {
         examined++;
@@ -136,10 +165,10 @@ export function makeListValidations({ validations }: ListValidationsDeps): ListV
       }
 
       const stopped = items.length >= PAGE_SIZE || examined >= SCAN_LIMIT;
-      if (!stopped && page.nextCursor === null) return { items, nextCursor: null };
+      if (!stopped && page.nextCursor === null) return { items, nextCursor: null, from, to };
     }
 
-    return { items, nextCursor: cursor ?? null };
+    return { items, nextCursor: cursor ?? null, from, to };
   };
 }
 

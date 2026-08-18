@@ -16,7 +16,6 @@
  */
 import { useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { cn } from '@/lib/utils.ts';
@@ -24,7 +23,7 @@ import type { Validation } from '../../../adapters/d1/validation.repository.ts';
 import type { NamedRange } from '../../../application/validations/day-range.ts';
 import type { PageCursor } from '../../../application/validations/list-validations.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
-import { Icon } from '../../_components/icon.tsx';
+import { Pager } from '../../_components/pager.tsx';
 import { NoValidations, ValidationList } from '../../_components/validation-list.tsx';
 import { API } from '../../_lib/endpoints.ts';
 import { postJson } from '../../_lib/use-endpoint-action.ts';
@@ -159,8 +158,6 @@ export function MyValidationsView({
     });
   };
 
-  const hasPages = pageIndex > 0 || nextCursor !== null;
-
   return (
     <ContentLayout
       title="Mis validaciones"
@@ -224,31 +221,14 @@ export function MyValidationsView({
           />
         )}
 
-        {hasPages && (
-          <div className="mt-3 flex items-center justify-between">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={goPrev}
-              disabled={pageIndex === 0 || loading}
-            >
-              <Icon name="arrow-left" />
-              Anterior
-            </Button>
-            <span className="text-xs text-muted-foreground">Página {pageIndex + 1}</span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={goNext}
-              disabled={nextCursor === null || loading}
-            >
-              Siguiente
-              <Icon name="arrow-right" />
-            </Button>
-          </div>
-        )}
+        <Pager
+          pageIndex={pageIndex}
+          canPrev={pageIndex > 0}
+          canNext={nextCursor !== null}
+          onPrev={goPrev}
+          onNext={goNext}
+          busy={loading}
+        />
       </div>
     </ContentLayout>
   );

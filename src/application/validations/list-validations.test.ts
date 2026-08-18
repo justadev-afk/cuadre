@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Validation } from '../../adapters/d1/validation.repository.ts';
+import { fixedClock, venezuelaDate } from '../../shared/clock.ts';
 import { makeListValidations, type PageCursor } from './list-validations.ts';
 
 const NOW = 1_770_000_000;
@@ -49,7 +50,7 @@ function fakeValidations(rows: readonly Validation[]) {
     validations: {
       async listByCompany(query: Query) {
         queries.push(query);
-        const limit = query.limit ?? 20;
+        const limit = query.limit ?? 50;
 
         const matching = rows
           .filter((row) => row.companyId === query.companyId)
@@ -94,7 +95,7 @@ describe('by cashier', () => {
 
   it('asks the repository for one person’s rows, not everybody’s', async () => {
     const { validations, queries } = fakeValidations(staff);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations({ ...RANGE, cashierId: 'user-maria' });
 
@@ -104,7 +105,7 @@ describe('by cashier', () => {
 
   it('leaves the filter off when nobody was chosen', async () => {
     const { validations, queries } = fakeValidations(staff);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations(RANGE);
 
@@ -120,7 +121,7 @@ describe('by cashier', () => {
       validation(0, { cashierId: 'user-maria', controlCode: '582422' }),
       validation(1, { cashierId: 'user-jose', controlCode: '582422' }),
     ]);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations({ ...RANGE, cashierId: 'user-jose', search: '582422' });
 
@@ -130,35 +131,57 @@ describe('by cashier', () => {
 });
 
 describe('list validations', () => {
-  it('pages twenty at a time in one query', async () => {
-    const rows = Array.from({ length: 45 }, (_, index) => validation(index));
+  it('pages fifty at a time in one query', async () => {
+    const rows = Array.from({ length: 120 }, (_, index) => validation(index));
     const { validations, queries } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations(RANGE);
 
-    expect(page.items).toHaveLength(20);
+    expect(page.items).toHaveLength(50);
     expect(page.items[0]?.id).toBe('validation-0000');
-    expect(page.nextCursor).toEqual({ createdAt: rows[19].createdAt, id: 'validation-0019' });
+    expect(page.nextCursor).toEqual({ createdAt: rows[49].createdAt, id: 'validation-0049' });
     expect(queries).toHaveLength(1);
   });
 
   it('continues from the cursor without repeating a row', async () => {
-    const rows = Array.from({ length: 45 }, (_, index) => validation(index));
+    const rows = Array.from({ length: 120 }, (_, index) => validation(index));
     const { validations } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const first = await listValidations(RANGE);
     const second = await listValidations({ ...RANGE, cursor: first.nextCursor ?? undefined });
 
-    expect(second.items[0]?.id).toBe('validation-0020');
+    expect(second.items[0]?.id).toBe('validation-0050');
     const ids = new Set([...first.items, ...second.items].map((item) => item.id));
-    expect(ids.size).toBe(40);
+    expect(ids.size).toBe(100);
+  });
+
+  it('reads the last seven Venezuelan days when the caller names no range', async () => {
+    // The window is resolved against the clock at *ask* time, never frozen into
+    // a render: a till stays open past midnight, and a range fixed when the
+    // page loaded would start answering about yesterday at eight in the morning.
+    const { validations, queries } = fakeValidations([]);
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
+
+    await listValidations({ companyId: 'la-espiga' });
+
+    expect(venezuelaDate(queries[0]?.from ?? 0)).toBe('2026-01-26');
+    expect(venezuelaDate(queries[0]?.to ?? 0)).toBe('2026-02-01');
+  });
+
+  it('echoes the window it read, so the screen labels what it is showing', async () => {
+    const { validations } = fakeValidations([]);
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
+
+    const page = await listValidations(RANGE);
+
+    expect({ from: page.from, to: page.to }).toEqual({ from: RANGE.from, to: RANGE.to });
   });
 
   it('turns the toggle into the sandbox flag, and Todos into no filter', async () => {
     const { validations, queries } = fakeValidations([]);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     await listValidations({ ...RANGE, environment: 'production' });
     await listValidations({ ...RANGE, environment: 'sandbox' });
@@ -171,7 +194,7 @@ describe('list validations', () => {
   it('finds one payment by a partial reference, deep in the range', async () => {
     const rows = Array.from({ length: 120 }, (_, index) => validation(index));
     const { validations } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations({ ...RANGE, search: '0117' });
 
@@ -184,7 +207,7 @@ describe('list validations', () => {
       validation(1, { payerPhone: '+584143125566' }),
     ];
     const { validations } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     for (const typed of ['0414-3125566', '+58 414 3125566', '4143125566']) {
       const page = await listValidations({ ...RANGE, search: typed });
@@ -197,7 +220,7 @@ describe('list validations', () => {
       validation(0, { cashierName: 'María Rodríguez' }),
       validation(1, { cashierName: 'Julio Sánchez' }),
     ]);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations({ ...RANGE, search: 'maria' });
     expect(page.items.map((item) => item.id)).toEqual([validation(0).id]);
@@ -208,7 +231,7 @@ describe('list validations', () => {
       validation(0, { amountCents: 63_000 }),
       validation(1, { amountCents: 12_400 }),
     ]);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations({ ...RANGE, search: '630' });
     expect(page.items.map((item) => item.id)).toEqual([validation(0).id]);
@@ -217,7 +240,7 @@ describe('list validations', () => {
   it('matches nothing for a term with no digits in it', async () => {
     const rows = Array.from({ length: 5 }, (_, index) => validation(index));
     const { validations } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     expect((await listValidations({ ...RANGE, search: 'maría' })).items).toEqual([]);
   });
@@ -228,7 +251,7 @@ describe('list validations', () => {
       validation(index, { payerPhone: index % 2 === 0 ? '+584143125566' : '+584241234567' }),
     );
     const { validations } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const first = await listValidations({ ...RANGE, search: '04143125566' });
     const second = await listValidations({
@@ -237,10 +260,10 @@ describe('list validations', () => {
       cursor: first.nextCursor ?? undefined,
     });
 
-    expect(first.items).toHaveLength(20);
-    expect(second.items).toHaveLength(20);
+    expect(first.items).toHaveLength(50);
+    expect(second.items).toHaveLength(50);
     const ids = new Set([...first.items, ...second.items].map((item) => item.id));
-    expect(ids.size).toBe(40);
+    expect(ids.size).toBe(100);
     expect(first.items.every((item) => item.payerPhone === '+584143125566')).toBe(true);
   });
 
@@ -248,7 +271,7 @@ describe('list validations', () => {
     // Nothing matches, and there is far more history than one request may read.
     const rows = Array.from({ length: 900 }, (_, index) => validation(index));
     const { validations, queries } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations({ ...RANGE, search: '999999999' });
 
@@ -261,7 +284,7 @@ describe('list validations', () => {
   it('ends the list when the range is genuinely exhausted', async () => {
     const rows = Array.from({ length: 30 }, (_, index) => validation(index));
     const { validations } = fakeValidations(rows);
-    const listValidations = makeListValidations({ validations });
+    const listValidations = makeListValidations({ validations, clock: fixedClock(NOW) });
 
     const page = await listValidations({ ...RANGE, search: '000123450029' });
 

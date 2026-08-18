@@ -58,6 +58,17 @@ function CommandInput({
         data-lpignore="true"
         data-bwignore=""
         data-form-type="other"
+        // It fills the popover: an `<input>` left at its intrinsic size is a box
+        // that stops short of the list it filters, and the gap reads as a second
+        // control. And it never draws the focus ring — the ring says "typing
+        // lands here", which an open popover with one text field in it has
+        // already said, and Nocturne's is an outline with an offset, so on a box
+        // this size it draws a second border around the first one.
+        className={cn(
+          'w-full min-w-0 flex-1 bg-transparent text-sm text-foreground caret-primary outline-none',
+          'placeholder:text-muted-foreground/70 disabled:cursor-not-allowed',
+          className,
+        )}
         {...props}
       />
     </div>

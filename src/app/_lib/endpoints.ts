@@ -32,4 +32,6 @@ export const API = {
   charge: '/api/checkout/charge',
   receivingAccounts: '/api/checkout/receiving-accounts',
   myValidations: '/api/my-validations',
+  /** The company panel's list, one page at a time — and the two it prefetches. */
+  validations: '/api/validations',
 } as const;

@@ -61,6 +61,17 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: D
         // in this list — which is how the 11th ended up purple-on-purple and
         // unreadable. The ring composes with the fill; a colour would fight it.
         today: '[&_button]:shadow-[inset_0_0_0_1px_var(--primary)]',
+        // A range is one band, not a row of touching pills. The two ends keep
+        // the solid fill `selected` gives them and round outwards; everything
+        // between them is a tinted cell with a transparent button on top, so the
+        // band runs unbroken and the notches between rounded neighbours are
+        // gone. The `!` is not decoration: `selected` also matches these days,
+        // and two utilities of equal specificity are resolved by their order in
+        // the stylesheet rather than in this list.
+        range_start: 'rounded-l-md bg-primary/20',
+        range_middle:
+          'bg-primary/20 [&_button]:rounded-none [&_button]:bg-transparent! [&_button]:text-foreground!',
+        range_end: 'rounded-r-md bg-primary/20',
         outside: '[&_button]:text-muted-foreground/50',
         disabled: 'opacity-35',
         hidden: 'invisible',

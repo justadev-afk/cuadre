@@ -23,6 +23,8 @@ export type IconName =
   | 'cash-register'
   | 'check'
   | 'check-circle'
+  | 'chart-bar'
+  | 'chart-line-up'
   | 'check-square-offset'
   | 'circle'
   | 'clock-counter-clockwise'

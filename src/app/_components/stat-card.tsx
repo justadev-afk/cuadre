@@ -1,6 +1,7 @@
 /**
- * One of the three numbers over the list — today's takings, the average ticket,
- * the count.
+ * One of the numbers over a list or a chart — today's takings, the average
+ * ticket, the count, the strongest day. The panel's three and the statistics
+ * screen's five are the same box (§11), so they cannot drift apart.
  *
  * `skeleton` is the same box waiting for its number: the same padding, the same
  * label, the same two lines of type, with a bar drawn over each. It is the same

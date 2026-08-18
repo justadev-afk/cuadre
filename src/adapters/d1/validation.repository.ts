@@ -135,6 +135,50 @@ export type DailyTotal = {
   readonly amountCents: number;
 };
 
+/**
+ * One row of a breakdown: what it is grouped by, and the two numbers every
+ * grouping answers with. `key` is whatever the GROUP BY produced — an hour
+ * (`'14'`), a cashier id, a Sudeban code, a payment kind — and turning it into
+ * something a merchant reads is the screen's job, never this file's.
+ */
+export type StatsBucket = {
+  readonly key: string;
+  readonly count: number;
+  readonly amountCents: number;
+};
+
+/** A cashier's bucket carries the name off the same LEFT JOIN the list uses. */
+export type CashierBucket = StatsBucket & { readonly name: string | null };
+
+/**
+ * Everything the statistics screen asks about one span, in one batch.
+ *
+ * Six GROUP BYs rather than one query and a pivot in JS: each of them reads the
+ * same indexed range and returns tens of rows, and streaming a merchant's month
+ * back to bucket it here would be paying to move data we throw away — the same
+ * reason `dailyTotals` groups in SQL.
+ */
+export type ValidationStats = {
+  readonly byDay: readonly DailyTotal[];
+  /** `'00'`…`'23'`, Caracas local. Only the hours with payments are present. */
+  readonly byHour: readonly StatsBucket[];
+  readonly byCashier: readonly CashierBucket[];
+  /** Keyed by the payer's four-digit Sudeban code. */
+  readonly bySourceBank: readonly StatsBucket[];
+  /** Two keys at most: `pago_movil` and `transferencia`. */
+  readonly byKind: readonly StatsBucket[];
+  readonly summary: ValidationStatsSummary;
+};
+
+export type ValidationStatsSummary = {
+  readonly count: number;
+  readonly amountCents: number;
+  /** The biggest single payment in the span — 0 when there were none. */
+  readonly maxAmountCents: number;
+  /** Distinct payer phones. A transferencia has none, so it counts for nobody. */
+  readonly payers: number;
+};
+
 export interface ValidationRepository {
   insert(input: NewValidation): Promise<InsertResult>;
   /** The retried POST's answer: the same validation, and the same control code. */
@@ -143,6 +187,8 @@ export interface ValidationRepository {
   listByCashier(query: CashierListQuery): Promise<ValidationPage>;
   /** Real money only — sandbox is excluded, always. */
   dailyTotals(query: DailyTotalsQuery): Promise<readonly DailyTotal[]>;
+  /** Every breakdown the statistics screen draws, over one span. Also real money only. */
+  stats(query: DailyTotalsQuery): Promise<ValidationStats>;
   /**
    * The existing charge under this payment key on one of these accounts, if any
    * — the counter's "already cobrado?" check. It runs *after* the bank answers,
@@ -326,6 +372,100 @@ export class D1ValidationRepository implements ValidationRepository {
     }));
   }
 
+  /**
+   * The statistics screen's six questions, asked in one batch.
+   *
+   * Every one of them carries `is_sandbox = 0`, for the same reason
+   * `dailyTotals` does: a total is money and a test payment is not. There is no
+   * parameter here that could turn it off.
+   *
+   * `SUM` over no rows is SQL NULL, which is why the totals go through
+   * `COALESCE` rather than through an accessor that would — correctly — refuse
+   * a null integer. An empty span is an ordinary answer, not corruption.
+   */
+  async stats(query: DailyTotalsQuery): Promise<ValidationStats> {
+    const scope = `WHERE v.company_id = ? AND v.is_sandbox = 0
+                     AND v.created_at >= ? AND v.created_at <= ?`;
+    const args = [query.companyId, epochToIso(query.from), epochToIso(query.to)];
+    /** One `GROUP BY <expression>` over the same scope, ready to batch. */
+    const bucket = (expression: string, ...head: unknown[]): D1PreparedStatement =>
+      this.db
+        .prepare(
+          `SELECT ${expression} AS bucket_key,
+                    COUNT(*) AS total_count,
+                    COALESCE(SUM(v.amount_cents), 0) AS total_amount_cents
+               FROM validations v
+               ${scope}
+              GROUP BY bucket_key`,
+        )
+        .bind(...head, ...args);
+
+    const [byDay, byHour, byCashier, bySourceBank, byKind, summary] = await this.db.batch<D1Row>([
+      this.db
+        .prepare(
+          `SELECT date(v.created_at, ?) AS local_date,
+                    COUNT(*) AS total_count,
+                    COALESCE(SUM(v.amount_cents), 0) AS total_amount_cents
+               FROM validations v
+               ${scope}
+              GROUP BY local_date
+              ORDER BY local_date DESC`,
+        )
+        .bind(VENEZUELA_DAY_MODIFIER, ...args),
+      // strftime rather than a JS pass over the rows: the hour has to be the
+      // *counter's* hour, and the shift is the same modifier the day bucket uses
+      // so the two can never disagree about which day an 11pm payment fell on.
+      bucket(`strftime('%H', v.created_at, ?)`, VENEZUELA_DAY_MODIFIER),
+      this.db
+        .prepare(
+          `SELECT v.cashier_id AS bucket_key,
+                    u.name AS cashier_name,
+                    COUNT(*) AS total_count,
+                    COALESCE(SUM(v.amount_cents), 0) AS total_amount_cents
+               FROM validations v
+               LEFT JOIN users u ON u.id = v.cashier_id
+               ${scope}
+              GROUP BY bucket_key, cashier_name
+              ORDER BY total_amount_cents DESC`,
+        )
+        .bind(...args),
+      bucket('v.source_bank_id'),
+      bucket('v.kind'),
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS total_count,
+                    COALESCE(SUM(v.amount_cents), 0) AS total_amount_cents,
+                    COALESCE(MAX(v.amount_cents), 0) AS max_amount_cents,
+                    COUNT(DISTINCT v.payer_phone) AS payers
+               FROM validations v
+               ${scope}`,
+        )
+        .bind(...args),
+    ]);
+
+    const summaryRow = summary.results[0];
+    return {
+      byDay: byDay.results.map((row) => ({
+        date: text(row, 'local_date'),
+        count: integer(row, 'total_count'),
+        amountCents: integer(row, 'total_amount_cents'),
+      })),
+      byHour: byHour.results.map(toBucket),
+      byCashier: byCashier.results.map((row) => ({
+        ...toBucket(row),
+        name: optionalText(row, 'cashier_name'),
+      })),
+      bySourceBank: bySourceBank.results.map(toBucket),
+      byKind: byKind.results.map(toBucket),
+      summary: {
+        count: summaryRow === undefined ? 0 : integer(summaryRow, 'total_count'),
+        amountCents: summaryRow === undefined ? 0 : integer(summaryRow, 'total_amount_cents'),
+        maxAmountCents: summaryRow === undefined ? 0 : integer(summaryRow, 'max_amount_cents'),
+        payers: summaryRow === undefined ? 0 : integer(summaryRow, 'payers'),
+      },
+    };
+  }
+
   private async page(
     ownerColumn: 'company_id' | 'cashier_id',
     ownerId: string,
@@ -416,6 +556,14 @@ async function classify(
 function clamp(limit: number | undefined): number {
   if (limit === undefined) return DEFAULT_LIMIT;
   return Math.min(MAX_LIMIT, Math.max(1, Math.trunc(limit)));
+}
+
+function toBucket(row: D1Row): StatsBucket {
+  return {
+    key: text(row, 'bucket_key'),
+    count: integer(row, 'total_count'),
+    amountCents: integer(row, 'total_amount_cents'),
+  };
 }
 
 export function toValidation(row: D1Row): Validation {

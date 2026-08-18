@@ -17,6 +17,7 @@ import { type DailyTotals, makeDailyTotals } from './daily-totals.ts';
 import { type ListMyValidations, makeListMyValidations } from './list-my-validations.ts';
 import { type ListValidations, makeListValidations } from './list-validations.ts';
 import { makeValidatePayment, type ValidatePayment } from './validate-payment.ts';
+import { makeValidationStats, type ValidationStatsQuery } from './validation-stats.ts';
 
 export type ValidationsDeps = {
   readonly validations: ValidationRepository;
@@ -37,6 +38,8 @@ export type ValidationUseCases = {
   readonly listValidations: ListValidations;
   readonly listMyValidations: ListMyValidations;
   readonly dailyTotals: DailyTotals;
+  /** The statistics screen's whole answer over one span the merchant chose. */
+  readonly validationStats: ValidationStatsQuery;
 };
 
 export function makeValidationUseCases(deps: ValidationsDeps): ValidationUseCases {
@@ -45,5 +48,6 @@ export function makeValidationUseCases(deps: ValidationsDeps): ValidationUseCase
     listValidations: makeListValidations(deps),
     listMyValidations: makeListMyValidations(deps),
     dailyTotals: makeDailyTotals(deps),
+    validationStats: makeValidationStats(deps),
   };
 }
