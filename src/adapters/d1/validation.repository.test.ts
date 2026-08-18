@@ -66,8 +66,9 @@ describe('toValidation', () => {
       searchMode: 'exact_reference',
       idempotencyKey: 'idem-1',
       createdAt: 1_770_000_060,
-      // Populated only by the list queries' LEFT JOIN; null on a bare row.
+      // Populated only by the list queries' LEFT JOINs; null on a bare row.
       cashierName: null,
+      accountLabel: null,
     });
   });
 

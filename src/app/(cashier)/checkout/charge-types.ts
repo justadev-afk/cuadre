@@ -69,6 +69,13 @@ export type ConfirmedCharge = {
   readonly latencyMs: number | null;
   /** Which connected bank received it — the counter shows the name beside it. */
   readonly bankAccountId: string;
+  /**
+   * And which bank it came from, as its Sudeban code: the "banco emisor" the
+   * cashier picked, which the bank confirmed by finding the movement at all.
+   * The confirmation, the re-opened receipt and the validations table all name
+   * both sides of a payment, so both sides travel with it.
+   */
+  readonly sourceBankId: string;
 };
 
 /**

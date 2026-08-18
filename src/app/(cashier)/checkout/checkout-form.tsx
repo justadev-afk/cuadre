@@ -46,6 +46,7 @@ import { SearchableSelect, type SelectOption } from '../../_components/searchabl
 import { BankSpinner, ButtonSpinner } from '../../_components/skeleton.tsx';
 import { type ReceiptData, ThermalReceipt } from '../../_components/thermal-receipt.tsx';
 import { ValidatedPaymentModal } from '../../_components/validated-payment-modal.tsx';
+import { bankAccountLabel } from '../../_lib/bank-account-label.ts';
 import { API } from '../../_lib/endpoints.ts';
 import { maskCurrency, maskDate, readTypedDate } from '../../_lib/masks.ts';
 import { kindLabel } from '../../_lib/payment-kind.ts';
@@ -91,11 +92,12 @@ function chargeReceipt(
   };
 }
 
-/** One row of the "mi turno" list — a full charge, so a click can re-open it. */
-export type RecentCharge = ConfirmedCharge & {
-  /** Sudeban code of the payer's bank, for the row's caption. */
-  readonly sourceBankId: string;
-};
+/**
+ * One row of the "mi turno" list — a full charge, so a click can re-open it.
+ * Exactly a `ConfirmedCharge`: it used to add the payer's bank, which the
+ * confirmation now carries too, because both surfaces name both banks.
+ */
+export type RecentCharge = ConfirmedCharge;
 
 /** One connected bank, as the counter's "banco receptor" dropdown shows it. */
 export type CheckoutAccount = {
@@ -209,7 +211,7 @@ function accountLabel(
 ): string | undefined {
   const account = accounts.find((a) => a.id === bankAccountId);
   if (account === undefined) return undefined;
-  return account.label === null ? account.bankName : `${account.bankName} · ${account.label}`;
+  return bankAccountLabel(account.bankName, account.label);
 }
 
 /**
@@ -507,10 +509,7 @@ export function CheckoutForm({
               id={accountSelectId}
               options={accounts.map((account) => ({
                 value: account.id,
-                label:
-                  account.label === null
-                    ? account.bankName
-                    : `${account.bankName} · ${account.label}`,
+                label: bankAccountLabel(account.bankName, account.label),
                 hint: account.isSandbox ? 'sandbox' : undefined,
               }))}
               value={accountId}
@@ -1341,7 +1340,13 @@ function ChargeRows({
       {charge.payerPhone !== null && (
         <Row label="Teléfono" value={formatPhoneForDisplay(charge.payerPhone)} />
       )}
-      {account !== undefined && <Row label="Banco" value={account} />}
+      {/* The two banks, named the way the re-opened receipt and the validations
+          table name them: where it came from, then where it landed. */}
+      <Row
+        label="Banco emisor"
+        value={findBank(charge.sourceBankId)?.name ?? charge.sourceBankId}
+      />
+      {account !== undefined && <Row label="Banco receptor" value={account} />}
       {/* The bank's date first: it is the customer's, it is what their receipt
           says, and on a payment made last night it is not today. "Cobrado" is
           the shop's own — the two are different facts and the counter states

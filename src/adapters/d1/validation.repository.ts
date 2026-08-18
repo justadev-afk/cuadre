@@ -70,6 +70,15 @@ export type Validation = {
    * null there — hence optional.
    */
   readonly cashierName?: string | null;
+  /**
+   * The name the merchant gave the connection that received this payment
+   * ("Caja principal"), from the same kind of LEFT JOIN — `null` on a
+   * connection they never named, and on every path that does not join.
+   *
+   * The bank is on the row itself; this only tells two affiliations of that one
+   * bank apart, which is the whole reason the column exists.
+   */
+  readonly accountLabel?: string | null;
 };
 
 /**
@@ -178,11 +187,24 @@ const COLUMNS = `id, company_id, cashier_id, bank_account_id, bank, kind, is_san
                  payer_phone, source_bank_id, trn_at, latency_ms, search_mode,
                  idempotency_key, created_at`;
 
-/** The list columns, aliased for the LEFT JOIN that carries the cashier's name. */
+/**
+ * The list columns, aliased for the two LEFT JOINs: the cashier's name, and the
+ * label the merchant gave the connection that received the payment.
+ */
 const LIST_COLUMNS = `v.id, v.company_id, v.cashier_id, v.bank_account_id, v.bank, v.kind,
                  v.is_sandbox, v.control_code, v.reference, v.reference_key, v.amount_cents,
                  v.currency, v.payer_phone, v.source_bank_id, v.trn_at, v.latency_ms,
-                 v.search_mode, v.idempotency_key, v.created_at, u.name AS cashier_name`;
+                 v.search_mode, v.idempotency_key, v.created_at, u.name AS cashier_name,
+                 a.label AS account_label`;
+
+/**
+ * Both joins are LEFT, and for the same reason: a validation outlives the rows
+ * it points at. A cashier who left still names the payments they confirmed, and
+ * a connection the merchant removed still received the ones it received — an
+ * INNER JOIN would make either disappearance delete history from the screen.
+ */
+const LIST_JOINS = `LEFT JOIN users u ON u.id = v.cashier_id
+           LEFT JOIN bank_accounts a ON a.id = v.bank_account_id`;
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -213,7 +235,7 @@ export class D1ValidationRepository implements ValidationRepository {
     const row = await this.db
       .prepare(
         `SELECT ${LIST_COLUMNS} FROM validations v
-           LEFT JOIN users u ON u.id = v.cashier_id
+           ${LIST_JOINS}
           WHERE v.reference_key = ? AND v.bank_account_id IN (${placeholders})
           LIMIT 1`,
       )
@@ -334,13 +356,11 @@ export class D1ValidationRepository implements ValidationRepository {
       args.push(cursorAt, cursorAt, query.cursor.id);
     }
 
-    // LEFT JOIN, not INNER: a validation whose cashier was later removed still
-    // lists (the name reads null, the row keeps resolving). One row past the
-    // page, so "is there a next page?" costs no second query.
+    // One row past the page, so "is there a next page?" costs no second query.
     const result = await this.db
       .prepare(
         `SELECT ${LIST_COLUMNS} FROM validations v
-           LEFT JOIN users u ON u.id = v.cashier_id
+           ${LIST_JOINS}
           WHERE ${conditions.join(' AND ')}
           ORDER BY v.created_at DESC, v.id DESC
           LIMIT ?`,
@@ -419,8 +439,9 @@ export function toValidation(row: D1Row): Validation {
     searchMode: toSearchMode(optionalText(row, 'search_mode')),
     idempotencyKey: text(row, 'idempotency_key'),
     createdAt: epochFromIso(row, 'created_at'),
-    // Present only on list rows (the LEFT JOIN); absent → null on other paths.
+    // Present only on list rows (the LEFT JOINs); absent → null on other paths.
     cashierName: optionalText(row, 'cashier_name'),
+    accountLabel: optionalText(row, 'account_label'),
   };
 }
 

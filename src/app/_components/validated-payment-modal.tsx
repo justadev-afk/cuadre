@@ -118,13 +118,11 @@ export function ValidatedPaymentModal({
           {view.payerPhone !== null ? (
             <Row label="Teléfono" value={formatPhoneForDisplay(view.payerPhone)} />
           ) : null}
-          {/* The payer's side of a pago móvil: it is made *from* a phone at a
-              bank, and the counter asked for both. The same field on a
-              transferencia is a routing detail of the search, not something the
-              merchant recognises on a receipt, so it stays off there. */}
-          {view.kind === 'pago_movil' && view.payerBankName ? (
-            <Row label="Banco emisor" value={view.payerBankName} />
-          ) : null}
+          {/* The payer's side, on either kind: the till asks "banco emisor" for
+              a transferencia too, and the validations table now heads a column
+              with it, so hiding it here would make the row and the receipt
+              disagree about a payment that has two banks either way. */}
+          {view.payerBankName ? <Row label="Banco emisor" value={view.payerBankName} /> : null}
           {/* And the shop's side — which connection received it. Named in full
               beside "Banco emisor" so the two are never read as one bank. */}
           {view.accountLabel ? <Row label="Banco receptor" value={view.accountLabel} /> : null}

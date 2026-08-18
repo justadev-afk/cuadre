@@ -18,12 +18,27 @@ import type { Validation } from '../../adapters/d1/validation.repository.ts';
 import { formatBolivares } from '../../domain/money.ts';
 import { formatPhoneForDisplay } from '../../domain/phone.ts';
 import { findBank } from '../../domain/sudeban.ts';
+import { bankAccountLabel } from '../_lib/bank-account-label.ts';
 import { amountDigits, formatValidatedAt } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
 import { PaymentKindMark } from './payment-kind-mark.tsx';
 import { ValidatedPaymentModal } from './validated-payment-modal.tsx';
 
 const BANK_NAMES: Record<string, string> = { banesco: 'Banesco' };
+
+/**
+ * The bank the money came from, as a name. An unknown Sudeban code shows as its
+ * four digits rather than as nothing: the row records what the bank was asked
+ * with, and that stays true even when our table of codes has moved on.
+ */
+function payerBank(v: Validation): string {
+  return findBank(v.sourceBankId)?.name ?? v.sourceBankId;
+}
+
+/** And the shop's own side — the connection that received it. */
+function receivingBank(v: Validation): string {
+  return bankAccountLabel(BANK_NAMES[v.bank] ?? v.bank, v.accountLabel);
+}
 
 export function ValidationList({
   items,
@@ -63,8 +78,14 @@ export function ValidationList({
               <th>Referencia</th>
               <th className="text-right">Monto (Bs)</th>
               <th>Teléfono</th>
+              {/* The payer's side, then the shop's, in the order the receipt
+                  reads and the modal lists them — two banks side by side, which
+                  is the only way "de dónde vino" is a comparison and not two
+                  lookups. "Banco" alone was the receiving one, and a table that
+                  names one bank on a payment between two says which. */}
+              <th>Banco emisor</th>
+              <th>Banco receptor</th>
               {showCashier && <th>Cajero</th>}
-              <th>Banco</th>
             </tr>
           </thead>
           <tbody>
@@ -104,13 +125,9 @@ export function ValidationList({
                 <td className="tabular-nums text-muted-foreground">
                   {v.payerPhone === null ? '—' : formatPhoneForDisplay(v.payerPhone)}
                 </td>
-                {showCashier && (
-                  <td className="whitespace-nowrap text-muted-foreground">
-                    {v.cashierName ?? '—'}
-                  </td>
-                )}
+                <td className="whitespace-nowrap text-muted-foreground">{payerBank(v)}</td>
                 <td className="whitespace-nowrap">
-                  {BANK_NAMES[v.bank] ?? v.bank}
+                  {receivingBank(v)}
                   {v.isSandbox && (
                     <Badge variant="outline" className="ml-1.5 text-[10px]">
                       <Icon name="flask" />
@@ -118,6 +135,11 @@ export function ValidationList({
                     </Badge>
                   )}
                 </td>
+                {showCashier && (
+                  <td className="whitespace-nowrap text-muted-foreground">
+                    {v.cashierName ?? '—'}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -158,6 +180,11 @@ export function ValidationList({
                 </>
               )}
             </span>
+            {/* The two banks, in the direction the money moved. A phone has no
+                columns to head, so the arrow is what says which is which. */}
+            <span className="text-xs text-muted-foreground">
+              {payerBank(v)} <Icon name="arrow-right" /> {receivingBank(v)}
+            </span>
             {showCashier && v.cashierName && (
               <span className="text-xs text-muted-foreground">Cajero · {v.cashierName}</span>
             )}
@@ -173,11 +200,11 @@ export function ValidationList({
             reference: viewing.reference,
             payerPhone: viewing.payerPhone,
             kind: viewing.kind,
-            // The stored Sudeban code, as a name. An unknown code shows as the
-            // four digits rather than as nothing: the row says what the bank was
-            // asked with, and that is true even when the list has moved on.
-            payerBankName: findBank(viewing.sourceBankId)?.name ?? viewing.sourceBankId,
+            payerBankName: payerBank(viewing),
             bankName: BANK_NAMES[viewing.bank] ?? viewing.bank,
+            // Named exactly as the table's column and the counter's dropdown
+            // name it, so a re-opened receipt matches the row it came from.
+            accountLabel: receivingBank(viewing),
             cashierName: viewing.cashierName,
             paidAt: viewing.trnAt,
             chargedAt: viewing.createdAt,

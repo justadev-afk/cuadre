@@ -101,6 +101,7 @@ function outcomeOf(
         isSandbox: validation.isSandbox,
         latencyMs: validation.latencyMs,
         bankAccountId: validation.bankAccountId,
+        sourceBankId: validation.sourceBankId,
       },
     };
   }
