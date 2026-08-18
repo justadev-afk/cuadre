@@ -12,15 +12,19 @@
  * is no separate API user, and the two credentials the merchant enters are all
  * the grant needs.
  *
- * A token is worth caching — the bank rate-limits the token endpoint far more
- * tightly than the query endpoints, and a checkout that mints a token first
- * spends a whole round trip before it has asked anything. It is cached in KV so
- * the isolate that serves the next sale reuses it.
+ * **Nothing here is cached, and that is the point.** A token used to live in KV
+ * for `expires_in` minus a minute, which bought the counter one saved round trip
+ * and cost it the only thing that matters: a validation that reached the bank
+ * through something remembered from an earlier request. It showed on the till —
+ * the first attempt took its time and every retry came back instantly, which
+ * reads exactly like an answer nobody went and asked for. On the path that
+ * decides whether a customer has paid, "fast because we did not ask" is the
+ * wrong trade at any price, so every attempt opens its own session and every
+ * answer is one the bank gave just now.
  *
- * The cache key names the client by the SHA-256 of its clientId. The secret
- * never appears in a key, a log line or an error: a KV key list is readable by
- * anyone with the binding, and a hashed clientId is enough to tell two
- * merchants apart.
+ * What that costs is one extra round trip per validation, against a token
+ * endpoint the bank rate-limits harder than the query one. If it ever bites, the
+ * answer is fewer redundant validations, never a remembered token.
  */
 import { z } from 'zod';
 
@@ -29,7 +33,6 @@ import type {
   BankEnvironment,
   BankFailure,
 } from '../../../application/ports/bank-gateway.ts';
-import { sha256Hex } from '../../../shared/crypto.ts';
 import { logger } from '../../../shared/logger.ts';
 import { err, ok, type Result } from '../../../shared/result.ts';
 import { bankFetch, parseJsonBody } from '../http.ts';
@@ -46,68 +49,27 @@ const TokenReply = z.object({
 /** Keycloak's error body. `error` is a code ('invalid_client'), safe to log. */
 const TokenError = z.object({ error: z.string() });
 
-/**
- * Expire our copy a minute before the bank does. A token that dies mid-request
- * costs a retry the cashier watches; a minute of unused life costs nothing.
- */
-const SAFETY_MARGIN_SECONDS = 60;
-
-/** KV refuses a shorter TTL, so a very short-lived token is simply not cached. */
-const KV_MIN_TTL_SECONDS = 60;
-
 export type BanescoTokenRequest = {
   environment: BankEnvironment;
   credentials: BankCredentials;
 };
 
-export type BanescoToken = {
-  accessToken: string;
-  expiresInSeconds: number;
-};
-
 /**
- * The two ways the gateway asks for a token: the cached one every call takes,
- * and the uncached probe that must leave nothing behind.
+ * One way in, and it always goes to the bank. There is no second, cached path —
+ * there used to be, and the counter could feel it.
  */
 export interface OauthClient {
   getAccessToken(request: BanescoTokenRequest): Promise<Result<string, BankFailure>>;
-  requestUncachedToken(request: BanescoTokenRequest): Promise<Result<BanescoToken, BankFailure>>;
 }
 
 export class BanescoOauthClient implements OauthClient {
   constructor(
-    private readonly tokens: KVNamespace,
     private readonly userAgent: string,
     /** `BANESCO_DEBUG`. The body printed here is redacted — see below. */
     private readonly debug = false,
   ) {}
 
-  /** The cached path. Everything on the checkout route uses this one. */
   async getAccessToken(request: BanescoTokenRequest): Promise<Result<string, BankFailure>> {
-    const key = await tokenCacheKey(request);
-
-    const cached = await this.tokens.get(key, 'text');
-    if (cached) return ok(cached);
-
-    const fresh = await this.requestUncachedToken(request);
-    if (!fresh.ok) return fresh;
-
-    const ttl = fresh.value.expiresInSeconds - SAFETY_MARGIN_SECONDS;
-    if (ttl >= KV_MIN_TTL_SECONDS) {
-      await this.tokens.put(key, fresh.value.accessToken, { expirationTtl: ttl });
-    }
-
-    return ok(fresh.value.accessToken);
-  }
-
-  /**
-   * The uncached path. Used to probe an environment we are about to reject, where
-   * caching the result would leave a token behind for credentials we just refused
-   * to accept.
-   */
-  async requestUncachedToken(
-    request: BanescoTokenRequest,
-  ): Promise<Result<BanescoToken, BankFailure>> {
     const endpoints = banescoEndpoints(request.environment);
     const { clientId, clientSecret } = request.credentials;
 
@@ -178,24 +140,14 @@ export class BanescoOauthClient implements OauthClient {
       return err('unavailable');
     }
 
-    return ok({
-      accessToken: parsed.data.access_token,
-      expiresInSeconds: parsed.data.expires_in,
-    });
+    // `expires_in` is read past rather than returned: nothing keeps this token
+    // beyond the request that asked for it, so how long the bank would have let
+    // us keep it is not a fact anybody here can use.
+    return ok(parsed.data.access_token);
   }
 }
 
 /** The grant as it goes out, with everything secret replaced by `***`. */
 function redactedGrant(clientId: string): string {
   return `grant_type=password&client_id=${clientId}&client_secret=***&username=${clientId}&password=***`;
-}
-
-/**
- * Keyed by the SHA-256 of the client id: the client is its own resource owner
- * here, so the client identifies the token completely. The secret never
- * reaches a key — a KV key list is readable by anyone holding the binding.
- */
-async function tokenCacheKey(request: BanescoTokenRequest): Promise<string> {
-  const client = await sha256Hex(request.credentials.clientId);
-  return `bank_token:${BANESCO_ID}:${request.environment}:${client}`;
 }

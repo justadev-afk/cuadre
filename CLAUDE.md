@@ -175,7 +175,7 @@ The deciding question is *does it hold anything*, not which layer it is in.
 | A collaborator constructed with dependencies and answering several related calls | **class implementing an interface** | every gateway, repository and KV store |
 | One use case, one entry point | **factory closure** returning the function | `makeValidatePayment({ banks, validations, clock })` |
 
-A gateway has four methods sharing a token cache, a device envelope and an
+A gateway has four methods sharing an open session, a device envelope and an
 environment. A closure returning an object literal can express that, but
 `class BanescoGateway implements BankGateway` says it in the declaration and
 puts the compiler's error on the class that drifted rather than on whoever
@@ -418,8 +418,21 @@ gateway at call time.
   lookup each validation is a *single* call, so serialising two cashiers only
   adds latency at the counter — the worst place to add it. The control code
   needs no counter either: `UNIQUE (company_id, control_code)` in D1 *is* the
-  serialisation point, and a conflict means retry. The OAuth token cache is KV
-  with a TTL, as the integration document itself specifies.
+  serialisation point, and a conflict means retry.
+- **Nothing on the validation path is cached — not even the OAuth token.** The
+  integration document specifies a KV token cache and we built one; it lasted
+  until a cashier noticed that the first attempt of a shift took its time and
+  every *Reintentar* came back instantly. That is what an answer nobody went and
+  asked for feels like, on the one screen where it must never feel like anything
+  else. So `POST /api/checkout/charge` authenticates against the bank on every
+  attempt and asks on every attempt: no token store, no memo, no `revalidate`,
+  and `bankFetch` stays `cache: 'no-store'`. The `TOKENS` KV namespace is gone
+  with it. The cost is one round trip per validation against a token endpoint
+  the bank rate-limits harder than the query one; if that ever bites, the answer
+  is fewer redundant validations, never a remembered token. The only thing that
+  still short-circuits a bank call is a *stored charge* — the idempotency key and
+  the "ya cobrado" pre-flight (§5) — and both answer from a committed row, which
+  is a fact, not a cache.
 - **No staging environment.** One Worker, one database, one set of secrets. The
   bank's sandbox is selected per *account* (the `environment` column), not per
   deployment — a company can hold production and sandbox accounts at once, so a

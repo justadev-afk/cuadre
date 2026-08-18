@@ -68,18 +68,17 @@ database_name = "cuadre"
 database_id = "2dde42e0-5646-44f5-b39e-a463dd27a8b6"
 migrations_dir = "migrations"
 
-# Three namespaces with three lifetimes, on purpose. SESSIONS is written on
-# every request (the sliding TTL) and also holds the rate-limit counters;
-# TOKENS holds bank OAuth tokens that expire on the bank's clock;
-# VINEXT_KV_CACHE is the framework's own data cache and must not share a
-# keyspace with either.
+# Two namespaces, two lifetimes. SESSIONS is written on every request (the
+# sliding TTL) and also holds the rate-limit counters; VINEXT_KV_CACHE is the
+# framework's own data cache and must not share a keyspace with it.
+#
+# There was a third, TOKENS, holding bank OAuth tokens. It is gone: the counter
+# authenticates against the bank on every validation, so nothing about a payment
+# is ever answered out of a store. The namespace itself still exists in the
+# account and its entries expire on their own; nothing reads them.
 [[kv_namespaces]]
 binding = "SESSIONS"
 id = "7cb3c2d04ff041c39993d340303060ca"
-
-[[kv_namespaces]]
-binding = "TOKENS"
-id = "1f26fb1f2dd64f95919138219f7d213e"
 
 [[kv_namespaces]]
 binding = "VINEXT_KV_CACHE"

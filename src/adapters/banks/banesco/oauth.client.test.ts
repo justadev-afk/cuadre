@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { sha256Hex } from '../../../shared/crypto.ts';
 import { BanescoOauthClient } from './oauth.client.ts';
 
 // Two fields only: the client is its own resource owner in the password
@@ -9,19 +8,6 @@ const CREDENTIALS = {
   clientId: 'cuadre-qa-client',
   clientSecret: 'super-secret-value',
 };
-
-type StoredValue = { value: string; ttl?: number };
-
-function fakeTokens() {
-  const store = new Map<string, StoredValue>();
-  const kv = {
-    get: async (key: string) => store.get(key)?.value ?? null,
-    put: async (key: string, value: string, options?: { expirationTtl?: number }) => {
-      store.set(key, { value, ttl: options?.expirationTtl });
-    },
-  };
-  return { store, kv: kv as unknown as KVNamespace };
-}
 
 type Reply = { status: number; body: string };
 
@@ -45,28 +31,23 @@ const token = (expiresIn: number) => ({
 });
 
 function oauthClient() {
-  const tokens = fakeTokens();
-  return { tokens, oauth: new BanescoOauthClient(tokens.kv, 'cuadre/1.0') };
+  return new BanescoOauthClient('cuadre/1.0');
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('requestUncachedToken', () => {
+describe('getAccessToken', () => {
   it('asks Keycloak for a password grant, form-encoded', async () => {
     const calls = stubFetch(token(300));
-    const { oauth } = oauthClient();
 
-    const result = await oauth.requestUncachedToken({
+    const result = await oauthClient().getAccessToken({
       environment: 'sandbox',
       credentials: CREDENTIALS,
     });
 
-    expect(result).toEqual({
-      ok: true,
-      value: { accessToken: 'header.payload.signature', expiresInSeconds: 300 },
-    });
+    expect(result).toEqual({ ok: true, value: 'header.payload.signature' });
     expect(calls[0].url).toContain('/auth/realms/realm-api-qa/protocol/openid-connect/token');
 
     const body = new URLSearchParams(String(calls[0].init.body));
@@ -81,13 +62,30 @@ describe('requestUncachedToken', () => {
     expect(body.get('password')).toBe(CREDENTIALS.clientSecret);
   });
 
-  it('does not cache, so a probe leaves nothing behind', async () => {
-    stubFetch(token(300));
-    const { tokens, oauth } = oauthClient();
+  /**
+   * The regression this file exists for. A token used to be cached in KV for
+   * `expires_in` minus a minute, so the second validation of a shift — and every
+   * *Reintentar* — skipped this call and came back so fast the counter read it
+   * as an answer nobody had gone to fetch. On the path that decides whether a
+   * customer has paid, every attempt opens its own session.
+   */
+  it('asks the bank again on the very next call — nothing is remembered', async () => {
+    const calls = stubFetch([token(300), token(300)]);
+    const oauth = oauthClient();
 
-    await oauth.requestUncachedToken({ environment: 'sandbox', credentials: CREDENTIALS });
+    await oauth.getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
+    const second = await oauth.getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
 
-    expect(tokens.store.size).toBe(0);
+    expect(calls).toHaveLength(2);
+    expect(second).toEqual({ ok: true, value: 'header.payload.signature' });
+  });
+
+  it('never sends a stored request: the fetch itself is no-store', async () => {
+    const calls = stubFetch(token(300));
+
+    await oauthClient().getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
+
+    expect(calls[0].init.cache).toBe('no-store');
   });
 
   it.each([
@@ -97,9 +95,8 @@ describe('requestUncachedToken', () => {
     [500, 'unavailable'],
   ])('turns HTTP %i into %s', async (status, failure) => {
     stubFetch({ status, body: '{"error":"invalid_client"}' });
-    const { oauth } = oauthClient();
 
-    const result = await oauth.requestUncachedToken({
+    const result = await oauthClient().getAccessToken({
       environment: 'sandbox',
       credentials: CREDENTIALS,
     });
@@ -109,68 +106,19 @@ describe('requestUncachedToken', () => {
 
   it('refuses a 200 it cannot read', async () => {
     stubFetch({ status: 200, body: '<html>login</html>' });
-    const { oauth } = oauthClient();
 
-    const result = await oauth.requestUncachedToken({
+    const result = await oauthClient().getAccessToken({
       environment: 'sandbox',
       credentials: CREDENTIALS,
     });
 
     expect(result).toEqual({ ok: false, error: 'unavailable' });
   });
-});
-
-describe('getAccessToken', () => {
-  it('caches the token a minute short of the bank’s expiry', async () => {
-    stubFetch(token(300));
-    const { tokens, oauth } = oauthClient();
-
-    await oauth.getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
-
-    const [stored] = [...tokens.store.values()];
-    expect(stored).toEqual({ value: 'header.payload.signature', ttl: 240 });
-  });
-
-  it('keys the cache by bank, environment and a hash of the client id', async () => {
-    stubFetch(token(300));
-    const { tokens, oauth } = oauthClient();
-
-    await oauth.getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
-
-    const [key] = [...tokens.store.keys()];
-    // The client is its own resource owner, so the client id identifies the
-    // token completely.
-    expect(key).toBe(`bank_token:banesco:sandbox:${await sha256Hex(CREDENTIALS.clientId)}`);
-    expect(key).not.toContain(CREDENTIALS.clientSecret);
-    expect(key).not.toContain(CREDENTIALS.clientId);
-  });
-
-  it('does not ask the bank again while the cached token lives', async () => {
-    const calls = stubFetch(token(300));
-    const { oauth } = oauthClient();
-
-    await oauth.getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
-    const second = await oauth.getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
-
-    expect(calls).toHaveLength(1);
-    expect(second).toEqual({ ok: true, value: 'header.payload.signature' });
-  });
-
-  it('skips the cache for a token that would expire inside the safety margin', async () => {
-    stubFetch(token(90));
-    const { tokens, oauth } = oauthClient();
-
-    const result = await oauth.getAccessToken({ environment: 'sandbox', credentials: CREDENTIALS });
-
-    expect(result).toEqual({ ok: true, value: 'header.payload.signature' });
-    expect(tokens.store.size).toBe(0);
-  });
 
   it('asks the production realm, not QA’s with the “qa” filed off', async () => {
     const calls = stubFetch(token(300));
-    const { oauth } = oauthClient();
 
-    const result = await oauth.getAccessToken({
+    const result = await oauthClient().getAccessToken({
       environment: 'production',
       credentials: CREDENTIALS,
     });

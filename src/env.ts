@@ -77,7 +77,6 @@ export type WorkerVars = z.infer<typeof WorkerVars>;
 export type Bindings = WorkerVars & {
   DB: D1Database;
   SESSIONS: KVNamespace;
-  TOKENS: KVNamespace;
   JOBS: Queue<unknown>;
   EMAIL: SendEmail;
   METRICS: AnalyticsEngineDataset;

@@ -694,6 +694,30 @@ describe('validate payment', () => {
     expect(calls.authenticate).toBe(0);
   });
 
+  /**
+   * *Reintentar* is a question, not a replay.
+   *
+   * The counter's retry keeps the same idempotency key on purpose — a payment
+   * that lands between two attempts must be charged once — and that key only
+   * ever short-circuits a *stored* charge. An attempt the bank answered "todavía
+   * no aparece" stores nothing, so the next one authenticates and asks again,
+   * every time, however fast the previous answer came back.
+   */
+  it('asks the bank again on every retry of an unfound payment', async () => {
+    const { validatePayment, calls } = await harness();
+
+    const first = await validatePayment(INPUT);
+    const second = await validatePayment(INPUT);
+    const third = await validatePayment(INPUT);
+
+    expect([first, second, third]).toEqual([
+      { ok: true, value: { kind: 'not_found' } },
+      { ok: true, value: { kind: 'not_found' } },
+      { ok: true, value: { kind: 'not_found' } },
+    ]);
+    expect(calls).toEqual({ authenticate: 3, findPayment: 3 });
+  });
+
   it('maps a bank in maintenance to a failure, and records the attempt', async () => {
     const { validatePayment, validations, points } = await harness({
       script: { payment: { ok: false, error: 'maintenance' } },

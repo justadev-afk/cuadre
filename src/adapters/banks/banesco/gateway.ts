@@ -140,7 +140,7 @@ export class BanescoGateway implements BankGateway {
 
   constructor(private readonly deps: BankGatewayDeps) {
     this.device = serverDevice(this.deps.egressIp);
-    this.oauth = new BanescoOauthClient(this.deps.tokens, this.deps.userAgent, this.deps.debug);
+    this.oauth = new BanescoOauthClient(this.deps.userAgent, this.deps.debug);
     this.confirmation = new BanescoConfirmationClient(
       this.device,
       this.deps.userAgent,
@@ -244,12 +244,7 @@ export class BanescoGateway implements BankGateway {
    * at the counter.
    */
   private async worksInProduction(credentials: BankCredentials): Promise<boolean> {
-    // Uncached on purpose: a token minted here belongs to credentials we are
-    // about to reject, and caching it would leave it behind for the next request.
-    const probe = await this.oauth.requestUncachedToken({
-      environment: 'production',
-      credentials,
-    });
+    const probe = await this.oauth.getAccessToken({ environment: 'production', credentials });
     return probe.ok;
   }
 }

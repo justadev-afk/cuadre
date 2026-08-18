@@ -92,19 +92,8 @@ function stubBank(payments: unknown[], productionAccepts = false): Sent[] {
   return sent;
 }
 
-function fakeTokens(): KVNamespace {
-  const store = new Map<string, string>();
-  return {
-    get: async (key: string) => store.get(key) ?? null,
-    put: async (key: string, value: string) => {
-      store.set(key, value);
-    },
-  } as unknown as KVNamespace;
-}
-
 function deps(): BankGatewayDeps {
   return {
-    tokens: fakeTokens(),
     egressIp: '200.11.22.33',
     userAgent: 'cuadre/1.0',
     debug: false,

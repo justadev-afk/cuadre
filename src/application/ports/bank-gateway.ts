@@ -335,8 +335,9 @@ export interface BankGateway {
  * standing up the registry around it.
  */
 export type BankGatewayDeps = {
-  /** Where OAuth tokens are cached, keyed by bank, environment and credentials. */
-  tokens: KVNamespace;
+  // No store of any kind. An adapter authenticates and asks within the request
+  // it was built for, and keeps nothing for the next one: what the counter
+  // needs from a bank is an answer given now, not one found nearby.
   /**
    * The egress address declared to the banks. Every bank so far validates the
    * caller by IP and wants it echoed in the request body, so it is a

@@ -69,9 +69,6 @@ export function buildContainer(rawEnv: Bindings) {
   const activeSessions = new KvActiveSessionStore(rawEnv.SESSIONS);
   const limiter = new KvRateLimiter(rawEnv.SESSIONS, clock);
   const metrics = new AnalyticsEngineAttemptMetrics(rawEnv.METRICS);
-  // The bank's own account list, cached a day. It shares the TOKENS namespace:
-  // both hold values that expire on somebody else's clock and neither is a
-  // session.
 
   // Reading that same dataset back is the SQL API, which needs an account id and
   // a token this environment may not carry. Absent either, the source is `null`
@@ -85,11 +82,10 @@ export function buildContainer(rawEnv: Bindings) {
         })
       : null;
 
-  // The gateway caches its own OAuth tokens straight into this namespace
-  // (`BanescoOauthClient` does its own get/put with a TTL), so the binding is
-  // handed over raw. There is no separate token-store object in the path.
+  // No storage of any kind reaches the banks: a gateway authenticates and asks
+  // inside the request that built it, and the counter's answer is always one the
+  // bank gave just now.
   const banks = new BankRegistry({
-    tokens: rawEnv.TOKENS,
     egressIp: vars.BANK_EGRESS_IP,
     userAgent: BANK_USER_AGENT,
     // Local only — see `BANESCO_DEBUG` in `env.ts`.
