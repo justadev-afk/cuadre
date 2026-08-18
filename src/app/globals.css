@@ -328,13 +328,14 @@ figcaption {
   }
 }
 
-/* ══ a region waiting on a re-query ════════════════════════════════════════
-   `SkeletonMask` puts `.sk-mask` on a region whose filter has just changed.
-   The content it is already showing stays in the DOM at its exact size and
-   only its ink is swapped for a bar, so the table does not collapse into a
-   skeleton of a different shape and back while the merchant is typing. There
-   is no utility for "replace every descendant's text with a bar" — which is
-   why this is the second bespoke class, after `.table`.
+/* ══ a component drawing itself while it waits ═════════════════════════════
+   `.sk-mask` is how a `skeleton` prop paints: the component renders its own
+   real markup with plausible text in it, and every cell's ink becomes a bar.
+   A skeleton built this way cannot drift from the thing it stands in for — the
+   columns are measured from a control code and a reference, so what lands
+   lands where the bar was, and nothing on the screen resizes. There is no
+   utility for "replace every descendant's text with a bar", which is why this
+   is the second bespoke class, after `.table`.
 
    A `<td>` is a bar by being one; anything else asks with `data-sk`, either a
    `line` (a number in a stat box) or a `block` (a whole card on a phone, which
@@ -342,7 +343,7 @@ figcaption {
    default full-width 11px strip is wrong for the text under it.
 
    Unlayered, unlike `.table`, and for the mirror image of that reason: this one
-   has to *beat* the utilities on the elements it masks. A `text-muted-foreground`
+   has to *beat* the utilities on the elements it blanks. A `text-muted-foreground`
    on the very span being blanked wins over anything in `@layer components`,
    whatever the specificity, and what that looks like is a stat box showing its
    number and a bar beside it. */

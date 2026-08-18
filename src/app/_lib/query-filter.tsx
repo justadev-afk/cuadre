@@ -13,11 +13,11 @@
  * silently throws away the search term beside it, which is the bug this exists
  * to have only once (§11).
  *
- * The transition is the provider's rather than each control's because `pending`
- * has two readers now: the control that asked (a picker disables itself instead
- * of letting a second click race the first) and the region being re-queried,
- * which masks the rows it is already showing. Two `useTransition`s would mean
- * the table blinked for the search box and not for the cashier picker.
+ * The transition is the provider's rather than each control's so that the
+ * pickers share one: a control disables itself while *any* of them is being
+ * answered, instead of letting a second click race the first. What the table
+ * does while it waits is not their business — the page hangs it behind a
+ * `Suspense` keyed by the filter, and the components draw their own `skeleton`.
  *
  * A search box asks with `replace: true`: typing is not history. Six keystrokes
  * must not be six entries the back button walks out through.

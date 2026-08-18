@@ -42,24 +42,32 @@ function receivingBank(v: Validation): string {
 }
 
 export function ValidationList({
-  items,
-  nowSeconds,
+  items = [],
+  nowSeconds = 0,
   showCashier = false,
   merchantName,
   merchantRif,
+  skeleton = false,
+  rows = SKELETON_ROWS,
 }: {
-  items: readonly Validation[];
-  nowSeconds: number;
+  items?: readonly Validation[];
+  nowSeconds?: number;
   /** The company panel shows who validated each payment; a cashier's own does not. */
   showCashier?: boolean;
   /** Printed at the top of a re-opened receipt, under "CUADRE". */
   merchantName?: string;
   /** And their RIF, under the name. */
   merchantRif?: string;
+  /** The same list, waiting for its rows — see `SkeletonRows`. */
+  skeleton?: boolean;
+  /** How many rows the wait draws. */
+  rows?: number;
 }) {
   const [viewing, setViewing] = useState<Validation | null>(null);
 
   const open = (v: Validation) => setViewing(v);
+
+  if (skeleton) return <SkeletonRows showCashier={showCashier} rows={rows} />;
 
   return (
     <>
@@ -248,28 +256,29 @@ function ValidationsHead({ showCashier }: { showCashier: boolean }) {
 }
 
 /**
- * The same list, before it has anything to list.
+ * The same list, before it has anything to list — what `skeleton` draws.
  *
- * It is the real markup with a plausible row in it, wearing `.sk-mask` — every
- * cell's ink becomes a bar and the columns land where the data will, because
- * the widths are measured from a control code and a reference rather than from
- * numbers somebody picked to look right. `aria-hidden`, since what is under the
- * bars is furniture: a screen reader announcing six invented references would
- * be worse than the silence.
+ * It is the real markup with a plausible row in it, wearing `.sk-mask`: every
+ * cell's ink becomes a bar, and the columns land where the data will because
+ * their widths are measured from a control code and a reference rather than
+ * from numbers somebody picked to look right. `aria-hidden`, since what is
+ * under the bars is furniture: a screen reader announcing six invented
+ * references would be worse than the silence.
  */
-const SKELETON_ROWS = ['a', 'b', 'c', 'd', 'e', 'f'];
+const SKELETON_ROWS = 6;
 
 /** A card on a phone is three lines in a 12px box — see the list above. */
 const SKELETON_CARD_HEIGHT = 84;
 
-export function ValidationListSkeleton({ showCashier = false }: { showCashier?: boolean }) {
+function SkeletonRows({ showCashier, rows }: { showCashier: boolean; rows: number }) {
   return (
     <div className="sk-mask" aria-hidden="true">
       <Card className="hidden overflow-x-auto p-0 min-[900px]:block">
         <table className="table">
           <ValidationsHead showCashier={showCashier} />
           <tbody>
-            {SKELETON_ROWS.map((row) => (
+            {Array.from({ length: rows }, (_, row) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: a placeholder row's only identity is its position; the block is replaced wholesale by the real rows.
               <tr key={row}>
                 <td className="pr-0">•</td>
                 <td className="font-heading tabular-nums">582422</td>
@@ -287,7 +296,7 @@ export function ValidationListSkeleton({ showCashier = false }: { showCashier?: 
       </Card>
 
       <div className="min-[900px]:hidden">
-        <SkeletonCards count={SKELETON_ROWS.length} height={SKELETON_CARD_HEIGHT} />
+        <SkeletonCards count={rows} height={SKELETON_CARD_HEIGHT} />
       </div>
     </div>
   );
