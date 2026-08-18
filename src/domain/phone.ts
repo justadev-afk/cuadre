@@ -23,9 +23,10 @@
  */
 export const VENEZUELAN_MOBILE_PREFIXES: readonly string[] = [
   '0412',
+  '0422',
   '0414',
-  '0416',
   '0424',
+  '0416',
   '0426',
 ];
 
