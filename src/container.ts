@@ -22,6 +22,7 @@ import { KvActiveSessionStore } from './adapters/kv/active-session.store.ts';
 import { KvLoginStatsCache } from './adapters/kv/login-stats.store.ts';
 import { KvRateLimiter } from './adapters/kv/rate-limit.store.ts';
 import { KvSessionStore } from './adapters/kv/session.store.ts';
+import { KvValidationStatsCache } from './adapters/kv/validation-stats.store.ts';
 import { AnalyticsEngineAttemptMetrics } from './adapters/metrics/attempt.metrics.ts';
 import { makeAuthUseCases } from './application/auth/factory.ts';
 import { makeBankingUseCases } from './application/banking/factory.ts';
@@ -130,6 +131,13 @@ export function buildContainer(rawEnv: Bindings) {
     }),
     validations: makeValidationUseCases({
       validations: validationRows,
+      // The statistics screen answers from KV for an hour. Six GROUP BYs over a
+      // quarter is the heaviest read here, and it is asked again on every reload
+      // of a screen whose only controls are a preset and a calendar. Nothing on
+      // the *validation* path is cached, and this is not on it (§9): it is a
+      // merchant reading their own history, not a counter asking a bank.
+      statsCache: new KvValidationStatsCache(rawEnv.SESSIONS),
+      statsCacheTtlSeconds: 3600,
       accounts: bankAccounts,
       banks,
       metrics,

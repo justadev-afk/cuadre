@@ -17,10 +17,17 @@ import { type DailyTotals, makeDailyTotals } from './daily-totals.ts';
 import { type ListMyValidations, makeListMyValidations } from './list-my-validations.ts';
 import { type ListValidations, makeListValidations } from './list-validations.ts';
 import { makeValidatePayment, type ValidatePayment } from './validate-payment.ts';
-import { makeValidationStats, type ValidationStatsQuery } from './validation-stats.ts';
+import {
+  makeValidationStats,
+  type ValidationStatsCache,
+  type ValidationStatsQuery,
+} from './validation-stats.ts';
 
 export type ValidationsDeps = {
   readonly validations: ValidationRepository;
+  /** The statistics screen's KV snapshot, and how long one serves for. */
+  readonly statsCache: ValidationStatsCache;
+  readonly statsCacheTtlSeconds: number;
   readonly accounts: BankAccountRepository;
   /** `BankRegistry`: the account's `bank` column picks the gateway. */
   readonly banks: {
@@ -48,6 +55,14 @@ export function makeValidationUseCases(deps: ValidationsDeps): ValidationUseCase
     listValidations: makeListValidations(deps),
     listMyValidations: makeListMyValidations(deps),
     dailyTotals: makeDailyTotals(deps),
-    validationStats: makeValidationStats(deps),
+    // Named across rather than passed whole: this use case spells its cache
+    // port `cache`, the same way `stats/login-stats.ts` does, and the deps above
+    // have to say *which* cache in a bag that will grow more of them.
+    validationStats: makeValidationStats({
+      validations: deps.validations,
+      cache: deps.statsCache,
+      clock: deps.clock,
+      cacheTtlSeconds: deps.statsCacheTtlSeconds,
+    }),
   };
 }

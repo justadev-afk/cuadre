@@ -50,7 +50,10 @@ type StatsReader = {
 
 export type ValidationStatsDeps = {
   readonly validations: StatsReader;
+  readonly cache: ValidationStatsCache;
   readonly clock: Clock;
+  /** How long a computed answer serves before it is read again. */
+  readonly cacheTtlSeconds: number;
 };
 
 /** A preset, or the two days a merchant picked on the calendar. */
@@ -128,6 +131,23 @@ export type ValidationStatsView = {
   readonly byKind: readonly KindTotal[];
 };
 
+/**
+ * A KV snapshot of one company's answer over one span, keyed by the caller.
+ *
+ * Six GROUP BYs over a quarter of a company's history is the most expensive
+ * read in the app, and it is asked again on every reload of a screen nobody
+ * types into — the answer for a span that has already closed cannot change at
+ * all, and the answer for a span ending today changes by one payment at a time.
+ * So it is computed once and parked (`container.ts` sets the TTL).
+ *
+ * The port is `get`/`put` over an opaque key: the use case knows what makes two
+ * questions the same question, the adapter knows what makes a KV key.
+ */
+export interface ValidationStatsCache {
+  get(key: string): Promise<ValidationStatsView | null>;
+  put(key: string, view: ValidationStatsView, ttlSeconds: number): Promise<void>;
+}
+
 export type ValidationStatsQuery = (input: ValidationStatsInput) => Promise<ValidationStatsView>;
 
 const SECONDS_PER_DAY = 86_400;
@@ -145,10 +165,20 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export function makeValidationStats({
   validations,
+  cache,
   clock,
+  cacheTtlSeconds,
 }: ValidationStatsDeps): ValidationStatsQuery {
   return async (input) => {
+    // The span is resolved *before* the cache is asked, because the span is
+    // half of what makes two questions the same question — and a preset is not
+    // a span until a clock has read it (§ `cacheKey`).
     const range = resolveRange(input, clock.nowSeconds());
+    const key = cacheKey(input.companyId, range);
+
+    const cached = await cache.get(key);
+    if (cached !== null) return cached;
+
     const rows = await validations.stats({
       companyId: input.companyId,
       from: range.from,
@@ -158,7 +188,7 @@ export function makeValidationStats({
     const series = fillDays(rows.byDay, range);
     const activeDays = rows.byDay.filter((day) => day.count > 0).length;
 
-    return {
+    const view: ValidationStatsView = {
       range,
       totalCount: rows.summary.count,
       totalAmountCents: rows.summary.amountCents,
@@ -176,7 +206,30 @@ export function makeValidationStats({
       bySourceBank: byMoney(rows.bySourceBank.map(fromSourceBank)),
       byKind: bothKinds(rows.byKind),
     };
+
+    await cache.put(key, view, cacheTtlSeconds);
+    return view;
   };
+}
+
+/**
+ * `la-espiga:last_7_days:1769385600-1769990399` — the company, then the span it
+ * actually asked about.
+ *
+ * Never the preset on its own: "últimos 7 días" is a different week tomorrow,
+ * and a key spelled `last_7_days` would go on serving last week's numbers under
+ * today's label. Resolving first also makes the key roll over by itself at
+ * midnight in Caracas, with no expiry to arrange.
+ *
+ * The preset stays in the key beside the span because two identical spans can
+ * still be two different questions: `today` and a calendar pick of the same day
+ * read the same rows and print a different subtitle.
+ *
+ * And the company is first because it is the boundary between merchants (§7).
+ * A key without it is not a slow screen, it is another shop's takings.
+ */
+function cacheKey(companyId: string, range: StatsRange): string {
+  return `${companyId}:${range.preset}:${range.from}-${range.to}`;
 }
 
 /**

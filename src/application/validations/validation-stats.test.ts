@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { ValidationStats as ValidationStatsRows } from '../../adapters/d1/validation.repository.ts';
 import { fixedClock, venezuelaDate } from '../../shared/clock.ts';
-import { MAX_STATS_DAYS, makeValidationStats } from './validation-stats.ts';
+import {
+  MAX_STATS_DAYS,
+  makeValidationStats,
+  type ValidationStatsView,
+} from './validation-stats.ts';
 
 /** 2026-02-01, 22:40 in Caracas — late enough that UTC has already turned over. */
 const NOW = 1_770_000_000;
@@ -31,9 +35,39 @@ function fakeValidations(rows: Partial<ValidationStatsRows> = {}) {
   };
 }
 
-function statsFor(rows: Partial<ValidationStatsRows> = {}) {
+/** The KV snapshot, as a Map that also records what TTL it was given. */
+function fakeCache() {
+  const entries = new Map<string, ValidationStatsView>();
+  const puts: Array<{ key: string; ttlSeconds: number }> = [];
+  return {
+    entries,
+    puts,
+    cache: {
+      async get(key: string): Promise<ValidationStatsView | null> {
+        return entries.get(key) ?? null;
+      },
+      async put(key: string, view: ValidationStatsView, ttlSeconds: number): Promise<void> {
+        entries.set(key, view);
+        puts.push({ key, ttlSeconds });
+      },
+    },
+  };
+}
+
+const TTL = 3600;
+
+function statsFor(rows: Partial<ValidationStatsRows> = {}, shared = fakeCache(), now = NOW) {
   const { validations, queries } = fakeValidations(rows);
-  return { queries, validationStats: makeValidationStats({ validations, clock: fixedClock(NOW) }) };
+  return {
+    queries,
+    ...shared,
+    validationStats: makeValidationStats({
+      validations,
+      cache: shared.cache,
+      clock: fixedClock(now),
+      cacheTtlSeconds: TTL,
+    }),
+  };
 }
 
 describe('the range', () => {
@@ -253,5 +287,83 @@ describe('the numbers over the charts', () => {
     // A company and a range, and nothing else: excluding sandbox is the
     // repository's SQL and there is no parameter here that could turn it off.
     expect(Object.keys(queries[0] ?? {}).sort()).toEqual(['companyId', 'from', 'to']);
+  });
+});
+
+/**
+ * Six GROUP BYs over a quarter is the heaviest read in the app, on the one
+ * screen whose every control is a whole new page load. What is cached is the
+ * *answer* — the fills, the ordering and the averages included — because
+ * re-deriving those from cached rows would be the second copy of a calculation
+ * that decides what a merchant believes about their month.
+ */
+describe('the cached answer', () => {
+  it('reads the database once and serves the repeat from KV', async () => {
+    const { validationStats, queries } = statsFor();
+
+    const first = await validationStats({ companyId: 'la-espiga', preset: 'last_30_days' });
+    const second = await validationStats({ companyId: 'la-espiga', preset: 'last_30_days' });
+
+    expect(queries).toHaveLength(1);
+    expect(second).toEqual(first);
+  });
+
+  it('parks it under the TTL it was built with', async () => {
+    const { validationStats, puts } = statsFor();
+
+    await validationStats({ companyId: 'la-espiga' });
+
+    expect(puts).toEqual([{ key: 'la-espiga:last_7_days:1769400000-1770004799', ttlSeconds: TTL }]);
+  });
+
+  it('never lets one company answer for another', async () => {
+    const shared = fakeCache();
+    const espiga = statsFor(
+      { summary: { count: 4, amountCents: 400, maxAmountCents: 100, payers: 4 } },
+      shared,
+    );
+    const aurora = statsFor(
+      { summary: { count: 9, amountCents: 900, maxAmountCents: 100, payers: 9 } },
+      shared,
+    );
+
+    const first = await espiga.validationStats({ companyId: 'la-espiga' });
+    const second = await aurora.validationStats({ companyId: 'dona-aurora' });
+
+    expect(first.totalCount).toBe(4);
+    expect(second.totalCount).toBe(9);
+    expect(aurora.queries).toHaveLength(1);
+  });
+
+  it('keys on the span the preset resolved to, so tomorrow is a new question', async () => {
+    const shared = fakeCache();
+    const today = statsFor({}, shared);
+    // The same words — "últimos 7 días" — a day later. A key spelled with the
+    // preset would still be serving this week's numbers under it.
+    const tomorrow = statsFor({}, shared, NOW + 86_400);
+
+    await today.validationStats({ companyId: 'la-espiga', preset: 'last_7_days' });
+    await tomorrow.validationStats({ companyId: 'la-espiga', preset: 'last_7_days' });
+
+    expect(tomorrow.queries).toHaveLength(1);
+    expect(shared.entries.size).toBe(2);
+  });
+
+  it('tells a preset apart from a calendar pick of the same day', async () => {
+    const shared = fakeCache();
+    const { validationStats, queries } = statsFor({}, shared);
+
+    const preset = await validationStats({ companyId: 'la-espiga', preset: 'today' });
+    const picked = await validationStats({
+      companyId: 'la-espiga',
+      from: '2026-02-01',
+      to: '2026-02-01',
+    });
+
+    // Same rows, same span — and a different subtitle, which is why they cannot
+    // share a key.
+    expect(preset.range.preset).toBe('today');
+    expect(picked.range.preset).toBe('custom');
+    expect(queries).toHaveLength(2);
   });
 });

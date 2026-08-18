@@ -433,6 +433,18 @@ gateway at call time.
   still short-circuits a bank call is a *stored charge* — the idempotency key and
   the "ya cobrado" pre-flight (§5) — and both answer from a committed row, which
   is a fact, not a cache.
+- **Off that path, a read is cached when it is heavy and the answer is not a
+  till.** Two are: the login pitch's figures (one minute, so an anonymous page
+  is a KV read and not a scan) and the **statistics screen** (one hour, keyed by
+  `company + resolved span`, `KvValidationStatsCache`). Both go through the same
+  shape — a narrow `get`/`put` port the use case declares, a KV store behind it,
+  the TTL set in `container.ts`. What makes statistics cacheable is that it
+  answers the *shape* of a period rather than the state of a counter: the price
+  is that a payment validated now reaches that screen within the hour, which is
+  the panel's question and not this one's. The key carries the span the preset
+  resolved to, never the preset's name — `last_7_days` is a different week
+  tomorrow — and the company id leads it, because that is the boundary between
+  merchants (§7) and a key without it serves another shop's takings.
 - **No staging environment.** One Worker, one database, one set of secrets. The
   bank's sandbox is selected per *account* (the `environment` column), not per
   deployment — a company can hold production and sandbox accounts at once, so a

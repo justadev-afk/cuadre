@@ -13,6 +13,13 @@
  * the calendar — which is what makes a view shareable and reloadable, and what
  * keeps this a Server Component.
  *
+ * **And then it is remembered for an hour**, in KV, keyed by the company and the
+ * span it resolved to. Every control here is a whole page load — a preset, a
+ * calendar, the back button — so the same heavy read is asked again and again
+ * for an answer that is the *shape* of a period rather than the state of a till.
+ * A payment validated right now therefore lands on this screen within the hour;
+ * "¿cuánto llevo hoy?" is the panel's question and the panel is not cached.
+ *
  * **Sandbox is not here at all.** Not as a filter, not as a toggle: every number
  * on this screen is money, and a test payment is not money (§5). That is also
  * why the environment picker from the panel is absent — there is nothing here
