@@ -675,10 +675,26 @@ export function CheckoutForm({
           />
         </div>
 
-        {/* A pago móvil is made from a phone, so it asks for one beside the
-            payer's bank; a transferencia asked for its account up top, and the
+        {/* The bank leads and the phone follows it, in reading order and so in
+            tab order — because the bank is what *decides* the phone: a custom
+            brand fills the field in when it is picked (Ubii → 0414-2698301),
+            and picking it after typing would overwrite what was just typed. A
+            transferencia asked for its account up top and has no phone, so the
             bank is left alone on the row. */}
         <div className={cn('grid gap-3', spec?.needsPayerPhone ? 'grid-cols-2' : 'grid-cols-1')}>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={bankId}>Banco emisor</Label>
+            <SearchableSelect
+              id={bankId}
+              options={bankOptions(customPayerBanks)}
+              value={bankCode}
+              onChange={chooseBank}
+              placeholder="Elige el banco"
+              searchPlaceholder="Buscar banco…"
+              disabled={transferBlocked}
+            />
+          </div>
+
           {spec?.needsPayerPhone && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={phoneId}>Teléfono del pagador</Label>
@@ -701,19 +717,6 @@ export function CheckoutForm({
               />
             </div>
           )}
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={bankId}>Banco emisor</Label>
-            <SearchableSelect
-              id={bankId}
-              options={bankOptions(customPayerBanks)}
-              value={bankCode}
-              onChange={chooseBank}
-              placeholder="Elige el banco"
-              searchPlaceholder="Buscar banco…"
-              disabled={transferBlocked}
-            />
-          </div>
         </div>
 
         {/* The amount shares its row with the date wherever the kind takes one —
