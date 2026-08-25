@@ -44,6 +44,7 @@ import {
   payerBankCatalogue,
 } from '../../../domain/payer-bank.ts';
 import { formatPhoneForDisplay, normalisePhone } from '../../../domain/phone.ts';
+import { bankSearchTerms } from '../../../domain/sudeban.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { PaymentKindMark } from '../../_components/payment-kind-mark.tsx';
@@ -218,6 +219,10 @@ function bankOptions(custom: readonly PayerBank[]): readonly SelectOption[] {
     value: bank.code,
     label: bank.name,
     hint: bank.sudebanCode,
+    // A bank that renamed itself is still found by the name on the receipt in
+    // the customer's hand — matched, never drawn (`bankSearchTerms` carries the
+    // current name too, and the row already shows that).
+    searchTerms: bankSearchTerms(bank.code) ?? undefined,
     group: isSudebanCode(bank.code) ? 'Bancos' : 'Terceros',
   }));
 }

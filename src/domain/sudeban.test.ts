@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { findBank, isValidBankCode, SUDEBAN_BANKS, searchBanks } from './sudeban.ts';
+import {
+  bankSearchTerms,
+  findBank,
+  isValidBankCode,
+  SUDEBAN_BANKS,
+  searchBanks,
+} from './sudeban.ts';
 
 describe('SUDEBAN_BANKS', () => {
   it('holds the 26 banks Sudeban lists', () => {
@@ -33,6 +39,11 @@ describe('findBank', () => {
     { code: '0105', expected: 'Mercantil', why: 'mid-list' },
     { code: '0601', expected: 'Instituto Municipal de Crédito Popular', why: 'the last entry' },
     { code: '0178', expected: 'N58 Banco Digital', why: 'a recent one' },
+    {
+      code: '0175',
+      expected: 'BDT Banco Digital de los Trabajadores',
+      why: 'renamed from Banco Bicentenario in 2024; the code did not move',
+    },
     { code: '134', expected: null, why: 'not zero-padded: not a bank code' },
     { code: ' 0134', expected: null, why: 'a leading space is not trimmed away' },
     { code: '0134 ', expected: null, why: 'nor a trailing one' },
@@ -83,11 +94,18 @@ describe('searchBanks', () => {
     // by name across several banks
     {
       query: 'banco de',
-      expected: ['0102', '0163'],
-      why: 'a multi-word fragment, and it also matches inside "Banco del Tesoro"',
+      expected: ['0102', '0163', '0175'],
+      why: 'a multi-word fragment, matching inside "Banco del Tesoro" and BDT\'s former name too',
     },
     { query: '100', expected: ['0156'], why: 'digits inside a name' },
     { query: 'mi banco', expected: ['0169'], why: 'a name that is a substring of nothing else' },
+
+    // a former name: the receipts in circulation still say it
+    { query: 'bicentenario', expected: ['0175'], why: 'what the customer says' },
+    { query: 'Bicentenario', expected: ['0175'], why: 'and how they capitalise it' },
+    { query: 'bdt', expected: ['0175'], why: 'the name it goes by now' },
+    { query: 'trabajadores', expected: ['0175'], why: 'the middle of both names' },
+    { query: '0175', expected: ['0175'], why: 'the code, which never changed' },
 
     // nothing
     { query: 'santander', expected: [], why: 'not a Venezuelan bank' },
@@ -118,5 +136,29 @@ describe('searchBanks', () => {
       expect(codesFor(bank.name)).toContain(bank.code);
       expect(codesFor(bank.code)).toContain(bank.code);
     }
+  });
+
+  it('finds every bank by each name it used to answer to', () => {
+    for (const bank of SUDEBAN_BANKS) {
+      for (const former of bank.alsoKnownAs ?? []) {
+        expect(codesFor(former)).toContain(bank.code);
+      }
+    }
+  });
+});
+
+describe('bankSearchTerms', () => {
+  it('carries the current name and every former one, so the counter matches both', () => {
+    const terms = bankSearchTerms('0175') ?? '';
+    expect(terms).toContain('BDT Banco Digital de los Trabajadores');
+    expect(terms).toContain('Bicentenario');
+  });
+
+  it('is just the name for a bank that never renamed', () => {
+    expect(bankSearchTerms('0134')).toBe('Banesco');
+  });
+
+  it('is null for a code nobody holds', () => {
+    expect(bankSearchTerms('0999')).toBeNull();
   });
 });

@@ -29,6 +29,12 @@ export type SelectOption = {
   /** A dim leading tag — the bank's code, for the bank list. */
   readonly hint?: string;
   /**
+   * Extra spellings the filter matches on but nothing renders — a bank's former
+   * name, so a customer saying "Bicentenario" still finds the row that now says
+   * BDT. Empty or absent leaves the filter exactly as it was.
+   */
+  readonly searchTerms?: string;
+  /**
    * The heading this option sits under, if the list is divided at all.
    *
    * Consecutive options sharing one are drawn under it, in the order the caller
@@ -262,7 +268,8 @@ export function SearchableSelect({
         }}
       >
         <Command
-          // Diacritic-folding contains, over the label and the Sudeban code.
+          // Diacritic-folding contains, over the label, the Sudeban code and
+          // whatever former names the option carries.
           filter={(itemValue, query) => (fold(itemValue).includes(fold(query)) ? 1 : 0)}
         >
           {searchable && (
@@ -284,7 +291,7 @@ export function SearchableSelect({
                 {run.options.map((option) => (
                   <CommandItem
                     key={option.value}
-                    value={`${option.label} ${option.hint ?? ''}`}
+                    value={`${option.label} ${option.hint ?? ''} ${option.searchTerms ?? ''}`}
                     onSelect={() => {
                       onChange(option.value);
                       close();
