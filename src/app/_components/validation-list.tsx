@@ -16,8 +16,8 @@ import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import type { Validation } from '../../adapters/d1/validation.repository.ts';
 import { formatBolivares } from '../../domain/money.ts';
+import { type PayerBank, payerBankName } from '../../domain/payer-bank.ts';
 import { formatPhoneForDisplay } from '../../domain/phone.ts';
-import { findBank } from '../../domain/sudeban.ts';
 import { bankAccountLabel } from '../_lib/bank-account-label.ts';
 import { amountDigits, formatValidatedAt } from '../_lib/venezuela-format.ts';
 import { Icon } from './icon.tsx';
@@ -28,12 +28,15 @@ import { ValidatedPaymentModal } from './validated-payment-modal.tsx';
 const BANK_NAMES: Record<string, string> = { banesco: 'Banesco' };
 
 /**
- * The bank the money came from, as a name. An unknown Sudeban code shows as its
- * four digits rather than as nothing: the row records what the bank was asked
- * with, and that stays true even when our table of codes has moved on.
+ * The bank the money came from, as a name — Sudeban's twenty-six from the
+ * constant, and the custom brands (Ubii) from the list the page resolved.
+ *
+ * An unresolvable code shows as the code rather than as nothing: the row records
+ * what the payer picked, and that stays true after Sudeban adds a bank or a
+ * brand is renamed.
  */
-function payerBank(v: Validation): string {
-  return findBank(v.sourceBankId)?.name ?? v.sourceBankId;
+function payerBank(v: Validation, custom: readonly PayerBank[]): string {
+  return payerBankName(v.sourceBankId, custom);
 }
 
 /** And the shop's own side — the connection that received it. */
@@ -47,11 +50,18 @@ export function ValidationList({
   showCashier = false,
   merchantName,
   merchantRif,
+  payerBanks = [],
   skeleton = false,
   rows = SKELETON_ROWS,
 }: {
   items?: readonly Validation[];
   nowSeconds?: number;
+  /**
+   * The payer brands Sudeban does not list, resolved by the page. Absent is
+   * safe: those rows then print their code, which is still true — it is just
+   * not the brand's name.
+   */
+  payerBanks?: readonly PayerBank[];
   /** The company panel shows who validated each payment; a cashier's own does not. */
   showCashier?: boolean;
   /** Printed at the top of a re-opened receipt, under "CUADRE". */
@@ -112,7 +122,9 @@ export function ValidationList({
                 <td className="tabular-nums text-muted-foreground">
                   {v.payerPhone === null ? '—' : formatPhoneForDisplay(v.payerPhone)}
                 </td>
-                <td className="whitespace-nowrap text-muted-foreground">{payerBank(v)}</td>
+                <td className="whitespace-nowrap text-muted-foreground">
+                  {payerBank(v, payerBanks)}
+                </td>
                 <td className="whitespace-nowrap">
                   {receivingBank(v)}
                   {v.isSandbox && (
@@ -173,7 +185,7 @@ export function ValidationList({
             {/* The two banks, in the direction the money moved. A phone has no
                 columns to head, so the arrow is what says which is which. */}
             <span className="text-xs text-muted-foreground">
-              {payerBank(v)} <Icon name="arrow-right" /> {receivingBank(v)}
+              {payerBank(v, payerBanks)} <Icon name="arrow-right" /> {receivingBank(v)}
             </span>
             {showCashier && v.cashierName && (
               <span className="text-xs text-muted-foreground">Cajero · {v.cashierName}</span>
@@ -190,7 +202,7 @@ export function ValidationList({
             reference: viewing.reference,
             payerPhone: viewing.payerPhone,
             kind: viewing.kind,
-            payerBankName: payerBank(viewing),
+            payerBankName: payerBank(viewing, payerBanks),
             bankName: BANK_NAMES[viewing.bank] ?? viewing.bank,
             // Named exactly as the table's column and the counter's dropdown
             // name it, so a re-opened receipt matches the row it came from.

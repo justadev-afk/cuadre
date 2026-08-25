@@ -8,10 +8,25 @@
  * only what it shows — each bank's name, the merchant's own label for it,
  * whether it is a sandbox, and how many digits of the reference it is asked with
  * — never a credential.
+ *
+ * The *payer's* side is resolved here too: Sudeban's twenty-six are a constant
+ * the form imports, and the custom brands (Ubii) are rows, so the form is handed
+ * those. What it gets is the name it offers and the phone it prefills — never
+ * the Sudeban code the question is really sent with, which is how we route and
+ * not something a browser has any business being able to disagree about.
+ *
+ * And *which* payer bank the till used last, off the cookie the browser wrote
+ * (`last-payer-bank.ts`). Resolved here rather than after mount so the picker —
+ * and the phone a custom brand dictates — are right in the first paint instead
+ * of correcting themselves a frame later, under a cashier already typing.
  */
+import { cookies } from 'next/headers';
+
+import { findPayerBank, payerBankName } from '../../../domain/payer-bank.ts';
 import { requireArea } from '../../_lib/area-guard.ts';
 import { container } from '../../_lib/current-session.ts';
 import { CheckoutForm } from './checkout-form.tsx';
+import { LAST_PAYER_BANK_COOKIE } from './last-payer-bank.ts';
 import { NoBankAccount } from './no-bank-account.tsx';
 
 export async function CheckoutContent({ express = false }: { express?: boolean } = {}) {
@@ -27,6 +42,14 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
   // A cashier always has a company; the type carries null only for a platform
   // admin, whom `requireArea('counter')` already turned away.
   const accounts = companyId ? await container().banking.listBankAccounts({ companyId }) : [];
+  // Platform-wide, and a handful of rows: the payer brands Sudeban does not list.
+  const customPayerBanks = await container().customBanks.listPayerBankOptions();
+  // The last pick, checked against the catalogue before it is trusted with a
+  // paint: a brand switched off since the last shift, or a code someone typed
+  // into their own cookie, resolves to nothing and the picker simply opens
+  // empty.
+  const remembered = (await cookies()).get(LAST_PAYER_BANK_COOKIE)?.value ?? '';
+  const lastPayerBank = findPayerBank(remembered, customPayerBanks) === null ? '' : remembered;
   const usable = accounts.filter((a) => a.status === 'active' || a.status === 'needs_reverify');
   // The bank's own facts, off the registry rather than off a list kept here: its
   // display name, and how many digits of the reference it wants to be asked
@@ -92,6 +115,9 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
     isSandbox: v.isSandbox,
     latencyMs: v.latencyMs,
     sourceBankId: v.sourceBankId,
+    // Resolved here, where the brands are already in hand — the till prints a
+    // name and never a slug.
+    sourceBankName: payerBankName(v.sourceBankId, customPayerBanks),
     bankAccountId: v.bankAccountId,
   }));
 
@@ -100,6 +126,8 @@ export async function CheckoutContent({ express = false }: { express?: boolean }
   return (
     <CheckoutForm
       accounts={accountViews}
+      customPayerBanks={customPayerBanks}
+      lastPayerBank={lastPayerBank}
       recent={recent}
       turnoCount={turnoCount}
       turnoCents={turnoCents}

@@ -20,6 +20,8 @@ export default async function MyValidationsPage() {
     : null;
   const merchantName = detail?.ok ? detail.value.company.name : undefined;
   const merchantRif = detail?.ok ? detail.value.company.rif : undefined;
+  // The payer brands Sudeban does not list, so a row prints "Ubii" and not a slug.
+  const payerBanks = await container().customBanks.listPayerBankOptions();
 
   const list =
     session.companyId === null
@@ -37,6 +39,7 @@ export default async function MyValidationsPage() {
       initialNowSeconds={list.to}
       merchantName={merchantName}
       merchantRif={merchantRif}
+      payerBanks={payerBanks}
     />
   );
 }

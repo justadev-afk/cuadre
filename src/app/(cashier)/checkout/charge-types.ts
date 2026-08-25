@@ -76,6 +76,16 @@ export type ConfirmedCharge = {
    * both sides of a payment, so both sides travel with it.
    */
   readonly sourceBankId: string;
+  /**
+   * And that bank as a name, resolved on the server.
+   *
+   * Sudeban's twenty-six are a constant the screen could look up itself; the
+   * custom brands (Ubii) are rows, and a till that had to fetch them to print a
+   * receipt is a till that prints a code when the fetch is slow. So the name
+   * travels with the charge — one resolution, at the moment the payment was
+   * confirmed, which is also the moment the receipt states.
+   */
+  readonly sourceBankName: string;
 };
 
 /**

@@ -31,6 +31,23 @@ import type { ValidationCursor } from './validation-cursor.ts';
 /** Mirrors the `search_mode` CHECK, which mirrors the gateway's own strategies. */
 export type SearchMode = FoundPayment['strategy'];
 
+/**
+ * The JSON on `validations.metadata`. Every field is optional and the whole
+ * object is absent far more often than not: this is where a fact that belongs
+ * to one kind of payment goes, rather than a column every row would carry null
+ * in.
+ */
+export type ValidationMetadata = {
+  /**
+   * What the bank was actually asked with, when that differs from what the row
+   * records — a custom payer brand's real Sudeban code and phone.
+   */
+  readonly realTarget?: {
+    readonly sourceBankId: string;
+    readonly payerPhone: string | null;
+  };
+};
+
 export type Validation = {
   readonly id: string;
   readonly companyId: string;
@@ -64,6 +81,17 @@ export type Validation = {
   readonly idempotencyKey: string;
   /** When the counter confirmed it. */
   readonly createdAt: number;
+  /**
+   * The facts about this payment that are not columns — `null` on almost every
+   * row, and today only ever a `realTarget`.
+   *
+   * A custom payer brand (Ubii) is recorded under its own code and the phone the
+   * customer read out, while the bank was asked with a Sudeban code and a phone
+   * of ours. The row of record has to hold both or a support call about that
+   * payment has no way back to the movement, so what was *asked* lives here
+   * beside what was *recorded* in the columns. See `src/domain/payer-bank.ts`.
+   */
+  readonly metadata: ValidationMetadata | null;
   /**
    * The cashier's display name, from a LEFT JOIN on `users`. Only the list
    * queries populate it; the insert and idempotency paths never join, so it is
@@ -231,7 +259,7 @@ const IDEMPOTENCY_INDEX: UniqueIndex = {
 const COLUMNS = `id, company_id, cashier_id, bank_account_id, bank, kind, is_sandbox,
                  control_code, reference, reference_key, amount_cents, currency,
                  payer_phone, source_bank_id, trn_at, latency_ms, search_mode,
-                 idempotency_key, created_at`;
+                 idempotency_key, created_at, metadata`;
 
 /**
  * The list columns, aliased for the two LEFT JOINs: the cashier's name, and the
@@ -240,8 +268,8 @@ const COLUMNS = `id, company_id, cashier_id, bank_account_id, bank, kind, is_san
 const LIST_COLUMNS = `v.id, v.company_id, v.cashier_id, v.bank_account_id, v.bank, v.kind,
                  v.is_sandbox, v.control_code, v.reference, v.reference_key, v.amount_cents,
                  v.currency, v.payer_phone, v.source_bank_id, v.trn_at, v.latency_ms,
-                 v.search_mode, v.idempotency_key, v.created_at, u.name AS cashier_name,
-                 a.label AS account_label`;
+                 v.search_mode, v.idempotency_key, v.created_at, v.metadata,
+                 u.name AS cashier_name, a.label AS account_label`;
 
 /**
  * Both joins are LEFT, and for the same reason: a validation outlives the rows
@@ -298,8 +326,8 @@ export class D1ValidationRepository implements ValidationRepository {
                (id, company_id, cashier_id, bank_account_id, bank, kind, is_sandbox,
                 control_code, reference, reference_key, amount_cents, currency,
                 payer_phone, source_bank_id, trn_at, latency_ms, search_mode,
-                idempotency_key, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                idempotency_key, created_at, metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING ${COLUMNS}`,
         )
         .bind(
@@ -322,6 +350,9 @@ export class D1ValidationRepository implements ValidationRepository {
           input.searchMode,
           input.idempotencyKey,
           epochToIso(input.createdAt),
+          // Serialised here rather than by the use case: the column is TEXT and
+          // the domain object is the shape everything above this line reads.
+          input.metadata === null ? null : JSON.stringify(input.metadata),
         )
         .first<D1Row>();
 
@@ -587,10 +618,29 @@ export function toValidation(row: D1Row): Validation {
     searchMode: toSearchMode(optionalText(row, 'search_mode')),
     idempotencyKey: text(row, 'idempotency_key'),
     createdAt: epochFromIso(row, 'created_at'),
+    metadata: toMetadata(optionalText(row, 'metadata')),
     // Present only on list rows (the LEFT JOINs); absent → null on other paths.
     cashierName: optionalText(row, 'cashier_name'),
     accountLabel: optionalText(row, 'account_label'),
   };
+}
+
+/**
+ * The metadata column, parsed — and **never** a reason to fail a read.
+ *
+ * A row whose JSON will not parse is still a confirmed payment, and every
+ * screen that shows one reads the columns rather than this. Throwing here would
+ * take a merchant's whole list away over a side note, so unreadable metadata is
+ * simply absent metadata.
+ */
+function toMetadata(value: string | null): ValidationMetadata | null {
+  if (value === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null ? (parsed as ValidationMetadata) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

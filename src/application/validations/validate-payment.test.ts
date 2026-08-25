@@ -7,6 +7,7 @@ import type {
   Validation,
 } from '../../adapters/d1/validation.repository.ts';
 import type { ValidationAttempt } from '../../adapters/metrics/attempt.metrics.ts';
+import type { CustomPayerBank } from '../../domain/payer-bank.ts';
 import { type Clock, fixedClock } from '../../shared/clock.ts';
 import { seal } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
@@ -117,6 +118,7 @@ function storedValidation(overrides: Partial<Validation> = {}): Validation {
     searchMode: 'reference_tail_and_phone',
     idempotencyKey: 'idem-1',
     createdAt: NOW - 60,
+    metadata: null,
     ...overrides,
   };
 }
@@ -281,6 +283,8 @@ async function harness(
     racing?: readonly Validation[];
     digits?: string[];
     clock?: Clock;
+    /** The payer brands Sudeban does not list, as this run's catalogue. */
+    customBanks?: readonly CustomPayerBank[];
   } = {},
 ) {
   const account = options.account === null ? null : await bankAccount(options.account ?? {});
@@ -297,6 +301,11 @@ async function harness(
     },
     validations,
     banks,
+    customBanks: {
+      async listActive() {
+        return options.customBanks ?? [];
+      },
+    },
     metrics,
     clock: options.clock ?? fixedClock(NOW),
     ids: fakeIdGen({ uuids: ['validation-1'], digits: options.digits ?? ['654321'] }),
@@ -305,6 +314,81 @@ async function harness(
 
   return { validatePayment, validations, calls, queries, points, account };
 }
+
+const UBII: CustomPayerBank = {
+  code: 'ubii',
+  name: 'Ubii',
+  targetBankId: '0104',
+  targetPhone: '+584142698301',
+  status: 'active',
+};
+
+describe('a custom payer brand', () => {
+  it('asks the bank with the real bank and the fixed phone, and records the brand', async () => {
+    const { validatePayment, validations, queries } = await harness({
+      script: { payment: ok(found()) },
+      customBanks: [UBII],
+    });
+
+    const result = await validatePayment({
+      ...INPUT,
+      sourceBankId: 'ubii',
+      // Whatever the customer read out. It is not what travels.
+      payerPhone: '0412-0324942',
+    });
+
+    expect(result.ok).toBe(true);
+    // What went to the bank: Venezolano de Crédito, and our own number.
+    expect(queries[0]).toMatchObject({
+      sourceBankId: '0104',
+      payerPhone: '+584142698301',
+    });
+    // What the row records: the brand the customer paid from, and their phone.
+    // These are two different facts and the row is not allowed to lose either.
+    expect(validations.rows[0]).toMatchObject({
+      sourceBankId: 'ubii',
+      payerPhone: '+584120324942',
+      metadata: { realTarget: { sourceBankId: '0104', payerPhone: '+584142698301' } },
+    });
+  });
+
+  it('sends the phone the cashier typed when the brand carries none', async () => {
+    const { validatePayment, validations, queries } = await harness({
+      script: { payment: ok(found()) },
+      customBanks: [{ ...UBII, targetPhone: null }],
+    });
+
+    await validatePayment({ ...INPUT, sourceBankId: 'ubii' });
+
+    expect(queries[0]).toMatchObject({ sourceBankId: '0104', payerPhone: '+584143125566' });
+    // Still a rewrite — the bank code changed — so the row still says what was
+    // asked, and the phone half of it is the one that was typed.
+    expect(validations.rows[0]?.metadata).toEqual({
+      realTarget: { sourceBankId: '0104', payerPhone: '+584143125566' },
+    });
+  });
+
+  it('leaves no metadata on an ordinary Sudeban payment', async () => {
+    const { validatePayment, validations } = await harness({ script: { payment: ok(found()) } });
+    await validatePayment(INPUT);
+    expect(validations.rows[0]?.metadata).toBeNull();
+  });
+
+  it('refuses a brand that is not in the catalogue, without asking the bank', async () => {
+    // A brand switched off in the admin panel is gone from `listActive`, which
+    // is what taking one out of the picker has to mean at the counter.
+    const { validatePayment, calls } = await harness({
+      script: { payment: ok(found()) },
+      customBanks: [],
+    });
+
+    expect(await validatePayment({ ...INPUT, sourceBankId: 'ubii' })).toEqual({
+      ok: false,
+      error: 'invalid_input',
+    });
+    expect(calls.findPayment).toBe(0);
+  });
+});
 
 describe('validate payment', () => {
   it('confirms from the bank movement, not from what was typed', async () => {

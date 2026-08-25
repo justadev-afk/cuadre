@@ -210,6 +210,11 @@ gateway at call time.
   the screen's: `referenceDigits` on the port (six, for Banesco). The counter's
   field, its placeholder and the refusal that guards it all read that number, so
   a second bank moves them without a line changing on the till.
+- **The bank a merchant *connects* and the bank a customer *pays from* are two
+  different catalogues.** This section is the first: `bank_accounts.bank` → a
+  gateway. The payer's side is `src/domain/sudeban.ts` — the twenty-six codes —
+  plus the **custom payer brands** in `custom_payer_banks` (§4b). Neither ever
+  reaches for the other's list.
 - **Adding a bank is an adapter plus a registry entry.** Never a migration:
   `bank` is plain TEXT with no CHECK constraint, on purpose. If a feature needs
   a per-bank branch in a use case, it is designed wrong.
@@ -219,6 +224,45 @@ gateway at call time.
   comparison eventually approves a payment it should not have.
 - `null` from `findPayment` is a **success**. It means "the bank does not report
   this payment yet" — the copy says *Todavía no aparece*, never "rejected".
+
+### 4b. Custom payer brands — Ubii
+
+A customer can pay from a brand Sudeban does not list. Ubii is the first: the
+receipt says Ubii, so the picker says Ubii — but an Ubii pago móvil lands in
+**Venezolano de Crédito (0104)** against a fixed phone of ours, so that is what
+the bank is asked with.
+
+- **The catalogues cannot collide, by construction.** A Sudeban code is exactly
+  four digits and a custom code never is (`isCustomPayerBankCode`: a slug
+  starting with a letter). `findPayerBank` therefore needs no precedence rule,
+  and a four-digit code costs no database read at all — which is why the counter,
+  the charge endpoint and the statistics screen each read `custom_payer_banks`
+  only when the code in hand *cannot* be Sudeban's.
+- **Recorded ≠ asked, and the row keeps both.** `validations.source_bank_id` and
+  `payer_phone` hold what the cashier picked and what the customer read out —
+  that is what a listing, a receipt and an argument are about. What travelled is
+  `validations.metadata.realTarget` (`{sourceBankId, payerPhone}`), written only
+  when the two differ. Without it a support call about an Ubii payment has no way
+  back to the movement at BVC.
+- **The rewrite is one pure function**, `askedPayer` in
+  `src/domain/payer-bank.ts`, and it is applied in `validatePayment` and nowhere
+  else. A brand with no `targetPhone` rewrites only the bank code and the
+  cashier's phone travels; a kind that sends no phone at all (a transferencia)
+  never gets one invented for it.
+- **The counter prefills, it does not impose.** Picking a brand with a phone
+  writes it into the field, still editable — and whatever is left there is what
+  gets recorded. The browser is never told the target bank: it is how we route,
+  not something a screen may disagree with the server about.
+- **Names are resolved where the row is read**, from `payerBankName(code,
+  custom)`. The pages pass the active brands down (`payerBanks` on
+  `ValidationList`); the confirmed charge carries `sourceBankName` on the wire so
+  a till never fetches to print a receipt; the statistics screen resolves the
+  label **after** its hour-long cache, so a rename shows immediately.
+- **Configured in the platform admin panel** (`/admin/custom-banks`): name,
+  code (immutable — a payment history already names it), target Sudeban bank,
+  optional fixed phone, and a switch. One dialog serves create and edit (§11).
+  Nothing is deleted; a brand is switched off and keeps naming its payments, and
+  `validatePayment` refuses a code that is no longer active.
 
 ---
 
@@ -330,6 +374,11 @@ gateway at call time.
   that is still true. Each bank stores whatever it needs in there and nothing
   outside its adapter reads the shape. What survives in the clear is the last 6
   of the operate client id, which is all the UI shows.
+- **`validations.metadata` is JSON for what is not a column**, nullable and null
+  on almost every row. Today it holds one thing, `realTarget` (§4b). It is TEXT,
+  like everything else here, and an unreadable value reads as *absent* rather
+  than failing the row — a confirmed payment is never taken off a merchant's
+  screen over a side note.
 - **IPs are stored hashed** with `IP_PEPPER`, never raw.
 - **Migrations** are numbered and forward-only. A destructive migration ships
   alone, after a backup, never with feature work.

@@ -8,6 +8,7 @@
  * so that a test can freeze both.
  */
 import type { BankAccountRepository } from '../../adapters/d1/bank-account.repository.ts';
+import type { CustomPayerBankRepository } from '../../adapters/d1/custom-payer-bank.repository.ts';
 import type { ValidationRepository } from '../../adapters/d1/validation.repository.ts';
 import type { AttemptMetrics } from '../../adapters/metrics/attempt.metrics.ts';
 import type { Clock } from '../../shared/clock.ts';
@@ -33,6 +34,12 @@ export type ValidationsDeps = {
   readonly banks: {
     get(bank: BankId): BankGateway;
   };
+  /**
+   * The payer brands Sudeban does not list. Both the counter (which resolves
+   * where a custom brand's question really goes) and the statistics screen
+   * (which names one back) read them.
+   */
+  readonly customBanks: CustomPayerBankRepository;
   readonly metrics: AttemptMetrics;
   readonly clock: Clock;
   readonly ids: IdGen;
@@ -61,6 +68,7 @@ export function makeValidationUseCases(deps: ValidationsDeps): ValidationUseCase
     validationStats: makeValidationStats({
       validations: deps.validations,
       cache: deps.statsCache,
+      customBanks: deps.customBanks,
       clock: deps.clock,
       cacheTtlSeconds: deps.statsCacheTtlSeconds,
     }),

@@ -27,6 +27,8 @@ export const API = {
 
   changePassword: '/api/profile/password',
   companiesCreate: '/api/companies/create',
+  /** One endpoint for both halves of the same question — see §11. */
+  customBanksSave: '/api/custom-banks/save',
 
   /** The counter's two reads-and-writes. JSON in, JSON out — not a form post. */
   charge: '/api/checkout/charge',

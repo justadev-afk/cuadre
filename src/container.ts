@@ -14,6 +14,7 @@ import { CloudflareAttemptInsights } from './adapters/analytics/attempt-insights
 import { BankRegistry } from './adapters/banks/registry.ts';
 import { D1BankAccountRepository } from './adapters/d1/bank-account.repository.ts';
 import { D1CompanyRepository } from './adapters/d1/company.repository.ts';
+import { D1CustomPayerBankRepository } from './adapters/d1/custom-payer-bank.repository.ts';
 import { D1PasswordResetRepository } from './adapters/d1/password-reset.repository.ts';
 import { D1StatsRepository } from './adapters/d1/stats.repository.ts';
 import { D1UserRepository } from './adapters/d1/user.repository.ts';
@@ -27,6 +28,7 @@ import { AnalyticsEngineAttemptMetrics } from './adapters/metrics/attempt.metric
 import { makeAuthUseCases } from './application/auth/factory.ts';
 import { makeBankingUseCases } from './application/banking/factory.ts';
 import { makeCompanyUseCases } from './application/companies/factory.ts';
+import { makeCustomBankUseCases } from './application/custom-banks/factory.ts';
 import { makeEmployeeUseCases } from './application/employees/factory.ts';
 import { makeObservabilityUseCases } from './application/observability/factory.ts';
 import { makeStatsUseCases } from './application/stats/factory.ts';
@@ -63,6 +65,8 @@ export function buildContainer(rawEnv: Bindings) {
   const bankAccounts = new D1BankAccountRepository(rawEnv.DB);
   const validationRows = new D1ValidationRepository(rawEnv.DB);
   const resets = new D1PasswordResetRepository(rawEnv.DB);
+  // Platform-wide, and tiny: the payer brands Sudeban does not list.
+  const customBanks = new D1CustomPayerBankRepository(rawEnv.DB);
 
   const sessions = new KvSessionStore(rawEnv.SESSIONS, clock);
   // The one-active-session pointer shares the SESSIONS namespace: it is written
@@ -122,6 +126,7 @@ export function buildContainer(rawEnv: Bindings) {
     // The container is the one place both names meet, so it just passes each.
     companies: makeCompanyUseCases({ companies, users, bankAccounts, clock, idGen: ids }),
     employees: makeEmployeeUseCases({ users, sessions, clock, idGen: ids }),
+    customBanks: makeCustomBankUseCases({ customBanks, clock }),
     banking: makeBankingUseCases({
       banks,
       accounts: bankAccounts,
@@ -140,6 +145,7 @@ export function buildContainer(rawEnv: Bindings) {
       statsCacheTtlSeconds: 3600,
       accounts: bankAccounts,
       banks,
+      customBanks,
       metrics,
       credsKey: vars.CREDS_KEY,
       clock,

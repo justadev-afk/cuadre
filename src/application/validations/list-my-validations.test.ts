@@ -36,6 +36,7 @@ function validation(overrides: Partial<Validation> = {}): Validation {
     searchMode: 'exact_reference',
     idempotencyKey: 'idem-1',
     createdAt: NOW - 300,
+    metadata: null,
     ...overrides,
   };
 }

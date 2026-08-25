@@ -102,7 +102,18 @@ function CommandGroup({
   return (
     <CommandPrimitive.Group
       data-slot="command-group"
-      className={cn('overflow-hidden text-foreground', className)}
+      className={cn(
+        'overflow-hidden text-foreground',
+        // A group only draws a heading when it was given one, so an ungrouped
+        // list is byte for byte what it was. The kicker is the app's — 10px,
+        // uppercase, tracked — so a heading inside a dropdown reads as the same
+        // kind of label as the ones over the panes behind it.
+        '[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-2.5 [&_[cmdk-group-heading]]:pb-1',
+        '[&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-normal',
+        '[&_[cmdk-group-heading]]:tracking-[0.1em] [&_[cmdk-group-heading]]:text-muted-foreground',
+        '[&_[cmdk-group-heading]]:uppercase',
+        className,
+      )}
       {...props}
     />
   );

@@ -17,6 +17,8 @@
  */
 import { z } from 'zod';
 
+import { isSudebanCode, type PayerBank, payerBankName } from '../../../../domain/payer-bank.ts';
+
 import { jsonResponse, requireApi, unauthorised } from '../../../_lib/api-guard.ts';
 import { container } from '../../../_lib/current-session.ts';
 import type { ChargeOutcome } from '../../../(cashier)/checkout/charge-types.ts';
@@ -59,6 +61,14 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const input = claim.data;
+  // The payer brands Sudeban does not list, so the confirmed charge can state
+  // the bank by name. Asked for only when the pick cannot be a Sudeban code —
+  // an ordinary pago móvil resolves its name from the constant and reads
+  // nothing.
+  const customPayerBanks = isSudebanCode(input.sourceBankId)
+    ? []
+    : await container().customBanks.listPayerBankOptions();
+
   const result = await container().validations.validatePayment({
     companyId: session.companyId,
     cashierId: session.userId,
@@ -76,12 +86,13 @@ export async function POST(request: Request): Promise<Response> {
     bankAccountId: input.bankAccountId,
   });
 
-  return jsonResponse(outcomeOf(result));
+  return jsonResponse(outcomeOf(result, customPayerBanks));
 }
 
 /** The use case's answer in the vocabulary the counter's modal renders. */
 function outcomeOf(
   result: Awaited<ReturnType<ReturnType<typeof container>['validations']['validatePayment']>>,
+  customPayerBanks: readonly PayerBank[],
 ): ChargeOutcome {
   if (!result.ok) return { status: 'failed', failure: result.error };
 
@@ -102,6 +113,7 @@ function outcomeOf(
         latencyMs: validation.latencyMs,
         bankAccountId: validation.bankAccountId,
         sourceBankId: validation.sourceBankId,
+        sourceBankName: payerBankName(validation.sourceBankId, customPayerBanks),
       },
     };
   }

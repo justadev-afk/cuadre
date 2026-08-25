@@ -258,6 +258,8 @@ async function ValidationsTable(
 
   const { companyId, environment, cashierId, search, staff } = props;
   const companyDetail = await container().companies.getCompany({ companyId });
+  // The payer brands Sudeban does not list, so a row prints "Ubii" and not a slug.
+  const payerBanks = await container().customBanks.listPayerBankOptions();
   const list = await container().validations.listValidations({
     companyId,
     environment,
@@ -277,6 +279,7 @@ async function ValidationsTable(
         search={search ?? ''}
         merchantName={companyDetail.ok ? companyDetail.value.company.name : undefined}
         merchantRif={companyDetail.ok ? companyDetail.value.company.rif : undefined}
+        payerBanks={payerBanks}
         emptyMessage={emptyMessage(cashierId, staff, search, environment)}
       />
     </div>

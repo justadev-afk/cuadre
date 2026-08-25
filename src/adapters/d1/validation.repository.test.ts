@@ -66,10 +66,20 @@ describe('toValidation', () => {
       searchMode: 'exact_reference',
       idempotencyKey: 'idem-1',
       createdAt: 1_770_000_060,
+      // Absent on almost every row: only a custom payer brand writes any.
+      metadata: null,
       // Populated only by the list queries' LEFT JOINs; null on a bare row.
       cashierName: null,
       accountLabel: null,
     });
+  });
+
+  it('reads the metadata column as an object, and an unreadable one as absent', () => {
+    const target = { realTarget: { sourceBankId: '0104', payerPhone: '+584142698301' } };
+    expect(toValidation(row({ metadata: JSON.stringify(target) })).metadata).toEqual(target);
+    // A confirmed payment is not taken off a merchant's screen over a side note.
+    expect(toValidation(row({ metadata: 'not json' })).metadata).toBeNull();
+    expect(toValidation(row({ metadata: '"a string"' })).metadata).toBeNull();
   });
 
   it('reads is_sandbox as a boolean and leaves the amount in cents', () => {

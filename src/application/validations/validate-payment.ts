@@ -40,6 +40,15 @@
  * An attempt that finds nothing leaves no row anywhere, so the single metrics
  * data point recorded per attempt is the only trace it leaves at all — the
  * "todavía no aparece" rate is measurable there or nowhere.
+ *
+ * **What was recorded and what was asked are two different things.** For every
+ * Sudeban bank they are the same, and for a custom payer brand — a wallet whose
+ * name is on the customer's receipt but not in Sudeban's table — they are not:
+ * the row records the brand and the phone the customer read out, and the bank is
+ * asked with the real Sudeban code and, where the brand carries one, a phone of
+ * ours. `askedPayer` in the domain decides that, once, and the row keeps the
+ * asked half as `metadata.realTarget` so a support call can still reach the
+ * movement. Nothing else in this file branches on it.
  */
 import type { BankAccount } from '../../adapters/d1/bank-account.repository.ts';
 import type {
@@ -54,13 +63,21 @@ import type {
 } from '../../adapters/metrics/attempt.metrics.ts';
 import { CONTROL_CODE_MAX_ATTEMPTS, generateControlCode } from '../../domain/control-code.ts';
 import {
+  type AskedPayer,
+  askedPayer,
+  type CustomPayerBank,
+  findPayerBank,
+  isSudebanCode,
+  payerWasRewritten,
+  toPayerBank,
+} from '../../domain/payer-bank.ts';
+import {
   fullestReference,
   matchPayment,
   paymentKey,
   type RejectionReason,
 } from '../../domain/payment-match.ts';
 import { normalisePhone } from '../../domain/phone.ts';
-import { findBank } from '../../domain/sudeban.ts';
 import { type Clock, venezuelaDate } from '../../shared/clock.ts';
 import { unseal } from '../../shared/crypto.ts';
 import { AppError, forbidden } from '../../shared/errors.ts';
@@ -129,6 +146,15 @@ type BankAccess = {
   get(bank: BankId): BankGateway;
 };
 
+/**
+ * The payer brands Sudeban does not list. Read only when the code the cashier
+ * picked is not a Sudeban one — four digits can never be one of these rows — so
+ * the ordinary charge never pays for this port at all.
+ */
+type CustomPayerBankReader = {
+  listActive(): Promise<readonly CustomPayerBank[]>;
+};
+
 type AttemptRecorder = {
   record(attempt: ValidationAttempt): void;
 };
@@ -137,6 +163,7 @@ export type ValidatePaymentDeps = {
   readonly accounts: BankAccountReader;
   readonly validations: ValidationWriter;
   readonly banks: BankAccess;
+  readonly customBanks: CustomPayerBankReader;
   readonly metrics: AttemptRecorder;
   readonly clock: Clock;
   readonly ids: IdGen;
@@ -220,17 +247,25 @@ type Claim = {
   readonly payerPhone: string | null;
   /** The full receiving account, or null where the kind takes none. */
   readonly receivingAccount: string | null;
+  /** What the cashier picked, and what the row records. May be a custom brand. */
   readonly sourceBankId: string;
   readonly amountCents: number;
   /** `YYYY-MM-DD`, or null where the kind takes no date. */
   readonly paymentDate: string | null;
   readonly idempotencyKey: string;
+  /**
+   * What the bank is actually asked with. Identical to the two fields above for
+   * every Sudeban bank; rewritten for a custom brand, whose question belongs to
+   * the real bank behind it (`src/domain/payer-bank.ts`).
+   */
+  readonly asked: AskedPayer;
 };
 
 export function makeValidatePayment({
   accounts,
   validations,
   banks,
+  customBanks,
   metrics,
   clock,
   ids,
@@ -285,7 +320,14 @@ export function makeValidatePayment({
       return err('invalid_input');
     }
 
-    const read = readClaim(input, spec, venezuelaDate(clock.nowSeconds()));
+    // The payer's bank, which may be a brand Sudeban does not list. Asked for
+    // only when the code cannot be a Sudeban one — four digits never are a
+    // custom row — so an ordinary pago móvil spends no read on this at all.
+    const custom = isSudebanCode(input.sourceBankId)
+      ? null
+      : ((await customBanks.listActive()).find((b) => b.code === input.sourceBankId) ?? null);
+
+    const read = readClaim(input, spec, venezuelaDate(clock.nowSeconds()), custom);
     if (!read.ok) return read;
     const claim = read.value;
 
@@ -382,9 +424,12 @@ export function makeValidatePayment({
     const found = await gateway.findPayment(session.value, {
       kind: claim.kind,
       reference: claim.reference,
-      payerPhone: claim.payerPhone,
+      // The asked half, never the recorded one: a custom brand's question is
+      // the real bank's, and sending 'ubii' as a Sudeban code would come back
+      // `sin resultados` for a payment that certainly happened.
+      payerPhone: claim.asked.payerPhone,
       receivingAccount: claim.receivingAccount,
-      sourceBankId: claim.sourceBankId,
+      sourceBankId: claim.asked.sourceBankId,
       onDate: claim.paymentDate,
       sessionId: input.sessionId,
     });
@@ -513,6 +558,16 @@ export function makeValidatePayment({
       searchMode: payment.strategy,
       idempotencyKey: claim.idempotencyKey,
       createdAt: clock.nowSeconds(),
+      // What was *asked*, kept only when it differs from what is recorded above
+      // — a custom brand's real Sudeban code and phone. The columns name the
+      // payment the customer made; this names the movement the bank holds, and
+      // a support call needs both. Null on every ordinary charge.
+      metadata: payerWasRewritten(
+        { sourceBankId: claim.sourceBankId, payerPhone: claim.payerPhone },
+        claim.asked,
+      )
+        ? { realTarget: claim.asked }
+        : null,
     };
 
     for (let draw = 1; draw <= CONTROL_CODE_MAX_ATTEMPTS; draw++) {
@@ -620,6 +675,8 @@ function readClaim(
   input: ValidatePaymentInput,
   spec: BankPaymentKind,
   today: string,
+  /** The configured brand the pick resolved to, or null for a Sudeban bank. */
+  custom: CustomPayerBank | null,
 ): Result<Claim, 'invalid_input'> {
   const digits = input.reference.replace(/\D/g, '');
   // A tail is an exact count the counter must have collected; a whole reference
@@ -635,7 +692,14 @@ function readClaim(
     return err('invalid_input');
   }
 
-  if (findBank(input.sourceBankId) === null) return err('invalid_input');
+  // Either catalogue answers, and neither can answer for the other: a Sudeban
+  // code is four digits and a custom one never is. A pick that resolves to
+  // neither is a screen out of step with the catalogue, refused like any other
+  // malformed claim — a disabled brand lands here too, which is what taking one
+  // out of the picker has to mean at the counter.
+  if (findPayerBank(input.sourceBankId, custom === null ? [] : [toPayerBank(custom)]) === null) {
+    return err('invalid_input');
+  }
   if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
     return err('invalid_input');
   }
@@ -673,6 +737,10 @@ function readClaim(
     amountCents: input.amountCents,
     paymentDate,
     idempotencyKey: input.idempotencyKey.trim(),
+    // The phone the cashier typed is validated as a phone whatever happens to
+    // it next — it is what the row records and what a customer is asked to
+    // confirm — and then the rewrite decides what actually travels.
+    asked: askedPayer({ sourceBankId: input.sourceBankId, payerPhone, custom }),
   });
 }
 

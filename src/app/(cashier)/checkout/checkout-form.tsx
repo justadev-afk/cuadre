@@ -37,8 +37,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
 import { cn } from '@/lib/utils.ts';
 import type { BankPaymentKind, PaymentKind } from '../../../application/ports/bank-gateway.ts';
 import { formatBolivares, parseAmountToCents } from '../../../domain/money.ts';
+import {
+  findPayerBank,
+  isSudebanCode,
+  type PayerBank,
+  payerBankCatalogue,
+} from '../../../domain/payer-bank.ts';
 import { formatPhoneForDisplay, normalisePhone } from '../../../domain/phone.ts';
-import { findBank, SUDEBAN_BANKS } from '../../../domain/sudeban.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Icon } from '../../_components/icon.tsx';
 import { PaymentKindMark } from '../../_components/payment-kind-mark.tsx';
@@ -66,6 +71,7 @@ import {
 } from '../../_lib/venezuela-format.ts';
 
 import type { ChargeOutcome, ConfirmedCharge, ReceivingAccountView } from './charge-types.ts';
+import { rememberPayerBank } from './last-payer-bank.ts';
 
 /** A confirmed charge as the thermal receipt states it. */
 function chargeReceipt(
@@ -126,6 +132,27 @@ export type CheckoutAccount = {
 type CheckoutFormProps = {
   /** Every connected bank. The cashier picks which one receives. */
   accounts: readonly CheckoutAccount[];
+  /**
+   * The payer brands Sudeban does not list, resolved on the server — the
+   * "banco emisor" picker is Sudeban's twenty-six plus these.
+   *
+   * A brand may carry a phone, which the counter *prefills* when it is picked
+   * and leaves editable: the number a customer reads out is what the row
+   * records and what a receipt states. Where the question actually goes is the
+   * server's business and never travels down here.
+   */
+  customPayerBanks?: readonly PayerBank[];
+  /**
+   * The payer bank this till used last, off the cookie, already checked against
+   * the catalogue by the server — `''` when there is none or it no longer
+   * resolves.
+   *
+   * A prop rather than a `localStorage` read after mount, and that is the whole
+   * point: it is the picker's *initial* state, and the phone a custom brand
+   * dictates is initialised from it, so the first paint is already right. See
+   * `last-payer-bank.ts`.
+   */
+  lastPayerBank?: string;
   /** The last few charges on this till, for the right pane. */
   recent: readonly RecentCharge[];
   turnoCount: number;
@@ -146,15 +173,54 @@ type CheckoutFormProps = {
   shiftDue?: boolean;
 };
 
-/** The Venezuelan banks, shaped once for the searchable dropdown. */
-const BANK_OPTIONS: readonly SelectOption[] = SUDEBAN_BANKS.map((bank) => ({
-  value: bank.code,
-  label: bank.name,
-  hint: bank.code,
-}));
+/**
+ * The payer banks, shaped for the searchable dropdown: Sudeban's twenty-six and
+ * then whatever custom brands the platform has configured.
+ *
+ * The `hint` is the code, which for a Sudeban bank is the four digits people who
+ * work with these every day recognise — and for a custom brand is its slug,
+ * which nobody needs to read. So a custom row shows no hint: an unexplained
+ * `ubii` beside the name is noise on a screen worked at speed.
+ */
+/**
+ * The phone a payer bank dictates, ready for the field — `''` for the
+ * twenty-six, which own no number.
+ *
+ * It is the field's *reset value*, not a one-off on picking: the bank survives a
+ * charge and a tab switch, so the number it dictates has to survive with it. A
+ * till left showing "Ubii" over an empty phone is a till about to record a
+ * payment against a number the bank was never asked with.
+ */
+function suggestedPhoneFor(code: string, custom: readonly PayerBank[]): string {
+  const picked = findPayerBank(code, custom);
+  return picked?.suggestedPhone == null ? '' : formatPhoneForDisplay(picked.suggestedPhone);
+}
 
-/** Where the last-chosen payer bank is remembered between charges. */
-const LAST_BANK_KEY = 'cuadre.last-bank';
+/**
+ * The payer banks, shaped for the searchable dropdown: Sudeban's twenty-six
+ * under *Bancos*, then whatever custom brands the platform has configured under
+ * *Terceros*.
+ *
+ * The headings live here rather than in the domain because they are copy — and
+ * the split they draw is the one thing a cashier needs to see, because Ubii is a
+ * wallet and not a bank, and a list that ran the two together would say
+ * otherwise.
+ *
+ * Every row carries four digits, custom rows included — and a custom brand
+ * carries the code of the bank it is really asked under (Ubii → `0104`), never
+ * its own slug. Two reasons, and they point the same way: `ubii` beside "Ubii"
+ * is a word nobody at a counter reads, and a row with no code at all starts
+ * where the other twenty-six put their *names*, which under a list of
+ * twenty-six reads as a mistake.
+ */
+function bankOptions(custom: readonly PayerBank[]): readonly SelectOption[] {
+  return payerBankCatalogue(custom).map((bank) => ({
+    value: bank.code,
+    label: bank.name,
+    hint: bank.sudebanCode,
+    group: isSudebanCode(bank.code) ? 'Bancos' : 'Terceros',
+  }));
+}
 
 /**
  * The bounds on a whole reference, matching the use case's. Wide on purpose:
@@ -230,6 +296,8 @@ function modalBorderTone(busy: boolean, outcome: ChargeOutcome | null): string {
 
 export function CheckoutForm({
   accounts,
+  customPayerBanks = [],
+  lastPayerBank = '',
   recent,
   turnoCount,
   turnoCents,
@@ -250,7 +318,10 @@ export function CheckoutForm({
   /** Which form is on screen. Pago móvil is the common case, so it opens. */
   const [kind, setKind] = useState<PaymentKind>('pago_movil');
   const [reference, setReference] = useState('');
-  const [phone, setPhone] = useState('');
+  // Initialised from the remembered bank, not left empty and corrected later: a
+  // custom brand dictates this field, and the server resolved which brand before
+  // any of this rendered.
+  const [phone, setPhone] = useState(() => suggestedPhoneFor(lastPayerBank, customPayerBanks));
   /**
    * The phone is the one field on this form that is rewritten as it is typed,
    * so it is the one that has to carry its caret across the rewrite: a cashier
@@ -263,7 +334,7 @@ export function CheckoutForm({
   });
   /** The transferencia's receiving account — one of the connection's own. */
   const [receivingAccount, setReceivingAccount] = useState('');
-  const [bankCode, setBankCode] = useState('');
+  const [bankCode, setBankCode] = useState(lastPayerBank);
   const [amount, setAmount] = useState('');
   /**
    * The day the customer paid, or `null` for "hoy". Null rather than today's
@@ -311,14 +382,6 @@ export function CheckoutForm({
   /** Which attempt the screen is waiting for. *Cancelar* just stops caring. */
   const attempt = useRef(0);
 
-  // The payer's bank is the one field a cashier picks rather than reads, and it
-  // repeats all shift: a bakery beside a Banesco branch sees the same bank all
-  // day. Preselecting the last pick saves the search on the common case.
-  useEffect(() => {
-    const last = localStorage.getItem(LAST_BANK_KEY);
-    if (last !== null && findBank(last) !== null) setBankCode(last);
-  }, []);
-
   // The reference is the first thing typed, so focus it whenever the form is the
   // thing on screen — on load, after a modal closes, and after a tab change —
   // without reaching for the mouse. It has to be an effect rather than a line in
@@ -335,7 +398,12 @@ export function CheckoutForm({
     return () => cancelAnimationFrame(frame);
   }, [busy, outcome, spec]);
 
-  const bank = findBank(bankCode);
+  // A remembered code that no longer resolves — a custom brand switched off
+  // since the last shift — leaves the picker on its placeholder and the Validar
+  // button disabled, which is the right answer: pick again. Restoring it
+  // unconditionally above and letting the lookup decide here is what keeps the
+  // catalogue out of a mount-only effect's dependencies.
+  const bank = findPayerBank(bankCode, customPayerBanks);
   const amountCents = parseAmountToCents(amount);
 
   // ── realtime validity — the Validar button reads these, and each typed-but-
@@ -368,8 +436,22 @@ export function CheckoutForm({
   }
 
   function chooseBank(code: string): void {
+    const leaving = suggestedPhoneFor(bankCode, customPayerBanks);
+    const arriving = suggestedPhoneFor(code, customPayerBanks);
     setBankCode(code);
-    if (code !== '') localStorage.setItem(LAST_BANK_KEY, code);
+    rememberPayerBank(code);
+    // The phone follows the brand, in both directions, because the two are one
+    // fact: a custom brand fills its number in, and leaving one takes that
+    // number away again — an Ubii number left standing under "Banesco" would be
+    // ours recorded as a customer's.
+    //
+    // Prefilled, never imposed: the field stays editable and what the cashier
+    // leaves in it is what the row records and what the receipt states. So the
+    // clearing half only removes what *we* put there — a number they typed over
+    // it is theirs, and survives a correction of the bank untouched. Where the
+    // question is actually sent is the server's, and cannot be typed over here.
+    if (arriving !== '') setPhone(arriving);
+    else if (leaving !== '' && phone === leaving) setPhone('');
     edited();
   }
 
@@ -381,7 +463,11 @@ export function CheckoutForm({
   function clearFields(): void {
     idempotencyKey.current = null;
     setReference('');
-    setPhone('');
+    // To the bank's own number, not to empty. The bank stays across a charge, so
+    // the phone it dictates stays with it: an Ubii charge that cleared to blank
+    // would leave the next one recording whatever was typed against a search the
+    // bank answered with our number.
+    setPhone(suggestedPhoneFor(bankCode, customPayerBanks));
     setAmount('');
   }
 
@@ -620,7 +706,7 @@ export function CheckoutForm({
             <Label htmlFor={bankId}>Banco emisor</Label>
             <SearchableSelect
               id={bankId}
-              options={BANK_OPTIONS}
+              options={bankOptions(customPayerBanks)}
               value={bankCode}
               onChange={chooseBank}
               placeholder="Elige el banco"
@@ -954,8 +1040,7 @@ function MiTurno({
                   </span>
                 </div>
                 <span className="text-[11px] text-muted-foreground">
-                  {formatClock(row.createdAt)} · ref {row.reference} ·{' '}
-                  {findBank(row.sourceBankId)?.name ?? row.sourceBankId}
+                  {formatClock(row.createdAt)} · ref {row.reference} · {row.sourceBankName}
                 </span>
               </div>
               <span className="text-xs tabular-nums text-[var(--color-accent-300)]">
@@ -1293,7 +1378,7 @@ function ValidatedModal({
         reference: charge.reference,
         payerPhone: charge.payerPhone,
         kind: charge.kind,
-        payerBankName: findBank(charge.sourceBankId)?.name ?? charge.sourceBankId,
+        payerBankName: charge.sourceBankName,
         bankName,
         cashierName,
         accountLabel: accountLabel(accounts, charge.bankAccountId),
@@ -1356,10 +1441,7 @@ function ChargeRows({
       )}
       {/* The two banks, named the way the re-opened receipt and the validations
           table name them: where it came from, then where it landed. */}
-      <Row
-        label="Banco emisor"
-        value={findBank(charge.sourceBankId)?.name ?? charge.sourceBankId}
-      />
+      <Row label="Banco emisor" value={charge.sourceBankName} />
       {account !== undefined && <Row label="Banco receptor" value={account} />}
       {/* The bank's date first: it is the customer's, it is what their receipt
           says, and on a payment made last night it is not today. "Cobrado" is

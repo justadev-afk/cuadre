@@ -44,6 +44,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
 import type { Validation } from '../../../adapters/d1/validation.repository.ts';
 import type { PageCursor } from '../../../application/validations/list-validations.ts';
+import type { PayerBank } from '../../../domain/payer-bank.ts';
 import { Icon } from '../../_components/icon.tsx';
 import { Pager } from '../../_components/pager.tsx';
 import { ValidationList } from '../../_components/validation-list.tsx';
@@ -70,6 +71,7 @@ export function ValidationsPages({
   search,
   merchantName,
   merchantRif,
+  payerBanks,
   emptyMessage,
 }: {
   readonly initialItems: readonly Validation[];
@@ -81,6 +83,8 @@ export function ValidationsPages({
   readonly search: string;
   readonly merchantName?: string;
   readonly merchantRif?: string;
+  /** The payer brands Sudeban does not list, so a row prints the name. */
+  readonly payerBanks: readonly PayerBank[];
   /** What the empty card says — it names the filter that emptied the list. */
   readonly emptyMessage: string;
 }) {
@@ -208,6 +212,7 @@ export function ValidationsPages({
           showCashier
           merchantName={merchantName}
           merchantRif={merchantRif}
+          payerBanks={payerBanks}
         />
       )}
 

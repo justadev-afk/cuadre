@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils.ts';
 import type { Validation } from '../../../adapters/d1/validation.repository.ts';
 import type { NamedRange } from '../../../application/validations/day-range.ts';
 import type { PageCursor } from '../../../application/validations/list-validations.ts';
+import type { PayerBank } from '../../../domain/payer-bank.ts';
 import { ContentLayout } from '../../_components/content-layout.tsx';
 import { Pager } from '../../_components/pager.tsx';
 import { NoValidations, ValidationList } from '../../_components/validation-list.tsx';
@@ -69,6 +70,8 @@ type MyValidationsViewProps = {
   initialNowSeconds: number;
   merchantName?: string;
   merchantRif?: string;
+  /** The payer brands Sudeban does not list, so a row prints the name. */
+  payerBanks: readonly PayerBank[];
 };
 
 export function MyValidationsView({
@@ -77,6 +80,7 @@ export function MyValidationsView({
   initialNowSeconds,
   merchantName,
   merchantRif,
+  payerBanks,
 }: MyValidationsViewProps) {
   const [range, setRange] = useState<NamedRange>('today');
   const [searchInput, setSearchInput] = useState('');
@@ -218,6 +222,7 @@ export function MyValidationsView({
             nowSeconds={nowSeconds}
             merchantName={merchantName}
             merchantRif={merchantRif}
+            payerBanks={payerBanks}
           />
         )}
 

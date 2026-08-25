@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ValidationStats as ValidationStatsRows } from '../../adapters/d1/validation.repository.ts';
+import type { CustomPayerBank } from '../../domain/payer-bank.ts';
 import { fixedClock, venezuelaDate } from '../../shared/clock.ts';
 import {
   MAX_STATS_DAYS,
@@ -56,14 +57,29 @@ function fakeCache() {
 
 const TTL = 3600;
 
-function statsFor(rows: Partial<ValidationStatsRows> = {}, shared = fakeCache(), now = NOW) {
+function statsFor(
+  rows: Partial<ValidationStatsRows> = {},
+  shared = fakeCache(),
+  now = NOW,
+  custom: readonly CustomPayerBank[] = [],
+) {
   const { validations, queries } = fakeValidations(rows);
+  // Counted, because "is this read at all?" is half of what the payer-bank
+  // naming promises: a span with nothing but Sudeban codes in it never asks.
+  const customReads: number[] = [];
   return {
     queries,
+    customReads,
     ...shared,
     validationStats: makeValidationStats({
       validations,
       cache: shared.cache,
+      customBanks: {
+        async listActive() {
+          customReads.push(1);
+          return custom;
+        },
+      },
       clock: fixedClock(now),
       cacheTtlSeconds: TTL,
     }),
@@ -225,6 +241,55 @@ describe('the shape a chart needs', () => {
       { key: '0199', label: null, count: 2, amountCents: 90_000 },
       { key: '0102', label: 'Banco de Venezuela', count: 1, amountCents: 1_000 },
     ]);
+  });
+
+  it('names a custom brand, and asks for the catalogue only when there is one', async () => {
+    const ubii = {
+      code: 'ubii',
+      name: 'Ubii',
+      targetBankId: '0104',
+      targetPhone: '+584142698301',
+      status: 'active',
+    } as const;
+
+    const sudebanOnly = statsFor({ bySourceBank: [{ key: '0102', count: 1, amountCents: 1_000 }] });
+    await sudebanOnly.validationStats({ companyId: 'la-espiga' });
+    // Sudeban's names come from a constant, so a shop that has never taken an
+    // Ubii payment never reads the table at all.
+    expect(sudebanOnly.customReads).toHaveLength(0);
+
+    const withBrand = statsFor(
+      { bySourceBank: [{ key: 'ubii', count: 3, amountCents: 30_000 }] },
+      fakeCache(),
+      NOW,
+      [ubii],
+    );
+    const view = await withBrand.validationStats({ companyId: 'la-espiga' });
+    expect(view.bySourceBank).toEqual([
+      { key: 'ubii', label: 'Ubii', count: 3, amountCents: 30_000 },
+    ]);
+  });
+
+  it('does not freeze a brand name for the hour the period is cached', async () => {
+    // The cache holds the *shape* of a period, which is what makes this screen
+    // cacheable at all. A rename is not part of that shape, and a merchant
+    // reading yesterday's takings should not see the old name for an hour.
+    const shared = fakeCache();
+    const rows = { bySourceBank: [{ key: 'ubii', count: 3, amountCents: 30_000 }] };
+    const before = statsFor(rows, shared, NOW, [
+      { code: 'ubii', name: 'Ubii', targetBankId: '0104', targetPhone: null, status: 'active' },
+    ]);
+    await before.validationStats({ companyId: 'la-espiga' });
+
+    const after = statsFor(rows, shared, NOW, [
+      { code: 'ubii', name: 'Ubii Pay', targetBankId: '0104', targetPhone: null, status: 'active' },
+    ]);
+    const view = await after.validationStats({ companyId: 'la-espiga' });
+
+    // Served from the cache — the heavy read did not happen again…
+    expect(after.queries).toHaveLength(0);
+    // …and the name is still current.
+    expect(view.bySourceBank[0]?.label).toBe('Ubii Pay');
   });
 
   it('ranks the cashiers by money, most first', async () => {

@@ -31,6 +31,8 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const { slug } = await params;
 
   const result = await container().companies.getCompany({ companyId: slug });
+  // The payer brands Sudeban does not list, so a row prints "Ubii" and not a slug.
+  const payerBanks = await container().customBanks.listPayerBankOptions();
   if (!result.ok) notFound();
   const { company, bankAccounts } = result.value;
   const banks = container().banking.listSupportedBanks();
@@ -222,6 +224,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             showCashier
             merchantName={company.name}
             merchantRif={company.rif}
+            payerBanks={payerBanks}
           />
         )}
       </div>

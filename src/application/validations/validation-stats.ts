@@ -28,7 +28,12 @@ import type {
   StatsBucket,
   ValidationStats as ValidationStatsRows,
 } from '../../adapters/d1/validation.repository.ts';
-import { findBank } from '../../domain/sudeban.ts';
+import {
+  type CustomPayerBank,
+  findPayerBank,
+  isSudebanCode,
+  toPayerBank,
+} from '../../domain/payer-bank.ts';
 import { type Clock, venezuelaDate } from '../../shared/clock.ts';
 import type { PaymentKind } from '../ports/bank-gateway.ts';
 import {
@@ -48,9 +53,19 @@ type StatsReader = {
   }): Promise<ValidationStatsRows>;
 };
 
+type CustomPayerBankReader = {
+  listActive(): Promise<readonly CustomPayerBank[]>;
+};
+
 export type ValidationStatsDeps = {
   readonly validations: StatsReader;
   readonly cache: ValidationStatsCache;
+  /**
+   * The payer brands Sudeban does not list, read to name them back. Asked only
+   * when a span actually contains one — see `named` — so a shop that has never
+   * taken an Ubii payment never pays for this.
+   */
+  readonly customBanks: CustomPayerBankReader;
   readonly clock: Clock;
   /** How long a computed answer serves before it is read again. */
   readonly cacheTtlSeconds: number;
@@ -166,6 +181,7 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 export function makeValidationStats({
   validations,
   cache,
+  customBanks,
   clock,
   cacheTtlSeconds,
 }: ValidationStatsDeps): ValidationStatsQuery {
@@ -177,7 +193,7 @@ export function makeValidationStats({
     const key = cacheKey(input.companyId, range);
 
     const cached = await cache.get(key);
-    if (cached !== null) return cached;
+    if (cached !== null) return await named(cached);
 
     const rows = await validations.stats({
       companyId: input.companyId,
@@ -208,8 +224,33 @@ export function makeValidationStats({
     };
 
     await cache.put(key, view, cacheTtlSeconds);
-    return view;
+    return await named(view);
   };
+
+  /**
+   * Puts the names on the payer banks, **after** the cache rather than before
+   * it.
+   *
+   * What is cached for an hour is the shape of a period, which is what makes
+   * this screen cacheable at all (§9) — a brand's *name* is not part of that
+   * shape, and freezing it would mean an admin renaming Ubii watches the old
+   * name for an hour on a screen that has nothing to do with the rename.
+   *
+   * Sudeban's names are resolved without asking anyone, so a span with nothing
+   * but ordinary banks in it — every span, for almost every shop — costs no
+   * read at all.
+   */
+  async function named(view: ValidationStatsView): Promise<ValidationStatsView> {
+    if (view.bySourceBank.every((row) => isSudebanCode(row.key))) return view;
+    const custom = (await customBanks.listActive()).map(toPayerBank);
+    return {
+      ...view,
+      bySourceBank: view.bySourceBank.map((row) => ({
+        ...row,
+        label: findPayerBank(row.key, custom)?.name ?? null,
+      })),
+    };
+  }
 }
 
 /**
@@ -341,17 +382,13 @@ function fromCashier(row: CashierBucket): NamedTotal {
 }
 
 /**
- * A payer's bank as a name, and as its four digits when our table of codes has
- * not heard of it. The row records what the bank was asked with, and that stays
- * true even after Sudeban adds one.
+ * A payer's bank, still nameless — `named` above puts the name on after the
+ * cache, so the hour a period is remembered for never remembers a brand's name
+ * with it. A `null` label is a code the screen prints as it is, which is what a
+ * code Sudeban has added since stays as.
  */
 function fromSourceBank(row: StatsBucket): NamedTotal {
-  return {
-    key: row.key,
-    label: findBank(row.key)?.name ?? null,
-    count: row.count,
-    amountCents: row.amountCents,
-  };
+  return { key: row.key, label: null, count: row.count, amountCents: row.amountCents };
 }
 
 function byMoney(rows: readonly NamedTotal[]): readonly NamedTotal[] {

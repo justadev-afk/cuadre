@@ -26,8 +26,17 @@ import { Icon } from './icon.tsx';
 export type SelectOption = {
   readonly value: string;
   readonly label: string;
-  /** A dim leading tag — the Sudeban code, for the bank list. */
+  /** A dim leading tag — the bank's code, for the bank list. */
   readonly hint?: string;
+  /**
+   * The heading this option sits under, if the list is divided at all.
+   *
+   * Consecutive options sharing one are drawn under it, in the order the caller
+   * gave them — so the division is the caller's, expressed by how it ordered its
+   * own list, and this component never sorts. A list where nobody sets it
+   * renders exactly as it did before headings existed.
+   */
+  readonly group?: string;
 };
 
 type SearchableSelectProps = {
@@ -73,6 +82,30 @@ function focusAdjacentField(from: HTMLElement, back: boolean): void {
   const at = fields.indexOf(from);
   if (at === -1) return;
   fields[at + (back ? -1 : 1)]?.focus();
+}
+
+/**
+ * The options cut into runs of one heading each, in the caller's order.
+ *
+ * Runs rather than a keyed bucketing, because the order on screen has to be the
+ * order that was handed in: Sudeban's twenty-six are in Sudeban's own order and
+ * regrouping them would quietly resort the one list whose order people who work
+ * with these every day already know.
+ *
+ * cmdk hides a group whose items all filter out, so a search that matches only
+ * a custom brand shows that brand's heading and nothing else — which is the
+ * point of having headings at all.
+ */
+function groupRuns(
+  options: readonly SelectOption[],
+): readonly { readonly heading?: string; readonly options: SelectOption[] }[] {
+  const runs: { heading?: string; options: SelectOption[] }[] = [];
+  for (const option of options) {
+    const open = runs.at(-1);
+    if (open !== undefined && open.heading === option.group) open.options.push(option);
+    else runs.push({ heading: option.group, options: [option] });
+  }
+  return runs;
 }
 
 /** Diacritic- and case-insensitive, so "merida" finds "Mérida". */
@@ -241,28 +274,35 @@ export function SearchableSelect({
           )}
           <CommandList>
             {searchable && <CommandEmpty>Sin resultados</CommandEmpty>}
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem
-                  key={option.value}
-                  value={`${option.label} ${option.hint ?? ''}`}
-                  onSelect={() => {
-                    onChange(option.value);
-                    close();
-                  }}
-                  aria-selected={option.value === value}
-                  className={cn(option.value === value && 'text-primary')}
-                >
-                  {option.hint ? (
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      {option.hint}
-                    </span>
-                  ) : null}
-                  <span className="flex-1 truncate">{option.label}</span>
-                  {option.value === value ? <Check className="ml-auto size-4 shrink-0" /> : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
+            {groupRuns(options).map((run) => (
+              <CommandGroup
+                // The first option's value: unique across the list, so two runs
+                // that share a heading still key apart.
+                key={`${run.heading ?? ''}:${run.options[0]?.value}`}
+                heading={run.heading}
+              >
+                {run.options.map((option) => (
+                  <CommandItem
+                    key={option.value}
+                    value={`${option.label} ${option.hint ?? ''}`}
+                    onSelect={() => {
+                      onChange(option.value);
+                      close();
+                    }}
+                    aria-selected={option.value === value}
+                    className={cn(option.value === value && 'text-primary')}
+                  >
+                    {option.hint ? (
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        {option.hint}
+                      </span>
+                    ) : null}
+                    <span className="flex-1 truncate">{option.label}</span>
+                    {option.value === value ? <Check className="ml-auto size-4 shrink-0" /> : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
           </CommandList>
         </Command>
       </PopoverContent>
