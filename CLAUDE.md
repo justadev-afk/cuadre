@@ -106,6 +106,7 @@ aliases `src/` (declared in both `vite.config.ts` and `tsconfig.json`).
 ```
 worker/index.ts          Worker entry: fetch (delegates to vinext) + queue. Wiring only.
 src/
+├── middleware.ts        cookie bounce + session cookie renewal. Must sit beside app/ — at the root it never loads.
 ├── app/                 vinext App Router — the UI and HTTP adapter
 │   ├── api/             every mutation, one route handler each (see §3)
 │   └── _lib/            the guards, the endpoint table, the client hook
@@ -390,8 +391,15 @@ the bank is asked with.
 - Session in KV (`session:<id>`), cookie `HttpOnly; Secure; SameSite=Lax; Path=/`.
   The id rotates on sign-in.
 - **The session never expires on its own.** In a shop, throwing a cashier out
-  mid-sale is worse than the risk it avoids. The KV TTL slides on every request
-  and the cookie is persistent.
+  mid-sale is worse than the risk it avoids. **Both halves slide**, over the same
+  400 days (`SESSION_MAX_AGE_SECONDS`, the most a browser keeps a cookie): the KV
+  TTL on every resolve, and the cookie because `src/middleware.ts` re-sends it on
+  every request that carries one (`renewedSessionCookie`) — except on the routes
+  that write it themselves (sign-in, reset-password, `/logout`,
+  `/session-ended`), since vinext appends the middleware's `Set-Cookie` last and
+  it would win. A cookie written only at sign-in is an absolute expiry: that is
+  how every till signed in when production opened was signed out on the same
+  morning, thirty days later (2026-09-16).
 - **But it is checked against the row it names, on every request.** `resolveSession`
   reads `users.findStanding` — one indexed statement that answers "is this user
   still active" and "is their company still active" together — and a session whose

@@ -152,13 +152,21 @@ export function usesExpressTill(role: Role): boolean {
 // ── the cookie ─────────────────────────────────────────────────────────────
 
 /**
- * Thirty days, matching the idle window the session record's KV TTL slides
- * over. The two have to agree: a cookie that dies first signs out a till whose
- * session is perfectly alive, and one that outlives the record only sends an id
- * KV has already forgotten. The response that renews the record re-sends this
- * cookie, so both slide together.
+ * Four hundred days — the longest a browser keeps a cookie (Chrome clamps any
+ * `Max-Age` beyond it) — and the idle window the session record's KV TTL slides
+ * over, which reads this same constant. The two have to agree: a cookie that
+ * dies first signs out a till whose session is perfectly alive, and one that
+ * outlives the record only sends an id KV has already forgotten.
+ *
+ * **The cookie slides because `middleware.ts` re-sends it on every request**
+ * (`renewedSessionCookie`). It did not always: until 2026-09-16 it was written
+ * once, at sign-in, with thirty days on it, while only the KV record slid — so
+ * every till signed in when production opened (2026-08-17) was thrown out on
+ * the same morning, thirty days later, mid-shift and with a live session behind
+ * it. A lifetime that only a sign-in sets is an absolute expiry, whatever the
+ * record says.
  */
-export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;
 
 /**
  * `SameSite=Lax` rather than `Strict`: a Strict cookie is withheld on the first

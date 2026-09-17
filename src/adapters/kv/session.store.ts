@@ -22,6 +22,7 @@
  */
 import { z } from 'zod';
 
+import { SESSION_MAX_AGE_SECONDS } from '../../application/session.ts';
 import { shiftAckOnResume } from '../../domain/shift.ts';
 import type { Clock } from '../../shared/clock.ts';
 import { logger } from '../../shared/logger.ts';
@@ -29,15 +30,19 @@ import { logger } from '../../shared/logger.ts';
 const SESSION_PREFIX = 'session:';
 const USER_INDEX_PREFIX = 'session-user:';
 
-/** Thirty days of inactivity. See the note above on why there is no cap. */
-export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+/**
+ * Four hundred days of inactivity — the cookie's own lifetime, read from the
+ * same constant, because a record and a cookie that disagree sign out whichever
+ * side dies first. See the note above on why there is no cap.
+ */
+export const SESSION_TTL_SECONDS = SESSION_MAX_AGE_SECONDS;
 
 /**
  * KV does not want more than one write per second to the same key, and a
  * sliding TTL renewed literally on every request is exactly that during a busy
  * hour at the counter. The record is rewritten only once the last renewal is
- * old enough for the TTL to be worth topping up; against a thirty-day window,
- * an hour of slack costs nothing.
+ * old enough for the TTL to be worth topping up; against a four-hundred-day
+ * window, an hour of slack costs nothing.
  */
 const RENEW_AFTER_SECONDS = 60 * 60;
 

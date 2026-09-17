@@ -120,7 +120,7 @@ export function makeResolveSession(deps: ResolveSessionDeps): ResolveSession {
     // in? Asked before the supersession check because it is the stronger fact: a
     // deleted user is not "signed in elsewhere", they are nobody.
     if (!(await standsUp(deps, session.userId))) {
-      // The record is worthless from here on, and leaving it to its thirty-day
+      // The record is worthless from here on, and leaving it to its sliding
       // TTL leaves a live credential on the shelf. Deleting it is also what makes
       // the very next request cheap: it resolves as anonymous without a D1 read.
       await deps.sessions.delete(sessionId);

@@ -11,9 +11,9 @@
  *    when a layout renders (a navigation, a submit). On a tab that just sits
  *    there, the four-hour mark passes and the dialog never appears — the whole
  *    "who is at the till?" check silently stops working.
- *  - **The session's sliding TTL.** Resolving the session on the server is the
- *    keep-alive (`resolveSession` → `touch`); with no requests, nothing slides
- *    it.
+ *  - **The session's sliding lifetime.** Resolving the session on the server
+ *    slides the KV record (`resolveSession` → `touch`) and the middleware hands
+ *    the cookie back with a fresh `Max-Age`; with no requests, neither slides.
  *
  * So this pings the server on a slow interval with `router.refresh()` — a soft
  * RSC refresh that re-runs the layout (surfacing the shift dialog the instant
@@ -32,7 +32,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 /**
- * Slow on purpose. The shift prompt is a 4-hour nudge and the TTL is 30 days —
+ * Slow on purpose. The shift prompt is a 4-hour nudge and the TTL is 400 days —
  * neither needs second precision, and a POS should not chatter at the server all
  * shift. A couple of minutes surfaces the dialog promptly enough and keeps the
  * session warm without noise.
