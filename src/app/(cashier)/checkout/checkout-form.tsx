@@ -533,7 +533,12 @@ export function CheckoutForm({
       // A request that never arrives reads exactly like a bank we could not
       // reach, which is the one thing it certainly means to the cashier. The
       // idempotency key is unchanged, so *Reintentar* is the same charge.
-    }).catch<ChargeOutcome>(() => ({ status: 'failed', failure: 'unavailable' }));
+    }).catch<ChargeOutcome>((error: unknown) => ({
+      status: 'failed',
+      failure: 'unavailable',
+      // The till never reached Cuadre at all — its own internet, not the bank.
+      diagnostic: `cuadre · sin conexión · ${error instanceof Error ? error.message : String(error)}`,
+    }));
 
     // A cancelled attempt is not an answer anybody is waiting for any more.
     if (attempt.current !== mine) return;
@@ -1317,6 +1322,8 @@ function VerdictContent({
     outcome.status === 'already_charged'
       ? `Validado por ${outcome.by ?? 'otra caja'} · ${formatRelativeTime(outcome.at, Math.floor(Date.now() / 1000))}`
       : null;
+  // The bank's own answer — HTTP status and code — for the call to its desk.
+  const diagnostic = outcome.status === 'failed' ? (outcome.diagnostic ?? null) : null;
   return (
     <>
       <div className="flex flex-col items-center gap-3.5 text-center">
@@ -1327,6 +1334,11 @@ function VerdictContent({
         <span className="max-w-[42ch] text-[13px] text-muted-foreground">{verdict.body}</span>
         {chargedNote !== null && (
           <span className="text-[13px] font-medium text-foreground">{chargedNote}</span>
+        )}
+        {diagnostic !== null && (
+          <code className="max-w-full break-all rounded-sm bg-sidebar px-2 py-1 font-mono text-[11px] text-muted-foreground">
+            {diagnostic}
+          </code>
         )}
       </div>
       <div className="flex gap-2.5">
@@ -1559,5 +1571,6 @@ const FAILURE_COPY = {
     'El banco rechazó las credenciales de la tienda. Hay que re-verificarlas en Bancos.',
   maintenance: 'El banco está en mantenimiento. Intenta en unos minutos.',
   unavailable: 'El banco no pudo responder. Intenta de nuevo.',
-  timeout: 'Tardó demasiado. Intenta de nuevo.',
+  timeout:
+    'El banco tardó demasiado en responder. Verifica la conexión a internet e intenta de nuevo.',
 } as const;

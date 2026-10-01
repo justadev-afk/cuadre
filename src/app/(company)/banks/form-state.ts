@@ -23,3 +23,7 @@ export const REMOVE_BANK_INITIAL: RemoveBankState = ACTION_INITIAL;
 /** The "cambiar credenciales" modal's action state (company and admin share it). */
 export type ChangeCredentialsState = ActionState;
 export const CHANGE_CREDENTIALS_INITIAL: ChangeCredentialsState = ACTION_INITIAL;
+
+/** "Probar credenciales": a refusal's `error` already carries the diagnostic. */
+export type TestCredentialsState = ActionState;
+export const TEST_CREDENTIALS_INITIAL: TestCredentialsState = ACTION_INITIAL;

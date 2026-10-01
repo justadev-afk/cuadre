@@ -97,9 +97,10 @@ export async function authenticateCredentialGroups({
         bank: gateway.id,
         environment,
         group: group.key,
-        failure: session.error,
+        failure: session.error.failure,
+        diagnostic: session.error.diagnostic,
       });
-      return err({ groupKey: group.key, failure: toOnboardingFailure(session.error) });
+      return err({ groupKey: group.key, failure: toOnboardingFailure(session.error.failure) });
     }
     groups.push({ group, credentials: pair });
   }

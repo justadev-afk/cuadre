@@ -11,7 +11,7 @@ import { err, ok, type Result } from '../../shared/result.ts';
 import type {
   BankCredentials,
   BankEnvironment,
-  BankFailure,
+  BankFault,
   BankGateway,
   BankSession,
 } from '../ports/bank-gateway.ts';
@@ -49,7 +49,7 @@ async function account(overrides: Partial<BankAccount> = {}): Promise<BankAccoun
   };
 }
 
-type Script = { authenticate?: Result<BankSession, BankFailure> };
+type Script = { authenticate?: Result<BankSession, BankFault> };
 
 /** The one kind these tests care about; the gateway's shape, not its behaviour. */
 const PAGO_MOVIL = {
@@ -147,22 +147,25 @@ describe('reverify bank account', () => {
 
   it('flags the account when the bank rejects the credentials', async () => {
     const { reverifyBankAccount, statuses } = await harness({
-      script: { authenticate: err('rejected_credentials') },
+      script: { authenticate: err({ failure: 'rejected_credentials', diagnostic: 'test' }) },
     });
 
     expect(await reverifyBankAccount(INPUT)).toEqual({
       ok: false,
-      error: 'rejected_credentials',
+      error: { failure: 'rejected_credentials', diagnostic: 'test' },
     });
     expect(statuses).toEqual(['needs_reverify']);
   });
 
   it('leaves the status alone when the bank is merely unwell', async () => {
     const { reverifyBankAccount, statuses, verifications } = await harness({
-      script: { authenticate: err('maintenance') },
+      script: { authenticate: err({ failure: 'maintenance', diagnostic: 'test' }) },
     });
 
-    expect(await reverifyBankAccount(INPUT)).toEqual({ ok: false, error: 'maintenance' });
+    expect(await reverifyBankAccount(INPUT)).toEqual({
+      ok: false,
+      error: { failure: 'maintenance', diagnostic: 'test' },
+    });
     // A bad ten minutes at the bank must not put a red badge on every panel.
     expect(statuses).toEqual([]);
     expect(verifications).toEqual([]);
@@ -179,9 +182,15 @@ describe('reverify bank account', () => {
 
   it('refuses a removed account, and another merchant’s account', async () => {
     const removed = await harness({ account: { status: 'removed' } });
-    expect(await removed.reverifyBankAccount(INPUT)).toEqual({ ok: false, error: 'not_found' });
+    expect(await removed.reverifyBankAccount(INPUT)).toEqual({
+      ok: false,
+      error: { failure: 'not_found', diagnostic: null },
+    });
 
     const theirs = await harness({ account: { companyId: 'otra-empresa' } });
-    expect(await theirs.reverifyBankAccount(INPUT)).toEqual({ ok: false, error: 'not_found' });
+    expect(await theirs.reverifyBankAccount(INPUT)).toEqual({
+      ok: false,
+      error: { failure: 'not_found', diagnostic: null },
+    });
   });
 });

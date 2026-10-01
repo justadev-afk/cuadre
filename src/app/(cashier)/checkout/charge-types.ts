@@ -104,7 +104,16 @@ export type ChargeOutcome =
       readonly by: string | null;
       readonly at: number;
     }
-  | { readonly status: 'failed'; readonly failure: ValidatePaymentFailure };
+  | {
+      readonly status: 'failed';
+      readonly failure: ValidatePaymentFailure;
+      /**
+       * What the bank adapter saw — environment, step, HTTP status, the bank's
+       * code. Printed small under the copy so it can be read out to the bank's
+       * desk. Absent when the refusal was ours, before any bank was asked.
+       */
+      readonly diagnostic?: string | null;
+    };
 
 /** One row of the transferencia form's "cuenta" dropdown. */
 export type ReceivingAccountView = {

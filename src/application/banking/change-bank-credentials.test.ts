@@ -7,7 +7,7 @@ import type {
 import { fixedClock } from '../../shared/clock.ts';
 import { type Sealed, seal, unseal } from '../../shared/crypto.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
-import type { BankFailure, BankGateway, BankSession } from '../ports/bank-gateway.ts';
+import type { BankFault, BankGateway, BankSession } from '../ports/bank-gateway.ts';
 import type { AccountCredentials } from './account-credentials.ts';
 import { makeChangeBankCredentials } from './change-bank-credentials.ts';
 
@@ -49,7 +49,7 @@ const PAGO_MOVIL = {
   needsDate: true,
 } as const;
 
-function fakeBanks(authenticate?: Result<BankSession, BankFailure>) {
+function fakeBanks(authenticate?: Result<BankSession, BankFault>) {
   const gateway: BankGateway = {
     id: 'banesco',
     displayName: 'Banesco',
@@ -97,7 +97,7 @@ function fakeAccounts(stored: BankAccount) {
 }
 
 async function harness(
-  options: { authenticate?: Result<BankSession, BankFailure>; account?: Partial<BankAccount> } = {},
+  options: { authenticate?: Result<BankSession, BankFault>; account?: Partial<BankAccount> } = {},
 ) {
   const stored = await account(options.account);
   const store = fakeAccounts(stored);
@@ -131,7 +131,7 @@ describe('change bank credentials', () => {
 
   it('refuses credentials the bank rejects, and writes nothing', async () => {
     const { changeBankCredentials, updates } = await harness({
-      authenticate: err('rejected_credentials'),
+      authenticate: err({ failure: 'rejected_credentials', diagnostic: 'test' }),
     });
 
     expect(await changeBankCredentials(INPUT)).toEqual({

@@ -240,6 +240,21 @@ export type BankFailure =
   | 'timeout';
 
 /**
+ * A failure plus what the adapter saw when it happened — the step, the HTTP
+ * status, the bank's own code. `failure` is what the app decides on;
+ * `diagnostic` is for the person on the phone with the bank's desk, so it is
+ * shown on the counter's error modal as it is, and never branched on.
+ *
+ * Bank vocabulary is allowed in the diagnostic, and only there: it is the one
+ * string whose whole purpose is to quote the bank back. It never carries a
+ * secret, a token, a full reference or an account number (§8).
+ */
+export type BankFault = {
+  readonly failure: BankFailure;
+  readonly diagnostic: string;
+};
+
+/**
  * The one question the counter asks, in the shape the chosen `kind` declared.
  *
  * The optional fields are optional *per kind*, never per whim: a pago móvil
@@ -317,7 +332,7 @@ export interface BankGateway {
   authenticate(
     environment: BankEnvironment,
     credentials: BankCredentials,
-  ): Promise<Result<BankSession, BankFailure>>;
+  ): Promise<Result<BankSession, BankFault>>;
 
   /**
    * Finds the one payment matching the query, or `null` when the bank simply
@@ -326,7 +341,7 @@ export interface BankGateway {
   findPayment(
     session: BankSession,
     query: FindPaymentQuery,
-  ): Promise<Result<FoundPayment | null, BankFailure>>;
+  ): Promise<Result<FoundPayment | null, BankFault>>;
 }
 
 /**

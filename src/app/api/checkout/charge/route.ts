@@ -94,7 +94,9 @@ function outcomeOf(
   result: Awaited<ReturnType<ReturnType<typeof container>['validations']['validatePayment']>>,
   customPayerBanks: readonly PayerBank[],
 ): ChargeOutcome {
-  if (!result.ok) return { status: 'failed', failure: result.error };
+  if (!result.ok) {
+    return { status: 'failed', failure: result.error.failure, diagnostic: result.error.diagnostic };
+  }
 
   const value = result.value;
   if (value.kind === 'confirmed') {

@@ -14,7 +14,7 @@ import type {
   BankCredentialGroup,
   BankCredentials,
   BankEnvironment,
-  BankFailure,
+  BankFault,
   BankGateway,
   BankGatewayDeps,
   BankMovement,
@@ -33,6 +33,7 @@ import {
   isInterbankTransferencia,
   REFERENCE_TAIL_DIGITS,
 } from './confirmation.client.ts';
+import { diagnose } from './diagnostic.ts';
 import { BANESCO_ID, BANESCO_SUDEBAN_CODE } from './endpoints.ts';
 import { type BanescoDevice, serverDevice } from './envelope.ts';
 import { BanescoOauthClient } from './oauth.client.ts';
@@ -152,7 +153,7 @@ export class BanescoGateway implements BankGateway {
   async authenticate(
     environment: BankEnvironment,
     credentials: BankCredentials,
-  ): Promise<Result<BankSession, BankFailure>> {
+  ): Promise<Result<BankSession, BankFault>> {
     const token = await this.oauth.getAccessToken({ environment, credentials });
     if (!token.ok) return token;
 
@@ -161,7 +162,10 @@ export class BanescoGateway implements BankGateway {
       // through the flow we tell merchants is a test. The port has no code
       // for it; the caller turns this into `bank_environment_mismatch`.
       logger.warn('banesco_environment_mismatch', { declared: environment });
-      return err('rejected_credentials');
+      return err({
+        failure: 'rejected_credentials',
+        diagnostic: diagnose(environment, 'token', 'production credentials filed as sandbox'),
+      });
     }
 
     // Not a secret and not derived from one: it exists so a support call can
@@ -183,7 +187,7 @@ export class BanescoGateway implements BankGateway {
   async findPayment(
     session: BankSession,
     query: FindPaymentQuery,
-  ): Promise<Result<FoundPayment | null, BankFailure>> {
+  ): Promise<Result<FoundPayment | null, BankFault>> {
     const resumed = this.resume(session);
     if (!resumed.ok) return resumed;
     const call = this.confirmationCall(resumed.value, query.sessionId);
@@ -205,7 +209,9 @@ export class BanescoGateway implements BankGateway {
             onDate: required(query.onDate, 'onDate'),
           });
 
-    if (outcome.kind === 'failure') return err(outcome.failure);
+    if (outcome.kind === 'failure') {
+      return err({ failure: outcome.failure, diagnostic: outcome.diagnostic });
+    }
     if (outcome.kind === 'movements') {
       const match = select(outcome.movements, query);
       if (match) return ok({ movement: match, strategy: strategyFor(query) });
@@ -215,11 +221,14 @@ export class BanescoGateway implements BankGateway {
     return ok(null);
   }
 
-  private resume(session: BankSession): Result<ActiveSession, BankFailure> {
+  private resume(session: BankSession): Result<ActiveSession, BankFault> {
     const found = this.active.get(session.correlationId);
     if (!found) {
       logger.error('banesco_session_unknown', { correlationId: session.correlationId });
-      return err('unavailable');
+      return err({
+        failure: 'unavailable',
+        diagnostic: diagnose(session.environment, 'consulta', 'session not open'),
+      });
     }
     return ok(found);
   }

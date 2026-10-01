@@ -181,7 +181,10 @@ describe('authenticate', () => {
 
     expect(await gateway.authenticate('sandbox', CREDENTIALS)).toEqual({
       ok: false,
-      error: 'rejected_credentials',
+      error: {
+        failure: 'rejected_credentials',
+        diagnostic: 'banesco qa · token · HTTP 401 · invalid_client',
+      },
     });
   });
 
@@ -194,7 +197,10 @@ describe('authenticate', () => {
       correlationId: 'not-ours',
     };
 
-    expect(await gateway.findPayment(forged, QUERY)).toEqual({ ok: false, error: 'unavailable' });
+    expect(await gateway.findPayment(forged, QUERY)).toMatchObject({
+      ok: false,
+      error: { failure: 'unavailable' },
+    });
   });
 
   it('opens a production session against the production realm', async () => {
@@ -220,9 +226,9 @@ describe('authenticate', () => {
     stubBank([], true);
     const gateway = new BanescoGateway(deps());
 
-    expect(await gateway.authenticate('sandbox', CREDENTIALS)).toEqual({
+    expect(await gateway.authenticate('sandbox', CREDENTIALS)).toMatchObject({
       ok: false,
-      error: 'rejected_credentials',
+      error: { failure: 'rejected_credentials' },
     });
   });
 });
@@ -323,7 +329,10 @@ describe('findPayment', () => {
     const sent = stubBank([confirmationReply('VRN04')]);
     const { gateway, session } = await authenticated();
 
-    expect(await gateway.findPayment(session, QUERY)).toEqual({ ok: false, error: 'maintenance' });
+    expect(await gateway.findPayment(session, QUERY)).toMatchObject({
+      ok: false,
+      error: { failure: 'maintenance' },
+    });
     expect(paymentCalls(sent)).toHaveLength(1);
   });
 

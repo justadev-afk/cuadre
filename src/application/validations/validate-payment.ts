@@ -86,7 +86,7 @@ import { logger, maskReference } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
 import { type AccountCredentials, operateCredential } from '../banking/account-credentials.ts';
 import type {
-  BankFailure,
+  BankFault,
   BankGateway,
   BankId,
   BankPaymentKind,
@@ -234,9 +234,20 @@ export type ValidatePaymentFailure =
   | 'unavailable'
   | 'timeout';
 
+/**
+ * The failure the counter branches on, plus — when the bank was asked — the
+ * adapter's diagnostic: environment, step, HTTP status, the bank's code. It is
+ * printed small under the modal's copy so a merchant can read it out to the
+ * bank's desk; nothing decides on it.
+ */
+export type ValidatePaymentError = {
+  readonly failure: ValidatePaymentFailure;
+  readonly diagnostic: string | null;
+};
+
 export type ValidatePayment = (
   input: ValidatePaymentInput,
-) => Promise<Result<ValidatePaymentOutcome, ValidatePaymentFailure>>;
+) => Promise<Result<ValidatePaymentOutcome, ValidatePaymentError>>;
 
 /** What the request means once the domain has read it, for one kind. */
 type Claim = {
@@ -278,7 +289,7 @@ export function makeValidatePayment({
 
     // ── 1. idempotency ────────────────────────────────────────────────────
     const idempotencyKey = input.idempotencyKey.trim();
-    if (idempotencyKey === '') return err('invalid_input');
+    if (idempotencyKey === '') return err(refused('invalid_input'));
 
     const replay = await validations.findByIdempotencyKey(idempotencyKey);
     if (replay !== null) {
@@ -305,7 +316,7 @@ export function makeValidatePayment({
         companyId: input.companyId,
         chosen: input.bankAccountId,
       });
-      return err('no_bank_account');
+      return err(refused('no_bank_account'));
     }
 
     const gateway = banks.get(account.bank);
@@ -317,7 +328,7 @@ export function makeValidatePayment({
     const spec = gateway.paymentKinds.find((candidate) => candidate.kind === input.kind) ?? null;
     if (spec === null) {
       logger.warn('validation_kind_unsupported', { bank: account.bank, kind: input.kind });
-      return err('invalid_input');
+      return err(refused('invalid_input'));
     }
 
     // The payer's bank, which may be a brand Sudeban does not list. Asked for
@@ -328,7 +339,7 @@ export function makeValidatePayment({
       : ((await customBanks.listActive()).find((b) => b.code === input.sourceBankId) ?? null);
 
     const read = readClaim(input, spec, venezuelaDate(clock.nowSeconds()), custom);
-    if (!read.ok) return read;
+    if (!read.ok) return err(refused(read.error));
     const claim = read.value;
 
     // One metric per attempt, attributed to the connection that was asked.
@@ -417,7 +428,7 @@ export function makeValidatePayment({
 
     const session = await gateway.authenticate(account.environment, operate);
     if (!session.ok) {
-      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: session.error });
+      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: session.error.failure });
       return err(toCounterFailure(session.error));
     }
 
@@ -434,7 +445,7 @@ export function makeValidatePayment({
       sessionId: input.sessionId,
     });
     if (!found.ok) {
-      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: found.error });
+      record({ outcome: 'bank_failure', strategy: 'none', bankStatus: found.error.failure });
       return err(toCounterFailure(found.error));
     }
 
@@ -643,8 +654,13 @@ export function makeValidatePayment({
 /** Nothing in here is a failure; the counter has a screen for each of them. */
 function outcome(
   value: ValidatePaymentOutcome,
-): Result<ValidatePaymentOutcome, ValidatePaymentFailure> {
+): Result<ValidatePaymentOutcome, ValidatePaymentError> {
   return ok(value);
+}
+
+/** A refusal decided here, before any bank was asked — nothing to diagnose. */
+function refused(failure: ValidatePaymentFailure): ValidatePaymentError {
+  return { failure, diagnostic: null };
 }
 
 /**
@@ -772,14 +788,14 @@ async function openCredentials(
  * panel, and hiding it as "unavailable" would have them waiting for a bank that
  * is working fine.
  */
-function toCounterFailure(failure: BankFailure): ValidatePaymentFailure {
+function toCounterFailure({ failure, diagnostic }: BankFault): ValidatePaymentError {
   switch (failure) {
     case 'maintenance':
     case 'timeout':
     case 'rejected_credentials':
     case 'invalid_input':
-      return failure;
+      return { failure, diagnostic };
     default:
-      return 'unavailable';
+      return { failure: 'unavailable', diagnostic };
   }
 }

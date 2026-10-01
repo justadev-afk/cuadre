@@ -19,6 +19,8 @@ export const API = {
   banksConnect: '/api/banks/connect',
   banksCredentials: '/api/banks/credentials',
   banksDeactivate: '/api/banks/deactivate',
+  /** "Probar credenciales" — the panel's, never the till's. */
+  banksTest: '/api/banks/test',
 
   employeesCreate: '/api/employees/create',
   employeesUpdate: '/api/employees/update',

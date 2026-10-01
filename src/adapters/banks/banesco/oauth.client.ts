@@ -31,12 +31,13 @@ import { z } from 'zod';
 import type {
   BankCredentials,
   BankEnvironment,
-  BankFailure,
+  BankFault,
 } from '../../../application/ports/bank-gateway.ts';
 import { logger } from '../../../shared/logger.ts';
 import { err, ok, type Result } from '../../../shared/result.ts';
 import { bankFetch, parseJsonBody } from '../http.ts';
 import { debugBanescoCall } from './debug.ts';
+import { diagnose } from './diagnostic.ts';
 import { BANESCO_ID, banescoEndpoints } from './endpoints.ts';
 import { failureForHttpStatus } from './status-codes.ts';
 
@@ -59,7 +60,7 @@ export type BanescoTokenRequest = {
  * there used to be, and the counter could feel it.
  */
 export interface OauthClient {
-  getAccessToken(request: BanescoTokenRequest): Promise<Result<string, BankFailure>>;
+  getAccessToken(request: BanescoTokenRequest): Promise<Result<string, BankFault>>;
 }
 
 export class BanescoOauthClient implements OauthClient {
@@ -69,7 +70,7 @@ export class BanescoOauthClient implements OauthClient {
     private readonly debug = false,
   ) {}
 
-  async getAccessToken(request: BanescoTokenRequest): Promise<Result<string, BankFailure>> {
+  async getAccessToken(request: BanescoTokenRequest): Promise<Result<string, BankFault>> {
     const endpoints = banescoEndpoints(request.environment);
     const { clientId, clientSecret } = request.credentials;
 
@@ -112,24 +113,30 @@ export class BanescoOauthClient implements OauthClient {
 
     if (outcome.kind === 'timeout') {
       logger.warn('banesco_token_timeout', { ...where, timeoutMs: outcome.timeoutMs });
-      return err('timeout');
+      return err({
+        failure: 'timeout',
+        diagnostic: diagnose(request.environment, 'token', `timeout ${outcome.timeoutMs}ms`),
+      });
     }
 
     if (outcome.kind === 'network') {
       logger.warn('banesco_token_unreachable', { ...where, detail: outcome.detail });
-      return err('unavailable');
+      return err({
+        failure: 'unavailable',
+        diagnostic: diagnose(request.environment, 'token', `network: ${outcome.detail}`),
+      });
     }
 
     if (outcome.status !== 200) {
       // Only Keycloak's `error` code is logged. `error_description` can quote the
       // request back, and the request carried the client secret.
       const parsed = TokenError.safeParse(parseJsonBody(outcome.body));
-      logger.warn('banesco_token_rejected', {
-        ...where,
-        status: outcome.status,
-        reason: parsed.success ? parsed.data.error : 'unreadable',
+      const reason = parsed.success ? parsed.data.error : 'unreadable';
+      logger.warn('banesco_token_rejected', { ...where, status: outcome.status, reason });
+      return err({
+        failure: failureForHttpStatus(outcome.status),
+        diagnostic: diagnose(request.environment, 'token', `HTTP ${outcome.status}`, reason),
       });
-      return err(failureForHttpStatus(outcome.status));
     }
 
     const parsed = TokenReply.safeParse(parseJsonBody(outcome.body));
@@ -137,7 +144,10 @@ export class BanescoOauthClient implements OauthClient {
       // A 200 we cannot read is worse than a clean rejection: it means the token
       // endpoint moved or something is answering in front of it.
       logger.error('banesco_token_unreadable', where);
-      return err('unavailable');
+      return err({
+        failure: 'unavailable',
+        diagnostic: diagnose(request.environment, 'token', 'HTTP 200', 'unreadable'),
+      });
     }
 
     // `expires_in` is read past rather than returned: nothing keeps this token

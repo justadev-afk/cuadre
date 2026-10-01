@@ -14,6 +14,7 @@ import type {
   BankCredentials,
   BankEnvironment,
   BankFailure,
+  BankFault,
   BankGateway,
   BankSession,
 } from '../ports/bank-gateway.ts';
@@ -74,9 +75,11 @@ function fakeGateway(options: { rejects?: BankFailure } = {}) {
     async authenticate(
       environment: BankEnvironment,
       credentials: BankCredentials,
-    ): Promise<Result<BankSession, BankFailure>> {
+    ): Promise<Result<BankSession, BankFault>> {
       asked.push({ environment, credentials });
-      if (options.rejects !== undefined) return err(options.rejects);
+      if (options.rejects !== undefined) {
+        return err({ failure: options.rejects, diagnostic: 'test' });
+      }
       return ok({ bank: 'banesco', environment, correlationId: 'corr-1' });
     },
     async findPayment() {

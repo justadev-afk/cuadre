@@ -15,6 +15,7 @@ import { pageMeta } from '../../_lib/page-meta.ts';
 import { BanksPanel } from './banks-panel.tsx';
 import { ChangeCredentialsButton } from './change-credentials-button.tsx';
 import { DeactivateBankButton } from './deactivate-bank-button.tsx';
+import { TestCredentialsButton } from './test-credentials-button.tsx';
 
 export const metadata = pageMeta('Bancos');
 
@@ -57,6 +58,7 @@ export default async function BanksPage() {
               verifiedAt={account.verifiedAt}
               action={
                 <>
+                  <TestCredentialsButton accountId={account.id} bankLabel={name} />
                   {info && (
                     <ChangeCredentialsButton
                       accountId={account.id}

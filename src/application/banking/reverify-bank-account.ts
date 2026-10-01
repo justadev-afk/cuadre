@@ -29,7 +29,7 @@ import { unseal } from '../../shared/crypto.ts';
 import { AppError } from '../../shared/errors.ts';
 import { logger } from '../../shared/logger.ts';
 import { err, ok, type Result } from '../../shared/result.ts';
-import type { BankFailure, BankGateway, BankId } from '../ports/bank-gateway.ts';
+import type { BankFault, BankGateway, BankId } from '../ports/bank-gateway.ts';
 import { type AccountCredentials, operateCredential } from './account-credentials.ts';
 import { type BankAccountView, toBankAccountView } from './bank-account-view.ts';
 import { type BankOnboardingFailure, toOnboardingFailure } from './bank-failure.ts';
@@ -65,9 +65,21 @@ export type ReverifyBankAccountInput = {
 
 export type ReverifyBankAccountFailure = BankOnboardingFailure | 'not_found';
 
+/**
+ * The failure, plus the bank's own diagnostic when it was the bank that said
+ * no — what "Probar credenciales" puts on screen so a merchant can read the
+ * HTTP status and the bank's code out to its desk.
+ */
+export type ReverifyBankAccountError = {
+  readonly failure: ReverifyBankAccountFailure;
+  readonly diagnostic: string | null;
+};
+
 export type ReverifyBankAccount = (
   input: ReverifyBankAccountInput,
-) => Promise<Result<BankAccountView, ReverifyBankAccountFailure>>;
+) => Promise<Result<BankAccountView, ReverifyBankAccountError>>;
+
+const NOT_FOUND: ReverifyBankAccountError = { failure: 'not_found', diagnostic: null };
 
 export function makeReverifyBankAccount({
   banks,
@@ -78,8 +90,8 @@ export function makeReverifyBankAccount({
   return async (input) => {
     const account = await accounts.findById(input.accountId);
     // Same reasoning as `remove-bank-account`: not yours reads as not there.
-    if (account === null || account.companyId !== input.companyId) return err('not_found');
-    if (account.status === 'removed') return err('not_found');
+    if (account === null || account.companyId !== input.companyId) return err(NOT_FOUND);
+    if (account.status === 'removed') return err(NOT_FOUND);
 
     // This envelope is the only copy: nobody can paste the secret again. A row
     // we cannot open is an operational fault, and it must page someone rather
@@ -99,7 +111,7 @@ export function makeReverifyBankAccount({
     if (!session.ok) return failed(accounts, account, session.error);
 
     const verified = await accounts.markVerified(account.id, clock.nowSeconds(), null);
-    if (!verified.ok) return err('not_found');
+    if (!verified.ok) return err(NOT_FOUND);
 
     logger.info('bank_account_reverified', {
       companyId: input.companyId,
@@ -125,8 +137,8 @@ export function makeReverifyBankAccount({
 async function failed(
   accounts: BankAccountStore,
   account: BankAccount,
-  failure: BankFailure,
-): Promise<Result<BankAccountView, ReverifyBankAccountFailure>> {
+  { failure, diagnostic }: BankFault,
+): Promise<Result<BankAccountView, ReverifyBankAccountError>> {
   if (failure === 'rejected_credentials' && account.status === 'active') {
     await accounts.setStatus(account.id, 'needs_reverify');
   }
@@ -136,9 +148,10 @@ async function failed(
     bank: account.bank,
     environment: account.environment,
     failure,
+    diagnostic,
   });
 
-  return err(toOnboardingFailure(failure));
+  return err({ failure: toOnboardingFailure(failure), diagnostic });
 }
 
 /** The credential map, unsealed. */

@@ -43,6 +43,7 @@ import type {
 import { logger } from '../../../shared/logger.ts';
 import { bankFetch, parseJsonBody } from '../http.ts';
 import { debugBanescoCall } from './debug.ts';
+import { diagnose } from './diagnostic.ts';
 import { BANESCO_ID, BANESCO_SUDEBAN_CODE, banescoEndpoints } from './endpoints.ts';
 import { type BanescoDevice, dataRequest } from './envelope.ts';
 import { classifyStatus, failureForHttpStatus } from './status-codes.ts';
@@ -60,7 +61,7 @@ export type ConfirmationOutcome =
   | { readonly kind: 'movements'; readonly movements: BankMovement[] }
   /** The bank has nothing under that question. An answer, not a fault. */
   | { readonly kind: 'no_results' }
-  | { readonly kind: 'failure'; readonly failure: BankFailure };
+  | { readonly kind: 'failure'; readonly failure: BankFailure; readonly diagnostic: string };
 
 /**
  * The half of a call that only exists once a session is open. The device
@@ -210,6 +211,11 @@ export class BanescoConfirmationClient implements ConfirmationClient {
   ): Promise<ConfirmationOutcome> {
     const endpoints = banescoEndpoints(call.environment);
     const where = { bank: BANESCO_ID, environment: call.environment, mode };
+    const failed = (failure: BankFailure, ...facts: string[]): ConfirmationOutcome => ({
+      kind: 'failure',
+      failure,
+      diagnostic: diagnose(call.environment, 'consulta', mode, ...facts),
+    });
     const body = JSON.stringify(
       dataRequest({
         device: this.device,
@@ -233,12 +239,12 @@ export class BanescoConfirmationClient implements ConfirmationClient {
 
     if (outcome.kind === 'timeout') {
       logger.warn('banesco_confirmation_timeout', { ...where, timeoutMs: outcome.timeoutMs });
-      return { kind: 'failure', failure: 'timeout' };
+      return failed('timeout', `timeout ${outcome.timeoutMs}ms`);
     }
 
     if (outcome.kind === 'network') {
       logger.warn('banesco_confirmation_unreachable', { ...where, detail: outcome.detail });
-      return { kind: 'failure', failure: 'unavailable' };
+      return failed('unavailable', `network: ${outcome.detail}`);
     }
 
     debugBanescoCall(this.debug, {
@@ -256,10 +262,10 @@ export class BanescoConfirmationClient implements ConfirmationClient {
         status: outcome.status,
         fields: parsed.error.issues.map((issue) => issue.path.join('.')).join(', '),
       });
-      return { kind: 'failure', failure: failureForHttpStatus(outcome.status) };
+      return failed(failureForHttpStatus(outcome.status), `HTTP ${outcome.status}`, 'unreadable');
     }
 
-    const { statusCode } = parsed.data.httpStatus;
+    const { statusCode, statusDesc } = parsed.data.httpStatus;
     const status = classifyStatus(statusCode);
     if (status.kind === 'no_results') return { kind: 'no_results' };
     if (status.kind === 'failure') {
@@ -268,7 +274,13 @@ export class BanescoConfirmationClient implements ConfirmationClient {
         statusCode: String(statusCode),
         failure: status.failure,
       });
-      return { kind: 'failure', failure: status.failure };
+      return failed(
+        status.failure,
+        `HTTP ${outcome.status}`,
+        String(statusCode),
+        // Only when it says more than the code does — QA echoes one as the other.
+        statusDesc?.trim() === String(statusCode) ? '' : (statusDesc?.trim() ?? ''),
+      );
     }
 
     const details = parsed.data.dataResponse?.transactionDetail ?? [];
@@ -277,7 +289,7 @@ export class BanescoConfirmationClient implements ConfirmationClient {
     const movements = toMovements(details);
     if (!movements) {
       logger.error('banesco_movement_unmappable', { ...where, rows: details.length });
-      return { kind: 'failure', failure: 'unavailable' };
+      return failed('unavailable', `HTTP ${outcome.status}`, 'unmappable movement');
     }
 
     return { kind: 'movements', movements };

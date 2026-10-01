@@ -25,6 +25,7 @@ import { container } from '../../../_lib/current-session.ts';
 import { formatDate, formatDayClock, initialsOf } from '../../../_lib/venezuela-format.ts';
 import { BanksPanel } from '../../../(company)/banks/banks-panel.tsx';
 import { ChangeCredentialsButton } from '../../../(company)/banks/change-credentials-button.tsx';
+import { TestCredentialsButton } from '../../../(company)/banks/test-credentials-button.tsx';
 
 export default async function CompanyDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   await requireArea('admin');
@@ -181,18 +182,25 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                   clientIdLast6={account.clientIdLast6}
                   verifiedAt={account.verifiedAt}
                   action={
-                    info && (
-                      <ChangeCredentialsButton
+                    <>
+                      <TestCredentialsButton
                         accountId={account.id}
                         companyId={slug}
-                        bankId={account.bank}
-                        bankLabel={info.displayName}
-                        environment={account.environment}
-                        credentialGroups={info.credentialGroups}
-                        receivingAccountRule={info.receivingAccountRule}
-                        receivingAccounts={account.receivingAccounts}
+                        bankLabel={info?.displayName ?? account.bank}
                       />
-                    )
+                      {info && (
+                        <ChangeCredentialsButton
+                          accountId={account.id}
+                          companyId={slug}
+                          bankId={account.bank}
+                          bankLabel={info.displayName}
+                          environment={account.environment}
+                          credentialGroups={info.credentialGroups}
+                          receivingAccountRule={info.receivingAccountRule}
+                          receivingAccounts={account.receivingAccounts}
+                        />
+                      )}
+                    </>
                   }
                 />
               );

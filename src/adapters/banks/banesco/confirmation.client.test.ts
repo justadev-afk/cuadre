@@ -149,6 +149,8 @@ describe('BanescoConfirmationClient.findPagoMovil', () => {
     expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({
       kind: 'failure',
       failure: 'maintenance',
+      // What the merchant reads out to the bank's desk: where, which call, the code.
+      diagnostic: 'banesco qa · consulta · pago_movil · HTTP 200 · VRN04',
     });
   });
 
@@ -158,6 +160,7 @@ describe('BanescoConfirmationClient.findPagoMovil', () => {
     expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({
       kind: 'failure',
       failure: 'unavailable',
+      diagnostic: 'banesco qa · consulta · pago_movil · HTTP 200 · unmappable movement',
     });
   });
 
@@ -167,6 +170,7 @@ describe('BanescoConfirmationClient.findPagoMovil', () => {
     expect(await CLIENT.findPagoMovil(CALL, QUERY)).toEqual({
       kind: 'failure',
       failure: 'unavailable',
+      diagnostic: 'banesco qa · consulta · pago_movil · HTTP 502 · unreadable',
     });
   });
 });

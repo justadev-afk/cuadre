@@ -14,7 +14,7 @@ import { AppError } from '../../shared/errors.ts';
 import { fakeIdGen } from '../../shared/id.ts';
 import { ok, type Result } from '../../shared/result.ts';
 import type {
-  BankFailure,
+  BankFault,
   BankGateway,
   BankMovement,
   BankSession,
@@ -214,8 +214,8 @@ const TRANSFERENCIA = {
 } as const;
 
 type GatewayScript = {
-  authenticate?: Result<BankSession, BankFailure>;
-  payment?: Result<FoundPayment | null, BankFailure>;
+  authenticate?: Result<BankSession, BankFault>;
+  payment?: Result<FoundPayment | null, BankFault>;
   /** A bank that asks for a different slice of the reference. */
   referenceDigits?: number;
 };
@@ -384,7 +384,7 @@ describe('a custom payer brand', () => {
 
     expect(await validatePayment({ ...INPUT, sourceBankId: 'ubii' })).toEqual({
       ok: false,
-      error: 'invalid_input',
+      error: { failure: 'invalid_input', diagnostic: null },
     });
     expect(calls.findPayment).toBe(0);
   });
@@ -773,7 +773,7 @@ describe('validate payment', () => {
 
     expect(await validatePayment({ ...INPUT, reference: '4567' })).toEqual({
       ok: false,
-      error: 'invalid_input',
+      error: { failure: 'invalid_input', diagnostic: null },
     });
     expect(calls.authenticate).toBe(0);
   });
@@ -804,12 +804,15 @@ describe('validate payment', () => {
 
   it('maps a bank in maintenance to a failure, and records the attempt', async () => {
     const { validatePayment, validations, points } = await harness({
-      script: { payment: { ok: false, error: 'maintenance' } },
+      script: { payment: { ok: false, error: { failure: 'maintenance', diagnostic: 'test' } } },
     });
 
     const result = await validatePayment(INPUT);
 
-    expect(result).toEqual({ ok: false, error: 'maintenance' });
+    expect(result).toEqual({
+      ok: false,
+      error: { failure: 'maintenance', diagnostic: 'test' },
+    });
     expect(validations.inserts).toHaveLength(0);
     expect(points[0]).toMatchObject({
       outcome: 'bank_failure',
@@ -820,12 +823,17 @@ describe('validate payment', () => {
 
   it("folds the bank's own rate limit into 'unavailable'", async () => {
     const { validatePayment, points } = await harness({
-      script: { authenticate: { ok: false, error: 'rate_limited' } },
+      script: {
+        authenticate: { ok: false, error: { failure: 'rate_limited', diagnostic: 'test' } },
+      },
     });
 
     const result = await validatePayment(INPUT);
 
-    expect(result).toEqual({ ok: false, error: 'unavailable' });
+    expect(result).toEqual({
+      ok: false,
+      error: { failure: 'unavailable', diagnostic: 'test' },
+    });
     // The bank's word for it survives in the dataset even though the copy does
     // not: 'rate_limited' is where a throttled affiliation becomes visible.
     expect(points[0]).toMatchObject({ outcome: 'bank_failure', bankStatus: 'rate_limited' });
@@ -833,10 +841,15 @@ describe('validate payment', () => {
 
   it('surfaces rejected credentials as themselves, not as unavailable', async () => {
     const { validatePayment } = await harness({
-      script: { authenticate: { ok: false, error: 'rejected_credentials' } },
+      script: {
+        authenticate: { ok: false, error: { failure: 'rejected_credentials', diagnostic: 'test' } },
+      },
     });
 
-    expect(await validatePayment(INPUT)).toEqual({ ok: false, error: 'rejected_credentials' });
+    expect(await validatePayment(INPUT)).toEqual({
+      ok: false,
+      error: { failure: 'rejected_credentials', diagnostic: 'test' },
+    });
   });
 
   it('requires a phone: every validation is a pago móvil', async () => {
@@ -844,7 +857,7 @@ describe('validate payment', () => {
 
     const result = await validatePayment({ ...INPUT, payerPhone: '   ' });
 
-    expect(result).toEqual({ ok: false, error: 'invalid_input' });
+    expect(result).toEqual({ ok: false, error: { failure: 'invalid_input', diagnostic: null } });
     expect(calls.authenticate).toBe(0);
     expect(points).toEqual([]);
   });
@@ -854,7 +867,7 @@ describe('validate payment', () => {
 
     const result = await validatePayment({ ...INPUT, payerPhone: '0212-5551234' });
 
-    expect(result).toEqual({ ok: false, error: 'invalid_input' });
+    expect(result).toEqual({ ok: false, error: { failure: 'invalid_input', diagnostic: null } });
     expect(calls.authenticate).toBe(0);
     expect(points).toEqual([]);
   });
@@ -864,7 +877,7 @@ describe('validate payment', () => {
 
     expect(await validatePayment({ ...INPUT, sourceBankId: '134' })).toEqual({
       ok: false,
-      error: 'invalid_input',
+      error: { failure: 'invalid_input', diagnostic: null },
     });
     expect(calls.findPayment).toBe(0);
   });
@@ -874,11 +887,11 @@ describe('validate payment', () => {
 
     expect(await validatePayment({ ...INPUT, amountCents: 0 })).toMatchObject({
       ok: false,
-      error: 'invalid_input',
+      error: { failure: 'invalid_input', diagnostic: null },
     });
     expect(await validatePayment({ ...INPUT, amountCents: 1240.5 })).toMatchObject({
       ok: false,
-      error: 'invalid_input',
+      error: { failure: 'invalid_input', diagnostic: null },
     });
   });
 
@@ -890,7 +903,7 @@ describe('validate payment', () => {
 
       expect(await validatePayment({ ...INPUT, paymentDate })).toEqual({
         ok: false,
-        error: 'invalid_input',
+        error: { failure: 'invalid_input', diagnostic: null },
       });
       expect(calls.authenticate).toBe(0);
     },
@@ -899,7 +912,10 @@ describe('validate payment', () => {
   it('answers no_bank_account without a metric, because no bank was involved', async () => {
     const { validatePayment, points, calls } = await harness({ account: null });
 
-    expect(await validatePayment(INPUT)).toEqual({ ok: false, error: 'no_bank_account' });
+    expect(await validatePayment(INPUT)).toEqual({
+      ok: false,
+      error: { failure: 'no_bank_account', diagnostic: null },
+    });
     expect(calls.authenticate).toBe(0);
     expect(points).toEqual([]);
   });
@@ -911,7 +927,7 @@ describe('validate payment', () => {
 
     expect(await validatePayment({ ...INPUT, bankAccountId: 'account-elsewhere' })).toEqual({
       ok: false,
-      error: 'no_bank_account',
+      error: { failure: 'no_bank_account', diagnostic: null },
     });
     expect(calls.authenticate).toBe(0);
   });

@@ -12,8 +12,13 @@
  * means.
  */
 
-/** Past this the counter has already given up, so we should too. */
-const DEFAULT_TIMEOUT_MS = 8_000;
+/**
+ * Past this the call is abandoned. It was 8 s, and a slow-but-working bank on a
+ * shop's connection kept landing just past it — a "tardó demasiado" for a call
+ * that would have answered. Fifteen gives it room while still failing well
+ * before a cashier gives up on the modal.
+ */
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 /**
  * Exactly one. A bank that failed twice inside the same second is having an

@@ -101,7 +101,24 @@ describe('getAccessToken', () => {
       credentials: CREDENTIALS,
     });
 
-    expect(result).toEqual({ ok: false, error: failure });
+    expect(result).toMatchObject({ ok: false, error: { failure } });
+  });
+
+  it('names the realm, the status and Keycloak’s code in the diagnostic', async () => {
+    stubFetch({ status: 401, body: '{"error":"invalid_client"}' });
+
+    const result = await oauthClient().getAccessToken({
+      environment: 'production',
+      credentials: CREDENTIALS,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        failure: 'rejected_credentials',
+        diagnostic: 'banesco prd · token · HTTP 401 · invalid_client',
+      },
+    });
   });
 
   it('refuses a 200 it cannot read', async () => {
@@ -112,7 +129,7 @@ describe('getAccessToken', () => {
       credentials: CREDENTIALS,
     });
 
-    expect(result).toEqual({ ok: false, error: 'unavailable' });
+    expect(result).toMatchObject({ ok: false, error: { failure: 'unavailable' } });
   });
 
   it('asks the production realm, not QA’s with the “qa” filed off', async () => {
