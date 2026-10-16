@@ -251,7 +251,7 @@ const STAT_CARD =
 // bleed past the text is the list being wider than the pane, not the row being
 // wider than the list.
 const RECENT_ROW =
-  'flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors hover:bg-foreground/[0.06] bg-[linear-gradient(to_right,transparent,color-mix(in_srgb,var(--color-text)_8%,transparent)_20px,color-mix(in_srgb,var(--color-text)_8%,transparent)_calc(100%-20px),transparent)] bg-[length:100%_1px] bg-bottom bg-no-repeat';
+  'flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left transition-colors hover:bg-foreground/[0.06] bg-[linear-gradient(to_right,transparent,var(--color-text-8)_20px,var(--color-text-8)_calc(100%-20px),transparent)] bg-[length:100%_1px] bg-bottom bg-no-repeat';
 // So the 10px of bleed on each side is the scroller's: a negative margin does
 // not widen a box, it *slides* it, and the width has to grow by both margins for
 // the highlight to sit evenly around the row it belongs to.
@@ -296,7 +296,7 @@ function modalBorderTone(busy: boolean, outcome: ChargeOutcome | null): string {
   if (busy || outcome === null) return '';
   if (outcome.status === 'confirmed') return 'border-primary/40';
   if (outcome.status === 'not_found') return '';
-  return 'border-[color-mix(in_srgb,var(--color-danger)_55%,transparent)]';
+  return 'border-destructive/55';
 }
 
 export function CheckoutForm({

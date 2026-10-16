@@ -92,7 +92,7 @@ export function AppShell({
                 className={cn(
                   'flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] text-inherit no-underline transition-colors hover:bg-foreground/[0.07]',
                   isCurrent(pathname, item.href) &&
-                    'bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-primary hover:bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]',
+                    'bg-primary/12 text-primary hover:bg-primary/12',
                 )}
               >
                 <Icon name={item.icon} />

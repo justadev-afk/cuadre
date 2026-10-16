@@ -56,7 +56,7 @@ export function SkeletonTable({
   } as const;
 
   const rule =
-    'linear-gradient(to right, transparent, color-mix(in srgb, var(--color-text) 8%, transparent) 20px, color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px), transparent) no-repeat bottom / 100% 1px';
+    'linear-gradient(to right, transparent, var(--color-text-8) 20px, var(--color-text-8) calc(100% - 20px), transparent) no-repeat bottom / 100% 1px';
 
   return (
     <div>

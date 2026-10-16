@@ -44,7 +44,7 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       className={cn(
         'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none select-none transition-colors',
-        'focus:bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] focus:text-primary',
+        'focus:bg-primary/10 focus:text-primary',
         'data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0 [&_i]:text-base',
         className,
       )}

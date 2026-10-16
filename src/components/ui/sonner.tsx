@@ -33,7 +33,7 @@ function Toaster(props: ToasterProps) {
           '--success-border': 'var(--border)',
           '--error-bg': 'var(--card)',
           '--error-text': 'var(--foreground)',
-          '--error-border': 'color-mix(in srgb, var(--destructive) 55%, transparent)',
+          '--error-border': 'var(--color-danger-55)',
         } as CSSProperties
       }
       toastOptions={{

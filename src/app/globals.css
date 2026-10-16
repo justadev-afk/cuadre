@@ -22,7 +22,15 @@
    `@theme inline` (below) reads them to build `bg-background`/`bg-primary`/…
    without ever emitting a `--color-*` property, so Nocturne's own `--color-*`
    palette in the next `:root` is left untouched for the legacy classes still
-   in this file. Retuning a role is still one edit — here. */
+   in this file.
+
+   `@theme inline` repeats the values instead of reading them with `var()`, and
+   that is the price of Windows 7: its last Chrome is 109, which has no
+   `color-mix()`. Tailwind writes `bg-primary/12` as a color-mix, and over a
+   `var()` the only fallback it can emit is the colour at full strength — a
+   solid purple pill under purple text. Over a literal it computes the mix at
+   build time, and `legacyCss` in vite.config.ts lowers that to rgba. Retuning
+   a role is therefore two edits, both in this file. */
 :root {
   --radius: 0.625rem;
 
@@ -42,8 +50,8 @@
   --accent-foreground: #efeefb;
   --destructive: #e0695f; /* color-danger */
   --destructive-foreground: #161826;
-  --border: color-mix(in srgb, #e9e9ed 16%, transparent); /* color-divider */
-  --input: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --border: rgb(233 233 237 / 0.16); /* color-divider */
+  --input: rgb(233 233 237 / 0.16);
   --ring: #9184d9;
 
   --sidebar: #292b31;
@@ -52,39 +60,39 @@
   --sidebar-primary-foreground: #161826;
   --sidebar-accent: #2b2741;
   --sidebar-accent-foreground: #efeefb;
-  --sidebar-border: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --sidebar-border: rgb(233 233 237 / 0.16);
   --sidebar-ring: #9184d9;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-background: #161826;
+  --color-foreground: #e9e9ed;
+  --color-card: #232532;
+  --color-card-foreground: #e9e9ed;
+  --color-popover: #232532;
+  --color-popover-foreground: #e9e9ed;
+  --color-primary: #9184d9;
+  --color-primary-foreground: #161826;
+  --color-secondary: #292b31;
+  --color-secondary-foreground: #e9e9ed;
+  --color-muted: #292b31;
+  --color-muted-foreground: #b2b6ca;
+  --color-accent: #2b2741;
+  --color-accent-foreground: #efeefb;
+  --color-destructive: #e0695f;
+  --color-destructive-foreground: #161826;
+  --color-border: rgb(233 233 237 / 0.16);
+  --color-input: rgb(233 233 237 / 0.16);
+  --color-ring: #9184d9;
 
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar: #292b31;
+  --color-sidebar-foreground: #e9e9ed;
+  --color-sidebar-primary: #9184d9;
+  --color-sidebar-primary-foreground: #161826;
+  --color-sidebar-accent: #2b2741;
+  --color-sidebar-accent-foreground: #efeefb;
+  --color-sidebar-border: rgb(233 233 237 / 0.16);
+  --color-sidebar-ring: #9184d9;
 
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-heading: 'Inter', system-ui, sans-serif;
@@ -119,7 +127,17 @@
   --color-text: #e9e9ed;
   --color-accent: #9184d9;
   --color-accent-2: #a7a1db;
-  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-divider: rgb(233 233 237 / 0.16);
+  /* Text and accent at fixed strengths, written as rgb() rather than
+     `color-mix(var(--color-text) …)`: a mix over a var cannot be resolved at
+     build time, and Chrome 109 (Windows 7) drops it. */
+  --color-text-4: rgb(233 233 237 / 0.04);
+  --color-text-8: rgb(233 233 237 / 0.08);
+  --color-text-55: rgb(233 233 237 / 0.55);
+  --color-text-60: rgb(233 233 237 / 0.6);
+  --color-text-72: rgb(233 233 237 / 0.72);
+  --color-accent-30: rgb(145 132 217 / 0.3);
+  --color-danger-55: rgb(224 105 95 / 0.55);
   /* Nocturne has no red in its ramps, on purpose. This one danger token is the
      deliberate exception, for error states only — invalid inputs and error
      toasts — never for the accent/refusal distinction the FormNote carries. */
@@ -246,17 +264,17 @@ figure { margin: 0; }
 figcaption {
   font-size: 11px;
   margin-top: var(--space-1);
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  color: var(--color-text-55);
 }
 
-.text-muted { color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+.text-muted { color: var(--color-text-72); }
 
 :focus { outline: none; }
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
-::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+::selection { background: var(--color-accent-30); }
 }
 
 /* ══ the one legacy component class the app still uses ═════════════════════
@@ -274,7 +292,7 @@ figcaption {
     font-size: 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-text) 60%, transparent);
+    color: var(--color-text-60);
     padding: 11px 14px;
     border-bottom: 1px solid transparent;
   }
@@ -304,8 +322,8 @@ figcaption {
     background: linear-gradient(
         to right,
         transparent,
-        color-mix(in srgb, var(--color-text) 8%, transparent) 20px,
-        color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 20px),
+        var(--color-text-8) 20px,
+        var(--color-text-8) calc(100% - 20px),
         transparent
       )
       no-repeat bottom / 100% 1px;
@@ -313,15 +331,15 @@ figcaption {
   .table tbody tr:hover {
     background:
       linear-gradient(
-          color-mix(in srgb, var(--color-text) 4%, transparent),
-          color-mix(in srgb, var(--color-text) 4%, transparent)
+          var(--color-text-4),
+          var(--color-text-4)
         )
         no-repeat 0 0 / 100% 100%,
       linear-gradient(
           to right,
           transparent,
-          color-mix(in srgb, var(--color-text) 8%, transparent) 48px,
-          color-mix(in srgb, var(--color-text) 8%, transparent) calc(100% - 48px),
+          var(--color-text-8) 48px,
+          var(--color-text-8) calc(100% - 48px),
           transparent
         )
         no-repeat bottom / 100% 1px;

@@ -658,6 +658,13 @@ kept) lives in `src/app/globals.css`; the components are Tailwind + shadcn.
   narrowed table reads as "you have no payments", which is a different and much
   more alarming sentence. On a phone there is no table to keep, so the card is
   all there is.
+- **The browser floor is Chrome 109** — the last one Windows 7 gets, and tills
+  run it. 109 has no `color-mix()`, `lab()` or `oklch()`. `legacyCss` in
+  `vite.config.ts` lowers the built CSS to rgba fallbacks, but it can only lower
+  what is known at build time: so `@theme inline` holds literal colours (never
+  `var()`), and a translucent colour is an opacity utility (`bg-primary/12`) or
+  an rgb() token in `globals.css` — never `color-mix(… var(--x) …)`. Over a
+  var, Tailwind's fallback is the colour at full strength.
 - **Every screen is a desktop/mobile pair.** The design presents them side by
   side; both are in scope for every change. The shell folds at 900px, most
   desktop/mobile swaps at `md` (768px).
